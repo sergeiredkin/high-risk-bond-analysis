@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hybond — Карта рынка</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d; --text-primary: #ffffff;
+      --text-secondary: #c3c2b7; --text-muted: #898781; --grid: #2c2c2a;
+      --baseline: #383835; --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5; --good: #0ca30c; --warning: #fab219;
+      --serious: #ec835a; --critical: #e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --page: #0d0d0d; --text-primary: #ffffff;
+    --text-secondary: #c3c2b7; --text-muted: #898781; --grid: #2c2c2a;
+    --baseline: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --good: #0ca30c; --warning: #fab219;
+    --serious: #ec835a; --critical: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 18px 20px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  h1 { font-size: 19px; margin: 0; }
+  .subtitle { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+  .time-toggle { display: flex; gap: 4px; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .time-btn { border: none; background: transparent; color: var(--text-secondary);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12.5px; }
+  .time-btn.active { background: var(--series-1); color: #fff; }
+  .time-note { font-size: 11.5px; color: var(--text-muted); margin: -8px 0 12px; }
+
+  .signal-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .signal-card { border-radius: 10px; padding: 10px 14px; border: 1px solid var(--border); }
+  .signal-card .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .signal-card .l { font-size: 11.5px; margin-top: 1px; }
+  .signal-up { background: color-mix(in srgb, var(--good) 14%, var(--surface-1)); }
+  .signal-up .n, .signal-up .l { color: var(--good); }
+  .signal-flat { background: color-mix(in srgb, var(--warning) 14%, var(--surface-1)); }
+  .signal-flat .n, .signal-flat .l { color: #a67400; }
+  .signal-down { background: color-mix(in srgb, var(--critical) 12%, var(--surface-1)); }
+  .signal-down .n, .signal-down .l { color: var(--critical); }
+  .signal-none { background: var(--surface-1); }
+  .signal-none .n { color: var(--text-secondary); }
+  .signal-none .l { color: var(--text-muted); }
+
+  .controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
+  .ctrl-group label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+  .ctrl-group select { width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); font-size: 12.5px; }
+
+  .filter-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 14px; font-size: 12.5px; }
+  .filter-row label.chk { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); white-space: nowrap; }
+  .filter-row .slider-group { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+  .filter-row input[type="range"] { width: 120px; }
+
+  .chart-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; position: relative; }
+  #chart { width: 100%; height: 520px; display: block; cursor: crosshair; }
+
+  .tooltip { position: fixed; pointer-events: none; z-index: 60;
+    background: var(--text-primary); color: var(--surface-1);
+    padding: 10px 12px; border-radius: 9px; font-size: 12px; max-width: 280px;
+    opacity: 0; transition: opacity .08s; line-height: 1.5; }
+  .tooltip.show { opacity: 0.97; }
+  .tooltip b { display: block; font-size: 13px; margin-bottom: 2px; }
+  .tooltip .muted { opacity: 0.7; font-size: 11px; }
+  .pd-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .pd-row .pd-label { width: 92px; font-size: 10.5px; opacity: 0.85; }
+  .pd-bar-track { flex: 1; height: 6px; background: rgba(255,255,255,0.18); border-radius: 4px; overflow: hidden; }
+  .pd-bar-fill { height: 100%; border-radius: 4px; }
+  .pd-row .pd-val { width: 42px; text-align: right; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  .signal-badge { display: inline-block; margin-top: 8px; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+
+  .legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 11.5px; color: var(--text-secondary); }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+  .stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+  .stat-tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+  .stat-tile .value { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat-tile .label { color: var(--text-secondary); font-size: 11.5px; margin-top: 1px; }
+
+  .caveat { font-size: 11px; color: var(--text-muted); margin-top: 10px; max-width: 900px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <h1>Карта рынка ВДО</h1>
+      <div class="subtitle" id="subtitle"></div>
+    </div>
+    <div class="time-toggle" id="timeToggle">
+      <button class="time-btn active" data-key="universe_now">Сейчас</button>
+      <button class="time-btn" data-key="universe_week_ago">−1 нед.</button>
+      <button class="time-btn" data-key="universe_month_ago">−1 мес.</button>
+    </div>
+  </div>
+  <div class="time-note" id="timeNote"></div>
+
+  <div class="signal-bar" id="signalBar"></div>
+
+  <div class="controls">
+    <div class="ctrl-group">
+      <label>Y</label>
+      <select id="selY">
+        <option value="mispricing">Недооценка/переоценка (бп)</option>
+        <option value="ytm" selected>YTM, %</option>
+        <option value="gspread">G-спред (бп)</option>
+        <option value="pdgap">PD рынок−PD рейтинг (%)</option>
+        <option value="pdmarket">PD по цене рынка (%)</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>X</label>
+      <select id="selX">
+        <option value="moddur" selected>Модифицированная дюрация</option>
+        <option value="duration">Дюрация (лет)</option>
+        <option value="maturity">Срок до погашения</option>
+        <option value="offer">Срок до оферты</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>Цвет</label>
+      <select id="selColor">
+        <option value="mispricing" selected>Недооценка/переоценка</option>
+        <option value="pdgap">Разрыв PD рынок vs рейтинг</option>
+        <option value="rating">Рейтинг</option>
+        <option value="sector">Сектор</option>
+        <option value="liquidity">Ликвидность</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>Размер</label>
+      <select id="selSize">
+        <option value="volume" selected>Объём торгов</option>
+        <option value="moddur">Модиф. дюрация (риск)</option>
+        <option value="equal">Равный</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="filter-row">
+    <label class="chk"><input type="checkbox" id="fOfz" checked> ОФЗ кривая</label>
+    <label class="chk"><input type="checkbox" id="fFair" checked> Справедл. спреды</label>
+    <label class="chk"><input type="checkbox" id="fPdIso"> PD изолинии</label>
+    <label class="chk"><input type="checkbox" id="fStar" checked> ★ Вотчлист</label>
+    <div class="slider-group">
+      <span>Недооценка &gt;</span>
+      <input type="range" id="sMis" min="-1000" max="3000" step="50" value="-1000">
+      <span id="lblMis">выкл</span>
+    </div>
+    <div class="slider-group">
+      <span>Макс. YTM, %</span>
+      <input type="range" id="sYtm" min="20" max="400" step="10" value="120">
+      <span id="lblYtm">120%</span>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <canvas id="chart"></canvas>
+    <div class="legend-row" id="legendRow"></div>
+  </div>
+
+  <div class="stats-bar" id="statsBar"></div>
+
+  <p class="caveat">
+    PD по цене рынка и PD по рейтингу — обе выведены из одной и той же таблицы вероятностей дефолта
+    (Эксперт РА, теоретическая матрица), поэтому PD-разрыв арифметически эквивалентен мисценке
+    в бп, только в масштабе вероятности, а не спреда. «Модифицированная дюрация» и «Дюрация (лет)» —
+    один и тот же показатель (MOEX DURATION), universe_pipeline.py не считает эффективную дюрацию
+    отдельно от Macaulay-приближения MOEX. ОФЗ-кривая на графике — не прямая котировка ОФЗ (эти бумаги
+    исключены из скрининга по конструкции), а восстановленная по точкам (срок, безрисковая ставка),
+    уже использованным при расчёте G-спреда каждой корпоративной бумаги в этот день.
+  </p>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script id="dashboard-data" type="application/json">/*__DASHBOARD_DATA__*/</script>
+<script>
+const DATA = JSON.parse(document.getElementById('dashboard-data').textContent);
+
+const state = {
+  timeKey: 'universe_now',
+  y: 'ytm', x: 'moddur', color: 'mispricing', size: 'volume',
+  fOfz: true, fFair: true, fPdIso: false, fStar: true,
+  misMin: -1000, ytmMax: 120,
+  hover: null,
+};
+
+const RECOVERY = 0.35;
+
+function bucket() { return DATA[state.timeKey] || { snap_date: null, bonds: [], stale_days: null, no_history: true }; }
+
+function ratingRank(r) {
+  if (!r) return null;
+  const order = ['ruAAA','ruAA+','ruAA','ruAA-','ruA+','ruA','ruA-','ruBBB+','ruBBB','ruBBB-',
+    'ruBB+','ruBB','ruBB-','ruB+','ruB','ruB-','ruCCC','ruCC','ruC'];
+  const norm = r.startsWith('ru') ? r : 'ru' + r;
+  const i = order.indexOf(norm);
+  return i === -1 ? null : i / (order.length - 1); // 0=best, 1=worst
+}
+
+function ratingColor(r) {
+  const rank = ratingRank(r);
+  if (rank === null) return '#9a9890';
+  // green (best) -> red (worst)
+  const g = Math.round(190 * (1 - rank) + 40 * rank);
+  const rr = Math.round(40 * (1 - rank) + 200 * rank);
+  return `rgb(${rr},${g},70)`;
+}
+
+const SECTOR_PALETTE = ['#2a78d6','#eb6834','#1baf7a','#eda100','#9b59d0','#d0507a','#4fb0c6','#8a8f00','#c96f9e','#5a8f3c'];
+function sectorColor(s) {
+  if (!s) return '#9a9890';
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return SECTOR_PALETTE[h % SECTOR_PALETTE.length];
+}
+
+function liquidityColor(numTrades) {
+  const t = Math.max(0, Math.min(1, Math.log10((numTrades||0) + 1) / 3));
+  const rr = Math.round(160 * (1 - t) + 40 * t);
+  const g = Math.round(160 * (1 - t) + 120 * t);
+  const b = Math.round(160 * (1 - t) + 220 * t);
+  return `rgb(${rr},${g},${b})`;
+}
+
+function misColor(v) {
+  if (v === null || v === undefined) return '#9a9890';
+  if (v > 300) return '#0ca30c';
+  if (v >= -300) return '#c98a00';
+  return '#d03b3b';
+}
+
+function pdGapColor(v) {
+  if (v === null || v === undefined) return '#9a9890';
+  const bp = v * 10000; // reuse mispricing thresholds on a comparable scale
+  return misColor(bp);
+}
+
+function colorFor(b) {
+  switch (state.color) {
+    case 'mispricing': return misColor(b.mispricing_bp);
+    case 'pdgap': return pdGapColor(b.pd_gap);
+    case 'rating': return ratingColor(b.rating);
+    case 'sector': return sectorColor(b.sector);
+    case 'liquidity': return liquidityColor(b.num_trades);
+    default: return '#2a78d6';
+  }
+}
+
+function tenorToOffer(b, snapDate) {
+  if (!b.offer_date || !snapDate) return null;
+  const off = new Date(b.offer_date), sd = new Date(snapDate);
+  const days = (off - sd) / 86400000;
+  return days > 0 ? days / 365 : null;
+}
+
+const Y_DEFS = {
+  mispricing: { label: 'Недооценка/переоценка, бп', get: b => b.mispricing_bp },
+  ytm: { label: 'YTM, %', get: b => b.ytm_pct },
+  gspread: { label: 'G-спред, бп', get: b => b.g_spread_bp },
+  pdgap: { label: 'PD рынок−PD рейтинг, %', get: b => b.pd_gap !== null && b.pd_gap !== undefined ? b.pd_gap * 100 : null },
+  pdmarket: { label: 'PD по цене рынка, %', get: b => b.pd_market !== null && b.pd_market !== undefined ? b.pd_market * 100 : null },
+};
+const X_DEFS = {
+  moddur: { label: 'Модифицированная дюрация, лет', get: b => b.mod_dur },
+  duration: { label: 'Дюрация, лет', get: b => b.duration_yrs },
+  maturity: { label: 'Срок до погашения, лет', get: b => b.tenor_yrs },
+  offer: { label: 'Срок до оферты, лет', get: (b, snapDate) => tenorToOffer(b, snapDate) },
+};
+
+function sizeFor(b) {
+  if (state.size === 'equal') return 4.5;
+  if (state.size === 'moddur') {
+    const d = b.mod_dur || 0;
+    return 3 + Math.min(9, d * 1.8);
+  }
+  const v = Math.sqrt(Math.max(0, b.volume || 0));
+  return 3 + Math.min(11, v / 250);
+}
+
+function filteredBonds() {
+  const buck = bucket();
+  const snapDate = buck.snap_date;
+  const yDef = Y_DEFS[state.y], xDef = X_DEFS[state.x];
+  return buck.bonds
+    .filter(b => b.ytm_pct !== null && b.ytm_pct <= state.ytmMax)
+    .filter(b => state.misMin <= -1000 || (b.mispricing_bp !== null && b.mispricing_bp >= state.misMin))
+    .map(b => ({ b, xv: xDef.get(b, snapDate), yv: yDef.get(b) }))
+    .filter(p => p.xv !== null && p.xv !== undefined && p.yv !== null && p.yv !== undefined
+                 && isFinite(p.xv) && isFinite(p.yv));
+}
+
+// ---- rf curve interpolation (piecewise-linear, clamped) ----
+function interpRf(tenor) {
+  const pts = DATA.rf_curve;
+  if (!pts || !pts.length) return null;
+  if (tenor <= pts[0].tenor_yrs) return pts[0].rf_pct;
+  if (tenor >= pts[pts.length - 1].tenor_yrs) return pts[pts.length - 1].rf_pct;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], c = pts[i + 1];
+    if (tenor >= a.tenor_yrs && tenor <= c.tenor_yrs) {
+      const t = (tenor - a.tenor_yrs) / (c.tenor_yrs - a.tenor_yrs);
+      return a.rf_pct + t * (c.rf_pct - a.rf_pct);
+    }
+  }
+  return null;
+}
+
+// ================= canvas rendering =================
+const canvas = document.getElementById('chart');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+let plotPoints = []; // {sx, sy, b} for hit-testing
+
+function pad() { return { l: 56, r: 18, t: 18, b: 42 }; }
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(520 * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function niceRange(vals) {
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.08;
+  return [lo - pad, hi + pad];
+}
+
+function draw() {
+  resizeCanvas();
+  const rect = canvas.getBoundingClientRect();
+  const W = rect.width, H = 520;
+  ctx.clearRect(0, 0, W, H);
+  const P = pad();
+  const plotW = W - P.l - P.r, plotH = H - P.t - P.b;
+
+  const pts = filteredBonds();
+  plotPoints = [];
+  const styles = getComputedStyle(document.documentElement);
+  const gridColor = styles.getPropertyValue('--grid').trim() || '#e1e0d9';
+  const textColor = styles.getPropertyValue('--text-secondary').trim() || '#52514e';
+
+  if (!pts.length) {
+    ctx.fillStyle = textColor;
+    ctx.font = '13px system-ui';
+    ctx.fillText('Нет бумаг, удовлетворяющих фильтрам.', P.l, P.t + 20);
+    updateSignalBar([]); updateStats([]); updateLegend();
+    return;
+  }
+
+  const xVals = pts.map(p => p.xv), yVals = pts.map(p => p.yv);
+  const [xLo, xHi] = niceRange(xVals);
+  const [yLo, yHi] = niceRange(yVals);
+  const sx = v => P.l + (v - xLo) / (xHi - xLo) * plotW;
+  const sy = v => P.t + plotH - (v - yLo) / (yHi - yLo) * plotH;
+
+  // gridlines + ticks
+  ctx.strokeStyle = gridColor; ctx.fillStyle = textColor;
+  ctx.font = '10.5px system-ui'; ctx.lineWidth = 1;
+  const NX = 6, NY = 6;
+  for (let i = 0; i <= NX; i++) {
+    const v = xLo + (xHi - xLo) * i / NX;
+    const px = sx(v);
+    ctx.beginPath(); ctx.moveTo(px, P.t); ctx.lineTo(px, P.t + plotH); ctx.stroke();
+    ctx.fillText(v.toFixed(1), px - 10, P.t + plotH + 16);
+  }
+  for (let i = 0; i <= NY; i++) {
+    const v = yLo + (yHi - yLo) * i / NY;
+    const py = sy(v);
+    ctx.beginPath(); ctx.moveTo(P.l, py); ctx.lineTo(P.l + plotW, py); ctx.stroke();
+    ctx.fillText(v.toFixed(0), 4, py + 3);
+  }
+  ctx.save();
+  ctx.translate(14, P.t + plotH / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillText(Y_DEFS[state.y].label, -40, 0);
+  ctx.restore();
+  ctx.fillText(X_DEFS[state.x].label, P.l + plotW / 2 - 60, H - 6);
+
+  // mispricing zone bands
+  if (state.y === 'mispricing') {
+    ctx.fillStyle = 'rgba(12,163,12,0.06)';
+    ctx.fillRect(P.l, P.t, plotW, sy(0) - P.t);
+    ctx.fillStyle = 'rgba(208,59,59,0.06)';
+    ctx.fillRect(P.l, sy(0), plotW, P.t + plotH - sy(0));
+    ctx.fillStyle = '#0ca30c'; ctx.font = 'bold 11px system-ui';
+    ctx.fillText('↗ Недооценка', P.l + 6, P.t + 14);
+    ctx.fillStyle = '#d03b3b';
+    ctx.fillText('↘ Переоценка', P.l + 6, P.t + plotH - 6);
+  }
+
+  const xIsMaturityLike = state.x === 'moddur' || state.x === 'duration' || state.x === 'maturity';
+
+  // OFZ curve overlay
+  if (state.fOfz && state.y === 'ytm' && xIsMaturityLike && DATA.rf_curve && DATA.rf_curve.length) {
+    ctx.save(); ctx.strokeStyle = '#2a78d6'; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    let first = true;
+    for (let xv = xLo; xv <= xHi; xv += (xHi - xLo) / 60) {
+      const rf = interpRf(xv);
+      if (rf === null) continue;
+      const px = sx(xv), py = sy(rf);
+      if (first) { ctx.moveTo(px, py); first = false; } else ctx.lineTo(px, py);
+    }
+    ctx.stroke(); ctx.restore();
+    ctx.fillStyle = '#2a78d6'; ctx.font = '10.5px system-ui';
+    ctx.fillText('ОФЗ (безрисковая)', P.l + plotW - 110, P.t + 12);
+  }
+
+  // Fair value lines per rating tier
+  if (state.fFair && state.y === 'ytm' && xIsMaturityLike && DATA.fair_value_bp_by_tier) {
+    const tierColors = { AA: '#1baf7a', A: '#2a78d6', BBB: '#eda100', BB: '#eb6834' };
+    Object.entries(DATA.fair_value_bp_by_tier).forEach(([tier, fairBp]) => {
+      ctx.save(); ctx.strokeStyle = tierColors[tier] || '#9a9890';
+      ctx.setLineDash([2, 3]); ctx.lineWidth = 1.2;
+      ctx.beginPath(); let first = true;
+      for (let xv = xLo; xv <= xHi; xv += (xHi - xLo) / 60) {
+        const rf = interpRf(xv);
+        if (rf === null) continue;
+        const fairYtm = rf + fairBp / 100;
+        const px = sx(xv), py = sy(fairYtm);
+        if (first) { ctx.moveTo(px, py); first = false; } else ctx.lineTo(px, py);
+      }
+      ctx.stroke(); ctx.restore();
+    });
+  }
+
+  // PD isolines
+  if (state.fPdIso && state.y === 'ytm' && state.x === 'moddur') {
+    [0.05, 0.10, 0.20, 0.40].forEach(pd => {
+      ctx.save(); ctx.strokeStyle = '#9a5fd0'; ctx.setLineDash([1, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); let first = true;
+      for (let xv = xLo; xv <= xHi; xv += (xHi - xLo) / 60) {
+        const rf = interpRf(xv);
+        if (rf === null) continue;
+        const ytm = rf + (pd / (1 - RECOVERY)) * 100;
+        const px = sx(xv), py = sy(ytm);
+        if (py < P.t || py > P.t + plotH) continue;
+        if (first) { ctx.moveTo(px, py); first = false; } else ctx.lineTo(px, py);
+      }
+      ctx.stroke(); ctx.restore();
+      ctx.fillStyle = '#9a5fd0'; ctx.font = '9.5px system-ui';
+      ctx.fillText(`PD ${Math.round(pd * 100)}%`, P.l + plotW - 42, sy(interpRf(xHi) + (pd / (1 - RECOVERY)) * 100));
+    });
+  }
+
+  // points
+  pts.forEach(({ b, xv, yv }) => {
+    const px = sx(xv), py = sy(yv);
+    if (px < P.l || px > P.l + plotW || py < P.t || py > P.t + plotH) return;
+    const r = sizeFor(b);
+    const col = colorFor(b);
+
+    if (b.mispricing_bp !== null && b.mispricing_bp > 1000) {
+      ctx.save(); ctx.shadowColor = '#0ca30c'; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(px, py, r, 0, 7); ctx.strokeStyle = '#0ca30c'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.restore();
+    }
+    if (b.pd_gap !== null && b.pd_gap > 0.10) {
+      ctx.save(); ctx.shadowColor = '#d03b3b'; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(px, py, r + 2, 0, 7); ctx.strokeStyle = '#d03b3b'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.beginPath(); ctx.arc(px, py, r, 0, 7);
+    ctx.fillStyle = col; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.6; ctx.stroke();
+
+    if (state.fStar && b.in_watchlist) {
+      ctx.fillStyle = '#111'; ctx.font = 'bold 10px system-ui';
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.strokeText('★', px + r + 1, py - r);
+      ctx.fillText('★', px + r + 1, py - r);
+    }
+
+    plotPoints.push({ sx: px, sy: py, b });
+  });
+
+  updateSignalBar(pts.map(p => p.b));
+  updateStats(pts.map(p => p.b));
+  updateLegend();
+}
+
+// ================= signal bar / stats / legend =================
+function updateSignalBar(bonds) {
+  // signal_excluded bonds (commodity-linked / near-maturity-thin) have
+  // mispricing_bp already nulled by the pipeline, so they'd naturally fall
+  // out of up/flat/down -- but a RATED excluded bond would then vanish from
+  // every bucket instead of landing in "no signal". Bucket by signal
+  // availability first, not just rating presence.
+  const noSignal = bonds.filter(b => !b.rating || b.signal_excluded);
+  const signaled = bonds.filter(b => b.rating && !b.signal_excluded);
+  const up = signaled.filter(b => b.mispricing_bp !== null && b.mispricing_bp > 300).length;
+  const flat = signaled.filter(b => b.mispricing_bp !== null && b.mispricing_bp >= -300 && b.mispricing_bp <= 300).length;
+  const down = signaled.filter(b => b.mispricing_bp !== null && b.mispricing_bp < -300).length;
+  document.getElementById('signalBar').innerHTML = `
+    <div class="signal-card signal-up"><div class="n">${up}</div><div class="l">↗ Недооценка</div></div>
+    <div class="signal-card signal-flat"><div class="n">${flat}</div><div class="l">→ Справедливо</div></div>
+    <div class="signal-card signal-down"><div class="n">${down}</div><div class="l">↘ Переоценка</div></div>
+    <div class="signal-card signal-none"><div class="n">${noSignal.length}</div><div class="l">— Нет рейтинга/сигнала</div></div>
+  `;
+}
+
+function median(arr) {
+  if (!arr.length) return null;
+  const s = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function updateStats(bonds) {
+  const ytms = bonds.map(b => b.ytm_pct).filter(v => v !== null && v !== undefined);
+  const pdms = bonds.map(b => b.pd_market).filter(v => v !== null && v !== undefined);
+  const wl = bonds.filter(b => b.in_watchlist).length;
+  document.getElementById('statsBar').innerHTML = `
+    <div class="stat-tile"><div class="value">${bonds.length}</div><div class="label">Показано</div></div>
+    <div class="stat-tile"><div class="value">${ytms.length ? median(ytms).toFixed(1) + '%' : '—'}</div><div class="label">Медиана YTM</div></div>
+    <div class="stat-tile"><div class="value">${pdms.length ? (median(pdms) * 100).toFixed(1) + '%' : '—'}</div><div class="label">Медиана PD (рынок)</div></div>
+    <div class="stat-tile"><div class="value">${wl}</div><div class="label">В вотчлисте</div></div>
+  `;
+}
+
+function updateLegend() {
+  const el = document.getElementById('legendRow');
+  let items = [];
+  if (state.color === 'mispricing') {
+    items = [['#0ca30c','> +300бп недооценка'], ['#c98a00','±300бп справедливо'], ['#d03b3b','< -300бп переоценка'], ['#9a9890','нет рейтинга']];
+  } else if (state.color === 'pdgap') {
+    items = [['#0ca30c','рынок пессимистичнее рейтинга'], ['#c98a00','близко к рейтингу'], ['#d03b3b','рынок оптимистичнее рейтинга'], ['#9a9890','нет рейтинга']];
+  } else if (state.color === 'rating') {
+    items = [['rgb(40,190,70)','AAA/AA'], ['rgb(120,160,70)','A'], ['rgb(190,130,70)','BBB'], ['rgb(200,70,70)','BB и ниже']];
+  } else if (state.color === 'sector') {
+    const buck = bucket();
+    const sectors = [...new Set(buck.bonds.map(b => b.sector).filter(Boolean))].slice(0, 8);
+    items = sectors.map(s => [sectorColor(s), s]);
+  } else if (state.color === 'liquidity') {
+    items = [['rgb(160,160,160)','мало сделок'], ['rgb(40,120,220)','активно торгуется']];
+  }
+  el.innerHTML = items.map(([c, l]) =>
+    `<div class="legend-item"><span class="swatch" style="background:${c}"></span>${l}</div>`).join('')
+    + `<div class="legend-item"><span style="color:#0ca30c">◎</span> зелёное кольцо: мисценка &gt; 1000бп</div>`
+    + `<div class="legend-item"><span style="color:#d03b3b">◎</span> красное кольцо: PD-разрыв &gt; 10%</div>`;
+}
+
+// ================= tooltip =================
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  let best = null, bestD = 12;
+  plotPoints.forEach(p => {
+    const d = Math.hypot(p.sx - mx, p.sy - my);
+    if (d < bestD) { bestD = d; best = p; }
+  });
+  if (!best) { tooltip.classList.remove('show'); return; }
+  const b = best.b;
+  const pdR = b.pd_rating !== null && b.pd_rating !== undefined ? b.pd_rating * 100 : null;
+  const pdM = b.pd_market !== null && b.pd_market !== undefined ? b.pd_market * 100 : null;
+  const gapPct = (pdR !== null && pdM !== null) ? pdM - pdR : null;
+  const maxBar = Math.max(pdR || 0, pdM || 0, 1);
+  const badgeColor = b.signal_excluded ? '#9a9890' : misColor(b.mispricing_bp);
+  const badgeText = b.signal_excluded
+    ? `⚠ сигнал недоступен: ${b.yield_source === 'commodity_linked' ? 'товарная/структурная бумага' : 'тонкий срез у погашения'} — G-спред структурно некорректен для этого инструмента`
+    : b.mispricing_bp === null ? 'нет рейтинга — сигнал недоступен'
+    : b.mispricing_bp > 300 ? 'недооценка' : b.mispricing_bp >= -300 ? 'справедливо оценена' : 'переоценка';
+  tooltip.innerHTML = `
+    <b>${b.short_name || b.emitent_title || b.secid}</b>
+    <span class="muted">${b.sector || '—'} · ${b.rating || 'без рейтинга'}</span>
+    <div style="margin-top:6px">YTM: ${b.ytm_pct != null ? b.ytm_pct.toFixed(1) + '%' : '—'} &nbsp; G-спред: ${b.g_spread_bp != null ? Math.round(b.g_spread_bp) + 'бп' : '—'}</div>
+    <div>Недооценка: ${b.signal_excluded ? 'н/д (сигнал исключён)' : b.mispricing_bp != null ? (b.mispricing_bp > 0 ? '+' : '') + Math.round(b.mispricing_bp) + 'бп' : 'н/д'}</div>
+    <div>Мод. дюрация: ${b.mod_dur != null ? b.mod_dur.toFixed(2) + ' лет' : '—'}</div>
+    ${pdR !== null || pdM !== null ? `
+    <div class="pd-row"><span class="pd-label">PD (рейтинг)</span>
+      <span class="pd-bar-track"><span class="pd-bar-fill" style="width:${pdR!=null?Math.min(100,pdR/maxBar*100):0}%;background:#2a78d6"></span></span>
+      <span class="pd-val">${pdR!=null?pdR.toFixed(1)+'%':'—'}</span></div>
+    <div class="pd-row"><span class="pd-label">PD (рынок)</span>
+      <span class="pd-bar-track"><span class="pd-bar-fill" style="width:${pdM!=null?Math.min(100,pdM/maxBar*100):0}%;background:#d03b3b"></span></span>
+      <span class="pd-val">${pdM!=null?pdM.toFixed(1)+'%':'—'}</span></div>
+    <div class="pd-row"><span class="pd-label">Разрыв</span>
+      <span class="pd-bar-track"><span class="pd-bar-fill" style="width:${gapPct!=null?Math.min(100,Math.abs(gapPct)/maxBar*100):0}%;background:${gapPct>0?'#0ca30c':'#d03b3b'}"></span></span>
+      <span class="pd-val">${gapPct!=null?(gapPct>0?'+':'')+gapPct.toFixed(1)+'%':'—'}</span></div>` : ''}
+    <div class="signal-badge" style="background:${badgeColor};color:#fff">${badgeText}</div>
+  `;
+  tooltip.style.left = (e.clientX + 14) + 'px';
+  tooltip.style.top = (e.clientY + 14) + 'px';
+  tooltip.classList.add('show');
+});
+canvas.addEventListener('mouseleave', () => tooltip.classList.remove('show'));
+
+// ================= controls wiring =================
+document.getElementById('timeToggle').addEventListener('click', (e) => {
+  const btn = e.target.closest('.time-btn');
+  if (!btn) return;
+  state.timeKey = btn.dataset.key;
+  [...document.querySelectorAll('.time-btn')].forEach(b => b.classList.toggle('active', b === btn));
+  renderTimeNote();
+  draw();
+});
+document.getElementById('selY').addEventListener('change', e => { state.y = e.target.value; draw(); });
+document.getElementById('selX').addEventListener('change', e => { state.x = e.target.value; draw(); });
+document.getElementById('selColor').addEventListener('change', e => { state.color = e.target.value; draw(); });
+document.getElementById('selSize').addEventListener('change', e => { state.size = e.target.value; draw(); });
+document.getElementById('fOfz').addEventListener('change', e => { state.fOfz = e.target.checked; draw(); });
+document.getElementById('fFair').addEventListener('change', e => { state.fFair = e.target.checked; draw(); });
+document.getElementById('fPdIso').addEventListener('change', e => { state.fPdIso = e.target.checked; draw(); });
+document.getElementById('fStar').addEventListener('change', e => { state.fStar = e.target.checked; draw(); });
+document.getElementById('sMis').addEventListener('input', e => {
+  state.misMin = +e.target.value;
+  document.getElementById('lblMis').textContent = state.misMin <= -1000 ? 'выкл' : (state.misMin > 0 ? '+' : '') + state.misMin + 'бп';
+  draw();
+});
+document.getElementById('sYtm').addEventListener('input', e => {
+  state.ytmMax = +e.target.value;
+  document.getElementById('lblYtm').textContent = state.ytmMax + '%';
+  draw();
+});
+window.addEventListener('resize', draw);
+
+function renderTimeNote() {
+  const buck = bucket();
+  const note = document.getElementById('timeNote');
+  if (!buck.snap_date) { note.textContent = 'Нет данных.'; return; }
+  if (buck.no_history) {
+    note.textContent = `Недостаточно накопленной истории для этого периода — показан последний доступный снимок (${buck.snap_date}).`;
+  } else if (state.timeKey !== 'universe_now') {
+    note.textContent = `Снимок на ${buck.snap_date}.`;
+  } else {
+    note.textContent = `Снимок на ${buck.snap_date}.`;
+  }
+}
+
+document.getElementById('subtitle').textContent =
+  `${(DATA.universe_now.bonds || []).length} бумаг в последнем скрининге универсума`;
+
+renderTimeNote();
+draw();
+</script>
+</body>
+</html>

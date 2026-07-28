@@ -1,0 +1,1349 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hybond — Кредитный дашборд ВДО</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1: #2a78d6; /* blue */
+    --series-2: #eb6834; /* orange */
+    --series-3: #1baf7a; /* aqua */
+    --series-4: #eda100; /* yellow */
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --success-text: #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+      --good: #0ca30c;
+      --warning: #fab219;
+      --serious: #ec835a;
+      --critical: #e66767;
+      --success-text: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #e66767;
+    --success-text: #0ca30c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 80px; }
+  header.top { display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-secondary); font-size: 13px; }
+  .theme-toggle {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+  }
+  section { margin-top: 34px; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  .section-note { color: var(--text-secondary); font-size: 12.5px; margin: 0 0 14px; max-width: 760px; }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .banner {
+    border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin-bottom: 14px;
+    border: 1px solid var(--border); background: color-mix(in srgb, var(--warning) 12%, var(--surface-1));
+    color: var(--text-primary);
+  }
+  .banner b { color: var(--text-primary); }
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat-tile {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .stat-tile .value { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat-tile .label { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+  svg text { fill: var(--text-secondary); font-size: 11px; }
+  svg .value-label { fill: var(--text-primary); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .bar { transition: opacity .1s; }
+  .bar:hover { opacity: 0.85; }
+  .grid-line { stroke: var(--grid); stroke-width: 1; }
+  .baseline { stroke: var(--baseline); stroke-width: 1; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 10px 0 4px; font-size: 12px; color: var(--text-secondary); }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .tooltip {
+    position: fixed; pointer-events: none; z-index: 50;
+    background: var(--text-primary); color: var(--surface-1);
+    padding: 8px 10px; border-radius: 8px; font-size: 12px; max-width: 260px;
+    opacity: 0; transition: opacity .08s; line-height: 1.45;
+  }
+  .tooltip b { display:block; margin-bottom:2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--text-muted); font-weight: 500; font-size: 11.5px; text-transform: uppercase; letter-spacing: .02em;
+       cursor: pointer; user-select: none; white-space: nowrap; }
+  th:hover { color: var(--text-primary); }
+  tr.issuer-row { cursor: pointer; }
+  tr.issuer-row:hover { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
+  tr.detail-row td { padding: 0; border-bottom: 1px solid var(--border); }
+  .detail-inner { padding: 14px 16px 18px 34px; background: color-mix(in srgb, var(--text-primary) 3%, transparent); display: none; }
+  .detail-inner.open { display: block; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px;
+    font-size: 11.5px; font-weight: 600; white-space: nowrap;
+  }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .badge.tier-anchor { color: var(--success-text); }
+  .badge.tier-core { color: var(--series-1); }
+  .badge.tier-watch { color: #9a6a00; }
+  .badge.tier-stress { color: var(--critical); }
+  :root[data-theme="dark"] .badge.tier-watch, @media (prefers-color-scheme:dark){ .badge.tier-watch{ color: var(--warning);} }
+  .pillar-mini { display: flex; gap: 3px; align-items: flex-end; height: 22px; width: 70px; }
+  .pillar-mini .seg { width: 14px; border-radius: 2px 2px 0 0; background: var(--grid); }
+  .mini-label { font-size: 10px; color: var(--text-muted); text-align:center; margin-top:2px; }
+  .pillar-panel { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1); }
+  .pillar-panel-title { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .pillar-bars { display: grid; grid-template-columns: 90px 1fr 32px; row-gap: 6px; column-gap: 8px; align-items: center; margin-top: 8px; }
+  .pillar-bar-label { font-size: 11.5px; color: var(--text-secondary); }
+  .pillar-bar-track { height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; }
+  .pillar-bar-fill { height: 100%; border-radius: 4px; }
+  .pillar-bar-value { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--text-primary); text-align: right; }
+  .pillar-ratios { display: flex; gap: 20px; margin-top: 10px; font-size: 12.5px; }
+  .pillar-ratios b { font-variant-numeric: tabular-nums; }
+  .pillar-note-icon { cursor: help; color: var(--warning); font-size: 13px; }
+  .pillar-missing { margin-top: 10px; color: var(--text-muted); font-size: 12.5px; }
+  .events-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .events-list li { border-left: 3px solid var(--grid); padding: 4px 0 4px 10px; font-size: 12.5px; }
+  .thesis-box { margin-top: 10px; font-size: 12.5px; }
+  .thesis-box dt { color: var(--text-muted); font-size: 11px; text-transform: uppercase; margin-top: 8px; }
+  .thesis-box dd { margin: 2px 0 0; }
+  .synthetic-tag {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--warning);
+    border: 1px solid var(--warning); border-radius: 5px; padding: 1px 5px; margin-left: 6px;
+  }
+  footer { margin-top: 50px; color: var(--text-muted); font-size: 11.5px; text-align: center; }
+  .sort-arrow { opacity: .5; font-size: 9px; margin-left: 3px; }
+  .flag-chip { display:inline-block; background: color-mix(in srgb, var(--critical) 12%, var(--surface-1));
+    color: var(--critical); border-radius: 6px; padding: 2px 7px; font-size: 11px; margin-right:4px; }
+  .table-scroll { overflow-x: auto; }
+
+  /* ---- tabs ---- */
+  .tab-bar { display: flex; gap: 4px; margin: 18px 0 20px; border-bottom: 1px solid var(--border); }
+  .tab-btn {
+    background: none; border: none; padding: 10px 18px; font-size: 14px; font-weight: 600;
+    color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab-btn:hover { color: var(--text-primary); }
+  .tab-btn.active { color: var(--series-1); border-bottom-color: var(--series-1); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ---- universe screener ---- */
+  .uni-stats { display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary);
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
+  .uni-stats b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .uni-filters {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px 20px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px;
+  }
+  .uni-filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .uni-filter-label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .02em;
+    display: flex; justify-content: space-between; }
+  .uni-filter-label .val { color: var(--text-primary); font-variant-numeric: tabular-nums; font-weight: 600; text-transform: none; }
+  .uni-filter-group input[type="range"] { width: 100%; }
+  .uni-range-pair { display: flex; align-items: center; gap: 6px; }
+  .uni-range-pair input[type="range"] { flex: 1; }
+  .uni-checks { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .uni-checks label { display: flex; align-items: center; gap: 4px; font-size: 12.5px; cursor: pointer; }
+  .uni-toggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; }
+  .uni-toggle-switch {
+    width: 32px; height: 18px; border-radius: 9px; background: var(--grid); position: relative;
+    transition: background .12s; flex-shrink: 0;
+  }
+  .uni-toggle-switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--surface-1); transition: left .12s; box-shadow: 0 1px 2px rgba(0,0,0,.2);
+  }
+  .uni-toggle input { display: none; }
+  .uni-toggle input:checked + .uni-toggle-switch { background: var(--series-1); }
+  .uni-toggle input:checked + .uni-toggle-switch::after { left: 16px; }
+  .uni-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .uni-btn {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px;
+    font-size: 12.5px; font-weight: 600; color: var(--text-primary); cursor: pointer;
+  }
+  .uni-btn:hover { border-color: var(--series-1); color: var(--series-1); }
+  .uni-star { color: var(--warning); }
+  .uni-caveat { font-size: 11px; color: var(--text-muted); margin: 6px 0 0; }
+  #universeTable th { cursor: pointer; white-space: nowrap; }
+  #universeTable td { white-space: nowrap; font-size: 12.5px; }
+  .uni-empty { padding: 30px; text-align: center; color: var(--text-muted); }
+
+  /* --- CBR tab --- */
+  .cbr-statebar { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 16px; margin-bottom: 16px; font-size: 13px; }
+  .cbr-statebar .stat b { font-variant-numeric: tabular-nums; }
+  .cbr-signal-badge { padding: 4px 10px; border-radius: 7px; font-weight: 700; font-size: 12.5px; color: #fff; }
+  .cbr-signal-shorten { background: var(--critical); }
+  .cbr-signal-extend { background: var(--good); }
+  .cbr-signal-neutral { background: var(--text-muted); }
+
+  .cbr-timeline-wrap { overflow-x: auto; padding: 20px 6px 6px; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 12px; margin-bottom: 14px; }
+  .cbr-timeline { display: flex; gap: 4px; min-width: max-content; }
+  .cbr-node { display: flex; flex-direction: column; align-items: center; width: 92px;
+    cursor: pointer; padding: 4px 2px; border-radius: 8px; }
+  .cbr-node:hover { background: var(--page); }
+  .cbr-node.active { background: color-mix(in srgb, var(--series-1) 12%, var(--surface-1)); }
+  .cbr-node-rate { font-size: 12px; font-weight: 700; height: 16px; }
+  .cbr-node-circle { width: 22px; height: 22px; border-radius: 50%; margin: 4px 0 2px; position: relative; }
+  .cbr-node-circle.hollow { background: transparent; border: 2px solid var(--baseline); }
+  .cbr-node-star { font-size: 11px; color: var(--warning); height: 12px; line-height: 1; }
+  .cbr-node-change { font-size: 11px; color: var(--text-secondary); height: 14px; }
+  .cbr-node-date { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; text-align: center; }
+  .cbr-node-diffbadge { font-size: 13px; height: 16px; }
+
+  .cbr-detail-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 16px; display: none; }
+  .cbr-detail-card.show { display: block; }
+  .cbr-detail-card h3 { margin: 0 0 8px; font-size: 15px; }
+  .cbr-detail-card .press-excerpt { font-size: 12.5px; color: var(--text-secondary); line-height: 1.55;
+    border-left: 3px solid var(--border); padding-left: 10px; margin: 8px 0; }
+  .cbr-detail-metrics { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; margin: 8px 0; }
+  .cbr-detail-metrics span b { font-variant-numeric: tabular-nums; }
+  .cbr-detail-note { font-size: 13px; margin: 8px 0; }
+  .cbr-detail-card a { color: var(--series-1); font-size: 12.5px; }
+
+  #cbrChart { width: 100%; height: 320px; display: block; }
+  .cbr-chart-card { position: relative; }
+
+  .cbr-notif-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .cbr-notif-card { background: var(--surface-1); border: 1px solid var(--border); border-left: 4px solid var(--baseline);
+    border-radius: 10px; padding: 12px 14px; cursor: pointer; font-size: 12.5px; }
+  .cbr-notif-card.sig-shorten { border-left-color: var(--critical); }
+  .cbr-notif-card.sig-extend { border-left-color: var(--good); }
+  .cbr-notif-card.sig-neutral { border-left-color: var(--text-muted); }
+  .cbr-notif-head { display: flex; justify-content: space-between; align-items: baseline;
+    font-weight: 600; margin-bottom: 6px; font-size: 12px; }
+  .cbr-notif-note { color: var(--text-secondary); line-height: 1.5; }
+  .cbr-notif-note.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>hybond — Кредитный дашборд ВДО</h1>
+      <div class="subtitle" id="subtitle"></div>
+    </div>
+    <button class="theme-toggle" id="themeToggle">Тема: авто</button>
+  </header>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="watchlist">Вотчлист</button>
+    <button class="tab-btn" data-tab="universe">Универсум</button>
+    <button class="tab-btn" data-tab="marketmap">Карта рынка</button>
+    <button class="tab-btn" data-tab="cbr">ЦБ РФ</button>
+  </div>
+
+  <div class="tab-panel active" id="tab-watchlist">
+  <section id="sec-notes"></section>
+
+  <section id="sec-stats">
+    <h2>Обзор</h2>
+    <div class="stat-row" id="statRow"></div>
+  </section>
+
+  <section id="sec-spread">
+    <h2>G-спред скрининг (день 1, реальные данные MOEX/CBR)</h2>
+    <p class="section-note">G-спред — надбавка доходности облигации к безрисковой кривой ОФЗ (CBR ZCYC) на сопоставимый срок, в базисных пунктах (100 бп = 1 п.п.). Чем выше спред — тем больше рынок закладывает риска дефолта/реструктуризации в цену. Флоатеры с ещё не зафиксированным следующим купоном исключены из расчёта доходности (см. примечание выше) — поэтому не все облигации из списка наблюдения показаны.</p>
+    <div class="card"><div id="spreadChart"></div></div>
+  </section>
+
+  <section id="sec-wall">
+    <h2>Календарь погашений (maturity wall), 24 месяца</h2>
+    <p class="section-note">Суммарные купонные и амортизационные выплаты по облигациям из списка наблюдения, по месяцам. Единицы — ₽ на 1000 номинала, просуммировано по всем облигациям (не портфель с реальными объёмами) — показывает форму графика нагрузки, не абсолютную сумму долга.</p>
+    <div class="card"><div id="wallChart"></div></div>
+  </section>
+
+  <section id="sec-pillars">
+    <h2>Шесть столпов кредитного качества — сравнение по эмитентам</h2>
+    <div class="banner"><b>Демо-данные.</b> Оценки по столпам считаются реальной функцией <code>compute_pillars()</code>, но входные финансовые показатели — синтетические (сгенерированы по risk_tier из watchlist.json), не из ГИР БО. Для реальных данных нужен ключ parser-api.com и запуск <code>hybond financials</code>.</div>
+    <p class="section-note">Каждый столп — балл 0–100, где выше = безопаснее. Leverage — долг/EBIT и покрытие процентов. Liquidity — текущая ликвидность и покрытие краткосрочного долга кэшем. Refinancing — доля краткосрочного долга в общем (выше доля = больше риска рефинансирования одномоментно). Operations — чистая маржа.</p>
+    <div class="card"><div id="pillarChart"></div></div>
+  </section>
+
+  <section id="sec-table">
+    <h2>Эмитенты — сводная таблица</h2>
+    <p class="section-note">Клик по строке разворачивает детали: события, тезис, флаги детектора изменений. Сортировка — клик по заголовку столбца.</p>
+    <div class="card table-scroll"><table id="issuerTable"></table></div>
+  </section>
+
+  <section id="sec-events">
+    <h2>Лента событий</h2>
+    <div class="banner"><b>Демо-данные.</b> События сгенерированы скриптом <code>scripts/seed_demo_slice34.py</code> по риск-тиру эмитента, а не получены сканером e-disclosure.ru (для этого нужен ChromeDriver + Selenium, недоступны в этом окружении). Категории и структура — по реальной таксономии <code>skills/hy-event-classify/references/taxonomy.md</code>.</div>
+    <div class="card"><div id="eventsTimeline"></div></div>
+  </section>
+  </div>
+
+  <div class="tab-panel" id="tab-universe">
+    <section id="sec-universe">
+      <h2>Универсум облигаций — скринер</h2>
+      <p class="section-note">Полный список рублёвых корпоративных облигаций MOEX (не только вотчлист): скрининг по ликвидности и сроку, G-спред и, где известен рейтинг эмитента, мисценка к обоснованному спреду. Собрано <code>hybond universe</code> (<code>src/hybond/universe_pipeline.py</code>).</p>
+      <div class="banner" id="uniSnapDateBanner"></div>
+
+      <div class="uni-filters" id="uniFilters">
+        <div class="uni-filter-group">
+          <div class="uni-filter-label"><span>YTM, %</span><span class="val" id="lblYtm"></span></div>
+          <div class="uni-range-pair">
+            <input type="range" id="fYtmMin" min="0" max="80" step="1" value="10">
+            <input type="range" id="fYtmMax" min="0" max="80" step="1" value="50">
+          </div>
+        </div>
+        <div class="uni-filter-group">
+          <div class="uni-filter-label"><span>G-спред, бп</span><span class="val" id="lblGsp"></span></div>
+          <div class="uni-range-pair">
+            <input type="range" id="fGspMin" min="0" max="5000" step="50" value="100">
+            <input type="range" id="fGspMax" min="0" max="5000" step="50" value="3000">
+          </div>
+        </div>
+        <div class="uni-filter-group">
+          <div class="uni-filter-label"><span>Дюрация, лет</span><span class="val" id="lblDur"></span></div>
+          <div class="uni-range-pair">
+            <input type="range" id="fDurMin" min="0" max="10" step="0.25" value="0">
+            <input type="range" id="fDurMax" min="0" max="10" step="0.25" value="5">
+          </div>
+        </div>
+        <div class="uni-filter-group">
+          <div class="uni-filter-label"><span>Мисценка, бп</span><span class="val" id="lblMis"></span></div>
+          <div class="uni-range-pair">
+            <input type="range" id="fMisMin" min="-500" max="5000" step="50" value="-500">
+            <input type="range" id="fMisMax" min="-500" max="5000" step="50" value="5000">
+          </div>
+        </div>
+        <div class="uni-filter-group">
+          <div class="uni-filter-label"><span>Сделок сегодня, мин.</span><span class="val" id="lblTrades"></span></div>
+          <input type="range" id="fTrades" min="0" max="50" step="1" value="1">
+        </div>
+        <div class="uni-filter-group">
+          <div class="uni-filter-label">Листинг</div>
+          <div class="uni-checks" id="fListing">
+            <label><input type="checkbox" value="1" checked> 1</label>
+            <label><input type="checkbox" value="2" checked> 2</label>
+            <label><input type="checkbox" value="3" checked> 3</label>
+          </div>
+        </div>
+        <div class="uni-filter-group">
+          <div class="uni-filter-label">Тип купона</div>
+          <div class="uni-checks" id="fCoupon">
+            <label><input type="checkbox" value="fixed" checked> Фикс</label>
+            <label><input type="checkbox" value="floater" checked> Флоатер</label>
+          </div>
+          <p class="uni-caveat">Тип купона — эвристика (COUPONPERCENT в мастер-данных MOEX), не точная классификация: надёжно требует bondization по каждой бумаге, что скринер намеренно не делает.</p>
+        </div>
+        <div class="uni-filter-group">
+          <div class="uni-filter-label">Рейтинг</div>
+          <div class="uni-checks" id="fRating">
+            <label><input type="checkbox" value="AAA" checked> AAA</label>
+            <label><input type="checkbox" value="AA" checked> AA</label>
+            <label><input type="checkbox" value="A" checked> A</label>
+            <label><input type="checkbox" value="BBB" checked> BBB</label>
+            <label><input type="checkbox" value="BB" checked> BB</label>
+            <label><input type="checkbox" value="B" checked> B</label>
+            <label><input type="checkbox" value="CCC" checked> CCC</label>
+            <label><input type="checkbox" value="none" checked> Нет</label>
+          </div>
+        </div>
+        <div class="uni-filter-group">
+          <label class="uni-toggle"><input type="checkbox" id="fQualified"><span class="uni-toggle-switch"></span>Показывать для квал. инвесторов</label>
+          <label class="uni-toggle"><input type="checkbox" id="fWatchlistStar"><span class="uni-toggle-switch"></span>Отметить ★ бумаги из вотчлиста</label>
+        </div>
+      </div>
+
+      <div class="uni-actions">
+        <div class="uni-stats" id="uniStats"></div>
+        <button class="uni-btn" id="uniExportCsv">Экспорт CSV</button>
+      </div>
+
+      <div class="card table-scroll"><table id="universeTable"></table></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" id="tab-marketmap">
+    <section id="sec-marketmap">
+      <h2>Карта рынка ВДО</h2>
+      <p class="section-note">Тот же снимок универсума, что и вкладка «Универсум», но как scatter-карта: недооценка/переоценка, PD-разрыв, дюрация, ликвидность. Отдельный самодостаточный файл (<code>dashboard/market_map.html</code>, собран из <code>market_map_template.html</code> тем же <code>scripts/build_dashboard.py</code>) — встроен здесь через iframe, а не задублирован, чтобы карта работала и как отдельная страница.</p>
+      <div class="card" style="padding:0; overflow:hidden;">
+        <iframe src="market_map.html" style="width:100%; height:1400px; border:0; display:block;" title="Карта рынка ВДО"></iframe>
+      </div>
+    </section>
+  </div>
+
+  <div class="tab-panel" id="tab-cbr">
+    <section id="sec-cbr">
+      <h2>Ключевая ставка ЦБ РФ</h2>
+      <p class="section-note">Заседания Совета директоров Банка России по ключевой ставке — решения, прогнозы, сравнение заседание-к-заседанию. Данные собраны <code>src/hybond/cbr_tracker.py</code> напрямую с cbr.ru (не LLM); сигнал портфелю и текст сравнения — детерминированные (см. <code>cbr_tracker.compute_diff</code>/<code>generate_diff_note</code>), не LLM-анализ.</p>
+
+      <div class="cbr-statebar" id="cbrStateBar"></div>
+
+      <div class="cbr-timeline-wrap">
+        <div class="cbr-timeline" id="cbrTimeline"></div>
+      </div>
+
+      <div class="cbr-detail-card" id="cbrDetailCard"></div>
+
+      <div class="card cbr-chart-card">
+        <canvas id="cbrChart"></canvas>
+        <div class="legend-row" id="cbrChartLegend"></div>
+      </div>
+
+      <h2 style="margin-top:26px;">Последние изменения</h2>
+      <div class="cbr-notif-grid" id="cbrNotifGrid"></div>
+    </section>
+  </div>
+
+  <footer>
+    hybond dashboard — сгенерировано <span id="genTime"></span>. Собрано из data/dashboard_data.json (scripts/export_dashboard_data.py).
+  </footer>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script id="dashboard-data" type="application/json">/*__DASHBOARD_DATA__*/</script>
+<script>
+const DATA = JSON.parse(document.getElementById('dashboard-data').textContent);
+const tooltip = document.getElementById('tooltip');
+
+function showTip(evt, html) {
+  tooltip.innerHTML = html;
+  tooltip.style.opacity = 1;
+  const x = evt.clientX + 14, y = evt.clientY + 14;
+  tooltip.style.left = Math.min(x, window.innerWidth - 280) + 'px';
+  tooltip.style.top = Math.min(y, window.innerHeight - 100) + 'px';
+}
+function hideTip() { tooltip.style.opacity = 0; }
+
+// ---------- theme toggle ----------
+const themeBtn = document.getElementById('themeToggle');
+function applyTheme(mode) {
+  if (mode === 'auto') { document.documentElement.removeAttribute('data-theme'); themeBtn.textContent = 'Тема: авто'; }
+  else { document.documentElement.setAttribute('data-theme', mode); themeBtn.textContent = 'Тема: ' + (mode === 'dark' ? 'тёмная' : 'светлая'); }
+  localStorage.setItem('hybond-theme', mode);
+}
+themeBtn.addEventListener('click', () => {
+  const cur = localStorage.getItem('hybond-theme') || 'auto';
+  const next = cur === 'auto' ? 'dark' : cur === 'dark' ? 'light' : 'auto';
+  applyTheme(next);
+});
+applyTheme(localStorage.getItem('hybond-theme') || 'auto');
+
+// ---------- header / notes ----------
+document.getElementById('subtitle').textContent =
+  `День 1 (реальные данные): ${DATA.day1_snap_date}  ·  День 2 (демо для движка сравнения): ${DATA.day2_snap_date}  ·  ${DATA.issuers.length} эмитентов в списке наблюдения`;
+document.getElementById('genTime').textContent = DATA.generated_at || '';
+
+const notesEl = document.getElementById('sec-notes');
+notesEl.innerHTML = `
+  <div class="banner"><b>О данных (Slice 1/2).</b> ${DATA.data_notes.slice1_slice2}</div>
+  <div class="banner"><b>О данных (Slice 3).</b> ${DATA.data_notes.slice3}</div>
+  <div class="banner"><b>О данных (Slice 4).</b> ${DATA.data_notes.slice4}</div>
+`;
+
+// ---------- stat tiles ----------
+const pricedBonds = DATA.issuers.flatMap(i => i.bonds).filter(b => b.ytm_pct !== null);
+const totalBonds = DATA.issuers.flatMap(i => i.bonds).length;
+const attentionToday = DATA.issuers.filter(i => i.flags_today && i.flags_today.length).length;
+const totalEvents = DATA.issuers.reduce((s, i) => s + (i.events ? i.events.length : 0), 0);
+const avgSpread = pricedBonds.length
+  ? Math.round(pricedBonds.reduce((s, b) => s + (b.g_spread_bp || 0), 0) / pricedBonds.length)
+  : 0;
+const stats = [
+  ['Эмитентов в списке', DATA.issuers.length],
+  ['Облигаций всего / с ценой', `${totalBonds} / ${pricedBonds.length}`],
+  ['Средний G-спред', avgSpread + ' бп'],
+  ['Эмитентов с флагом на день 2', attentionToday],
+  ['Событий в ленте (демо)', totalEvents],
+];
+document.getElementById('statRow').innerHTML = stats.map(([label, value]) => `
+  <div class="stat-tile"><div class="value">${value}</div><div class="label">${label}</div></div>
+`).join('');
+
+// ---------- tier / severity / status color helpers ----------
+const TIER_COLOR = { anchor: 'var(--good)', core: 'var(--series-1)', watch: 'var(--warning)', stress: 'var(--critical)' };
+const TIER_LABEL = { anchor: 'anchor', core: 'core', watch: 'watch', stress: 'stress' };
+const SEV_COLOR = { noise: 'var(--good)', low: 'var(--good)', medium: 'var(--warning)', high: 'var(--serious)', critical: 'var(--critical)' };
+const THESIS_COLOR = { strengthening: 'var(--good)', holding: 'var(--series-1)', weakening: 'var(--warning)', broken: 'var(--critical)' };
+
+function tierBadge(tier) {
+  return `<span class="badge tier-${tier}"><span class="dot" style="background:${TIER_COLOR[tier]||'var(--text-muted)'}"></span>${TIER_LABEL[tier]||tier}</span>`;
+}
+function thesisBadge(status) {
+  if (!status) return '<span class="badge" style="color:var(--text-muted)"><span class="dot" style="background:var(--text-muted)"></span>—</span>';
+  const c = THESIS_COLOR[status] || 'var(--text-muted)';
+  return `<span class="badge" style="color:${c}"><span class="dot" style="background:${c}"></span>${status}</span>`;
+}
+
+// score->color: >=80 green, 60-79 yellow, 40-59 orange, <40 red
+function scoreColor(v) {
+  if (v == null) return 'var(--grid)';
+  if (v >= 80) return 'var(--good)';
+  if (v >= 60) return 'var(--warning)';
+  if (v >= 40) return 'var(--serious)';
+  return 'var(--critical)';
+}
+
+function pillarPanelHtml(iss) {
+  const sp = iss.six_pillars;
+  if (!sp || !Object.keys(sp).length) {
+    return `<p class="pillar-missing">Финансовые данные: ожидается (ГИР БО не найден)</p>`;
+  }
+  const rows = [
+    ['score_leverage', 'Leverage'],
+    ['score_liquidity', 'Liquidity'],
+    ['score_refinancing', 'Refinancing'],
+    ['score_operations', 'Operations'],
+  ];
+  const bars = rows.map(([k, label]) => {
+    const v = sp[k];
+    const color = scoreColor(v);
+    const w = v != null ? Math.max(v, 2) : 0;
+    return `<div class="pillar-bar-label">${label}</div>
+      <div class="pillar-bar-track"><div class="pillar-bar-fill" style="width:${w}%;background:${color}"></div></div>
+      <div class="pillar-bar-value">${v ?? '—'}</div>`;
+  }).join('');
+
+  const isLeasingUnreliable = sp.sector_note && sp.sector_note.toLowerCase().includes('лизинговая компания');
+  const debtToEbit = isLeasingUnreliable ? 'н/д' : (sp.debt_to_ebit != null ? sp.debt_to_ebit.toFixed(2) + 'x' : '—');
+  const currentRatio = sp.current_ratio != null ? sp.current_ratio.toFixed(2) : '—';
+
+  const note = sp.sector_note || sp.coverage_note;
+  const noteIcon = note
+    ? `<span class="pillar-note-icon" title="${note.replace(/"/g, '&quot;')}">&#9888;</span>`
+    : '';
+
+  return `<div class="pillar-panel">
+    <div class="pillar-panel-title">Кредитное здоровье (шесть столпов)${noteIcon}</div>
+    <div class="pillar-bars">${bars}</div>
+    <div class="pillar-ratios">
+      <span>debt/EBIT: <b>${debtToEbit}</b></span>
+      <span>current ratio: <b>${currentRatio}</b></span>
+    </div>
+  </div>`;
+}
+
+// ================= G-spread horizontal bar chart =================
+(function renderSpreadChart() {
+  const rows = [];
+  DATA.issuers.forEach(iss => {
+    iss.bonds.forEach(b => {
+      if (b.ytm_pct !== null && b.g_spread_bp !== null) {
+        rows.push({ issuer: iss.name, tier: iss.risk_tier, secid: b.short_name || b.secid,
+          g: b.g_spread_bp, ytm: b.ytm_pct, dur: b.mod_dur, delta: b.g_spread_delta_bp,
+          estimated: b.yield_source === 'moex' });
+      }
+    });
+  });
+  rows.sort((a, b) => b.g - a.g);
+
+  const W = 1080, rowH = 28, padL = 210, padR = 70, padT = 8;
+  const H = rows.length * rowH + padT + 10;
+  const maxG = Math.max(...rows.map(r => r.g), 100);
+  const scaleX = v => (v / maxG) * (W - padL - padR);
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="G-spread screen">`;
+  // gridlines
+  const ticks = 5;
+  for (let t = 0; t <= ticks; t++) {
+    const v = (maxG / ticks) * t;
+    const x = padL + scaleX(v);
+    svg += `<line class="grid-line" x1="${x}" x2="${x}" y1="0" y2="${H-16}"></line>`;
+    svg += `<text x="${x}" y="${H-4}" text-anchor="middle">${Math.round(v)}бп</text>`;
+  }
+  rows.forEach((r, i) => {
+    const y = padT + i * rowH;
+    const barW = scaleX(r.g);
+    const color = TIER_COLOR[r.tier] || 'var(--series-1)';
+    svg += `<text x="${padL - 10}" y="${y + rowH/2 + 4}" text-anchor="end" style="fill:var(--text-primary)">${r.issuer}</text>`;
+    svg += `<rect class="bar" data-i="${i}" x="${padL}" y="${y+5}" width="${Math.max(barW,2)}" height="${rowH-10}" rx="4" fill="${color}" ${r.estimated ? 'stroke-dasharray="3,2" stroke="var(--text-muted)"' : ''}></rect>`;
+    svg += `<text class="value-label" x="${padL + barW + 8}" y="${y + rowH/2 + 4}">${r.estimated ? '~' : ''}${Math.round(r.g)}бп</text>`;
+  });
+  svg += `</svg>`;
+  document.getElementById('spreadChart').innerHTML = svg;
+
+  document.getElementById('spreadChart').querySelectorAll('rect.bar').forEach(el => {
+    const r = rows[+el.dataset.i];
+    el.addEventListener('mousemove', e => showTip(e,
+      `<b>${r.issuer} — ${r.secid}</b>G-спред: ${r.estimated?'~':''}${Math.round(r.g)} бп (Δ ${r.delta!==null? (r.delta>0?'+':'')+Math.round(r.delta):'н/д'} бп)<br>YTM: ${r.ytm}%<br>Дюрация: ${r.dur ?? 'н/д'} лет`
+      + (r.estimated ? `<br><i>~ G-спред оценён по доходности MOEX (флоатер — купон ещё не зафиксирован), не по расчётной YTM (ACT/365F)</i>` : '')));
+    el.addEventListener('mouseleave', hideTip);
+  });
+  document.getElementById('spreadChart').insertAdjacentHTML('afterbegin',
+    `<div class="legend">${Object.entries(TIER_LABEL).map(([k,l]) =>
+      `<span class="legend-item"><span class="swatch" style="background:${TIER_COLOR[k]}"></span>${l}</span>`).join('')}</div>`);
+})();
+
+// ================= Maturity wall grouped bar chart =================
+(function renderWall() {
+  const rows = DATA.maturity_wall;
+  const W = 1080, padL = 50, padR = 20, padT = 10, padB = 40;
+  const barGroupW = (W - padL - padR) / rows.length;
+  const barW = Math.min(18, barGroupW / 3);
+  const H = 260;
+  const maxV = Math.max(...rows.map(r => Math.max(r.coupon, r.principal)), 1);
+  const scaleY = v => (v / maxV) * (H - padT - padB);
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Maturity wall">`;
+  const ticks = 4;
+  for (let t = 0; t <= ticks; t++) {
+    const v = (maxV / ticks) * t;
+    const y = H - padB - scaleY(v);
+    svg += `<line class="grid-line" x1="${padL}" x2="${W-padR}" y1="${y}" y2="${y}"></line>`;
+    svg += `<text x="${padL-8}" y="${y+3}" text-anchor="end">${Math.round(v)}</text>`;
+  }
+  rows.forEach((r, i) => {
+    const gx = padL + i * barGroupW + barGroupW/2;
+    const cH = scaleY(r.coupon), pH = scaleY(r.principal);
+    svg += `<rect class="bar" data-i="${i}" data-k="coupon" x="${gx - barW - 2}" y="${H-padB-cH}" width="${barW}" height="${cH}" rx="3" fill="var(--series-1)"></rect>`;
+    svg += `<rect class="bar" data-i="${i}" data-k="principal" x="${gx + 2}" y="${H-padB-pH}" width="${barW}" height="${pH}" rx="3" fill="var(--series-2)"></rect>`;
+    svg += `<text x="${gx}" y="${H-padB+16}" text-anchor="middle">${r.month.slice(2)}</text>`;
+  });
+  svg += `<line class="baseline" x1="${padL}" x2="${W-padR}" y1="${H-padB}" y2="${H-padB}"></line>`;
+  svg += `</svg>`;
+  const el = document.getElementById('wallChart');
+  el.innerHTML = `<div class="legend">
+      <span class="legend-item"><span class="swatch" style="background:var(--series-1)"></span>Купоны</span>
+      <span class="legend-item"><span class="swatch" style="background:var(--series-2)"></span>Амортизация/погашение</span>
+    </div>` + svg;
+  el.querySelectorAll('rect.bar').forEach(bar => {
+    const r = rows[+bar.dataset.i];
+    bar.addEventListener('mousemove', e => showTip(e,
+      `<b>${r.month}</b>Купоны: ${Math.round(r.coupon)}<br>Погашение: ${Math.round(r.principal)}<br>Эмитентов: ${r.n_issuers}`));
+    bar.addEventListener('mouseleave', hideTip);
+  });
+})();
+
+// ================= Six-pillar grouped bar (per issuer) =================
+(function renderPillars() {
+  const pillars = ['score_leverage', 'score_liquidity', 'score_refinancing', 'score_operations'];
+  const labels = ['Leverage', 'Liquidity', 'Refinancing', 'Operations'];
+  const colors = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)'];
+  const rows = DATA.issuers
+    .filter(i => i.six_pillars && Object.keys(i.six_pillars).length)
+    .map(i => ({ name: i.name, tier: i.risk_tier, scores: pillars.map(p => i.six_pillars[p] ?? 0) }));
+  rows.sort((a, b) => (b.scores.reduce((s,v)=>s+v,0)) - (a.scores.reduce((s,v)=>s+v,0)));
+
+  const W = 1080, rowH = 34, padL = 210, padR = 40, padT = 10;
+  const H = rows.length * rowH + padT + 20;
+  const scaleX = v => (v / 100) * (W - padL - padR);
+  const barH = (rowH - 10) / 4;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">`;
+  [0,25,50,75,100].forEach(v => {
+    const x = padL + scaleX(v);
+    svg += `<line class="grid-line" x1="${x}" x2="${x}" y1="0" y2="${H-14}"></line>`;
+    svg += `<text x="${x}" y="${H-2}" text-anchor="middle">${v}</text>`;
+  });
+  rows.forEach((r, i) => {
+    const y0 = padT + i * rowH;
+    svg += `<text x="${padL-10}" y="${y0 + rowH/2 + 4}" text-anchor="end" style="fill:var(--text-primary)">${r.name}</text>`;
+    r.scores.forEach((s, si) => {
+      const y = y0 + si * barH;
+      const w = scaleX(s);
+      svg += `<rect class="bar" data-i="${i}" data-p="${si}" x="${padL}" y="${y}" width="${Math.max(w,1)}" height="${barH-2}" rx="2" fill="${colors[si]}"></rect>`;
+    });
+  });
+  svg += `</svg>`;
+  const el = document.getElementById('pillarChart');
+  el.innerHTML = `<div class="legend">${labels.map((l,i)=>
+    `<span class="legend-item"><span class="swatch" style="background:${colors[i]}"></span>${l}</span>`).join('')}</div>` + svg;
+  el.querySelectorAll('rect.bar').forEach(bar => {
+    const r = rows[+bar.dataset.i], si = +bar.dataset.p;
+    bar.addEventListener('mousemove', e => showTip(e, `<b>${r.name} — ${labels[si]}</b>Балл: ${r.scores[si]}/100`));
+    bar.addEventListener('mouseleave', hideTip);
+  });
+})();
+
+// ================= Issuer table =================
+let sortKey = 'g_spread', sortDir = -1;
+function issuerMetric(iss) {
+  const priced = iss.bonds.filter(b => b.g_spread_bp !== null);
+  const g = priced.length ? Math.max(...priced.map(b => b.g_spread_bp)) : null;
+  const ytm = priced.length ? priced.find(b => b.g_spread_bp === g)?.ytm_pct : null;
+  const pillarAvg = iss.six_pillars && Object.keys(iss.six_pillars).length
+    ? ['score_leverage','score_liquidity','score_refinancing','score_operations']
+        .map(k => iss.six_pillars[k]).filter(v => v !== null && v !== undefined)
+    : [];
+  const avgScore = pillarAvg.length ? Math.round(pillarAvg.reduce((s,v)=>s+v,0)/pillarAvg.length) : null;
+  return { g, ytm, avgScore };
+}
+function renderTable() {
+  const rows = DATA.issuers.map(iss => ({ iss, m: issuerMetric(iss) }));
+  const dir = sortDir;
+  rows.sort((a, b) => {
+    let av, bv;
+    if (sortKey === 'name') { av = a.iss.name; bv = b.iss.name; return dir * av.localeCompare(bv); }
+    if (sortKey === 'tier') { av = a.iss.risk_tier; bv = b.iss.risk_tier; return dir * av.localeCompare(bv); }
+    if (sortKey === 'g_spread') { av = a.m.g ?? -1; bv = b.m.g ?? -1; }
+    else if (sortKey === 'score') { av = a.m.avgScore ?? -1; bv = b.m.avgScore ?? -1; }
+    else if (sortKey === 'events') { av = a.iss.events.length; bv = b.iss.events.length; }
+    return dir * (av - bv);
+  });
+
+  const cols = [
+    ['name', 'Эмитент'], ['tier', 'Тир'], ['g_spread', 'G-спред'],
+    ['score', 'Балл (ø)'], ['filings', 'Filings (реал.)'], ['events', 'Событий'], ['thesis', 'Тезис'],
+  ];
+  let html = `<thead><tr>${cols.map(([k,l]) =>
+    `<th data-k="${k}">${l}${sortKey===k ? `<span class="sort-arrow">${dir>0?'▲':'▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
+
+  rows.forEach(({iss, m}, idx) => {
+    const pillarBars = ['score_leverage','score_liquidity','score_refinancing','score_operations'].map((k,i) => {
+      const v = iss.six_pillars ? iss.six_pillars[k] : null;
+      const colors = ['var(--series-1)','var(--series-2)','var(--series-3)','var(--series-4)'];
+      const h = v !== null && v !== undefined ? Math.max(2, v/100*18) : 2;
+      return `<div class="seg" style="height:${h}px;background:${v!=null?colors[i]:'var(--grid)'}"></div>`;
+    }).join('');
+
+    const fc = iss.filing_counts || {total: 0, classified: 0};
+    const hasSynthEvent = (iss.events||[]).some(e => (e.summary||'').includes('SYNTHETIC'));
+    const allRealEvents = iss.events.length && !hasSynthEvent;
+    html += `<tr class="issuer-row" data-idx="${idx}">
+      <td>${iss.name}<div style="color:var(--text-muted);font-size:11px">${iss.sector||''}</div></td>
+      <td>${tierBadge(iss.risk_tier)}<div style="color:var(--text-muted);font-size:11px;margin-top:3px">${iss.rating||''}</div></td>
+      <td>${m.g!==null ? Math.round(m.g)+' бп' : '<span style="color:var(--text-muted)">нет цены</span>'}${m.ytm!=null?`<div style="color:var(--text-muted);font-size:11px">YTM ${m.ytm}%</div>`:''}</td>
+      <td><div class="pillar-mini">${pillarBars}</div></td>
+      <td>${fc.total ? `${fc.total}<div style="color:var(--text-muted);font-size:11px">${fc.classified} классиф.</div>` : '<span style="color:var(--text-muted)">нет на AZIPI</span>'}</td>
+      <td>${iss.events.length}${hasSynthEvent ? '<span class="synthetic-tag">демо</span>' : (allRealEvents ? '<span class="synthetic-tag" style="color:var(--good);border-color:var(--good)">реал.</span>' : '')}</td>
+      <td>${thesisBadge(iss.thesis ? iss.thesis.status : null)}</td>
+    </tr>
+    <tr class="detail-row" data-idx="${idx}"><td colspan="7"><div class="detail-inner" id="detail-${idx}"></div></td></tr>`;
+  });
+  html += '</tbody>';
+  const table = document.getElementById('issuerTable');
+  table.innerHTML = html;
+
+  table.querySelectorAll('th').forEach(th => th.addEventListener('click', () => {
+    const k = th.dataset.k;
+    if (k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = -1; }
+    renderTable();
+  }));
+
+  table.querySelectorAll('tr.issuer-row').forEach(tr => tr.addEventListener('click', () => {
+    const idx = tr.dataset.idx;
+    const detail = document.getElementById('detail-' + idx);
+    const open = detail.classList.contains('open');
+    table.querySelectorAll('.detail-inner.open').forEach(d => d.classList.remove('open'));
+    if (!open) {
+      const { iss } = rows[idx];
+      detail.innerHTML = renderIssuerDetail(iss);
+      detail.classList.add('open');
+    }
+  }));
+}
+function renderIssuerDetail(iss) {
+  let html = '';
+  if (iss.note) html += `<p style="margin:0 0 10px;color:var(--text-secondary)">${iss.note}</p>`;
+  html += pillarPanelHtml(iss);
+  if (iss.flags_today && iss.flags_today.length) {
+    html += `<div><b>Флаги детектора изменений (день 2, демо):</b><br>` +
+      iss.flags_today.map(f => `<span class="flag-chip">${f.detector}/${f.signal}: ${f.detail}</span>`).join(' ') + `</div>`;
+  }
+  if (iss.events && iss.events.length) {
+    const hasSynth = iss.events.some(e => (e.summary||'').includes('SYNTHETIC'));
+    const tag = hasSynth ? '<span class="synthetic-tag">демо</span>'
+      : '<span class="synthetic-tag" style="color:var(--good);border-color:var(--good)">реал.</span>';
+    html += `<div style="margin-top:10px"><b>События</b>${tag}<ul class="events-list">` +
+      iss.events.map(e => `<li style="border-color:${SEV_COLOR[e.severity]||'var(--grid)'}"><b>${e.occurred} · ${e.category} · ${e.severity}</b><br>${e.summary}</li>`).join('') +
+      `</ul></div>`;
+  }
+  if (iss.filing_counts && iss.filing_counts.total) {
+    html += `<p style="margin-top:10px;color:var(--text-secondary)">Реальных filing на AZIPI: <b>${iss.filing_counts.total}</b>, классифицировано: <b>${iss.filing_counts.classified}</b>, в очереди: <b>${iss.filing_counts.total - iss.filing_counts.classified}</b></p>`;
+  }
+  if (iss.thesis) {
+    html += `<div class="thesis-box"><b>Инвестиционный тезис</b> ${thesisBadge(iss.thesis.status)}
+      <dl>
+        <dt>Тезис</dt><dd>${iss.thesis.thesis||'—'}</dd>
+        <dt>Допущения</dt><dd>${iss.thesis.assumptions||'—'}</dd>
+        <dt>Слом тезиса (invalidation)</dt><dd>${iss.thesis.invalidation||'—'}</dd>
+      </dl>
+    </div>`;
+  }
+  if (iss.bonds && iss.bonds.length) {
+    html += `<div style="margin-top:10px"><b>Облигации</b><table style="margin-top:6px"><thead><tr>
+      <th>SECID</th><th>Погашение</th><th>Купон, %</th><th>G-спред</th><th>YTM</th></tr></thead><tbody>` +
+      iss.bonds.map(b => {
+        const est = b.yield_source === 'moex';
+        const gcell = b.g_spread_bp!=null
+          ? `${est?'~':''}${Math.round(b.g_spread_bp)} бп${est?' <span title="G-спред оценён по доходности MOEX (флоатер — купон ещё не зафиксирован), не по расчётной YTM (ACT/365F)" style="cursor:help;color:var(--text-muted)">*</span>':''}`
+          : 'нет цены';
+        return `<tr><td>${b.short_name||b.secid}</td><td>${b.mat_date||'—'}</td><td>${b.coupon_pct??'—'}</td>` +
+          `<td>${gcell}</td><td>${b.ytm_pct??'—'}</td></tr>`;
+      }).join('') +
+      `</tbody></table>` +
+      (iss.bonds.some(b => b.yield_source === 'moex')
+        ? `<p style="margin-top:4px;color:var(--text-muted);font-size:0.85em">* G-спред оценён по доходности MOEX (флоатер — купон ещё не зафиксирован), не по расчётной YTM (ACT/365F)</p>`
+        : '') +
+      `</div>`;
+  }
+  return html || '<span style="color:var(--text-muted)">Нет дополнительных данных.</span>';
+}
+renderTable();
+
+// ================= Events timeline =================
+(function renderEvents() {
+  const all = [];
+  DATA.issuers.forEach(iss => (iss.events||[]).forEach(e => all.push({ ...e, issuer: iss.name })));
+  all.sort((a, b) => b.occurred.localeCompare(a.occurred) || (SEV_ORDER(b.severity) - SEV_ORDER(a.severity)));
+  function SEV_ORDER(s) { return { critical: 4, high: 3, medium: 2, low: 1, noise: 0 }[s] ?? 0; }
+  const el = document.getElementById('eventsTimeline');
+  if (!all.length) { el.innerHTML = '<span style="color:var(--text-muted)">Событий нет.</span>'; return; }
+  el.innerHTML = `<ul class="events-list">` + all.map(e => `
+    <li style="border-color:${SEV_COLOR[e.severity]||'var(--grid)'}">
+      <b>${e.occurred} · ${e.issuer} · ${e.category} <span style="color:${SEV_COLOR[e.severity]}">(${e.severity})</span></b>
+      ${e.summary}
+    </li>`).join('') + `</ul>`;
+})();
+
+// ================= Tabs =================
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    // canvas-based charts compute their size from getBoundingClientRect(),
+    // which is 0 while their tab-panel is display:none -- redraw once the
+    // panel actually becomes visible, not just at page load.
+    if (btn.dataset.tab === 'cbr' && window.__cbrRedraw) window.__cbrRedraw();
+  });
+});
+
+// ================= Universe screener =================
+(function universeScreener() {
+  const UNI = DATA.universe || { snap_date: null, bonds: [] };
+  const bonds = UNI.bonds || [];
+  const banner = document.getElementById('uniSnapDateBanner');
+  banner.innerHTML = UNI.snap_date
+    ? `<b>Снимок на ${UNI.snap_date}.</b> ${bonds.length} облигаций с рассчитанным G-спредом (MOEX-доходность как прокси YTM — см. universe_pipeline.py). Мисценка доступна только для эмитентов с текущим рейтингом в таблице <code>rating</code>.`
+    : `<b>Нет данных.</b> Запустите <code>hybond universe</code> и пересоберите дашборд.`;
+  if (!bonds.length) {
+    document.getElementById('universeTable').innerHTML = '';
+    document.getElementById('uniStats').innerHTML = '';
+    return;
+  }
+
+  function ratingTier(r) {
+    if (!r) return 'none';
+    const core = r.replace(/^ru/i, '').replace(/[+-]$/, '');
+    if (core === 'CC' || core === 'C') return 'CCC';
+    return core;
+  }
+  function ytmColor(v) {
+    if (v == null) return 'var(--text-muted)';
+    if (v < 20) return 'var(--good)';
+    if (v < 30) return 'var(--warning)';
+    if (v < 50) return 'var(--serious)';
+    return 'var(--critical)';
+  }
+  function misColor(v) {
+    if (v == null) return 'var(--text-muted)';
+    if (v < 0) return 'var(--good)';
+    if (v <= 200) return 'var(--warning)';
+    if (v <= 1000) return 'var(--serious)';
+    return 'var(--critical)';
+  }
+
+  const ids = ['fYtmMin','fYtmMax','fGspMin','fGspMax','fDurMin','fDurMax',
+               'fMisMin','fMisMax','fTrades'];
+  const el = {}; ids.forEach(id => el[id] = document.getElementById(id));
+
+  let sortKey = 'g_spread_bp', sortDir = -1;
+
+  function checkedValues(containerId) {
+    return Array.from(document.querySelectorAll(`#${containerId} input:checked`)).map(i => i.value);
+  }
+
+  function applyFilters() {
+    // keep min<=max on paired sliders
+    if (+el.fYtmMin.value > +el.fYtmMax.value) el.fYtmMax.value = el.fYtmMin.value;
+    if (+el.fGspMin.value > +el.fGspMax.value) el.fGspMax.value = el.fGspMin.value;
+    if (+el.fDurMin.value > +el.fDurMax.value) el.fDurMax.value = el.fDurMin.value;
+    if (+el.fMisMin.value > +el.fMisMax.value) el.fMisMax.value = el.fMisMin.value;
+
+    document.getElementById('lblYtm').textContent = `${el.fYtmMin.value}–${el.fYtmMax.value}%`;
+    document.getElementById('lblGsp').textContent = `${el.fGspMin.value}–${el.fGspMax.value}бп`;
+    document.getElementById('lblDur').textContent = `${el.fDurMin.value}–${el.fDurMax.value}л`;
+    document.getElementById('lblMis').textContent = `${el.fMisMin.value}–${el.fMisMax.value}бп`;
+    document.getElementById('lblTrades').textContent = `≥${el.fTrades.value}`;
+
+    const ytmMin = +el.fYtmMin.value, ytmMax = +el.fYtmMax.value;
+    const gspMin = +el.fGspMin.value, gspMax = +el.fGspMax.value;
+    const durMin = +el.fDurMin.value, durMax = +el.fDurMax.value;
+    const misMin = +el.fMisMin.value, misMax = +el.fMisMax.value;
+    const minTrades = +el.fTrades.value;
+    const listingOk = checkedValues('fListing').map(Number);
+    const couponOk = checkedValues('fCoupon');
+    const ratingOk = new Set(checkedValues('fRating'));
+    const showQualified = document.getElementById('fQualified').checked;
+    const misFilterActive = misMin > -500 || misMax < 5000;
+
+    const rows = bonds.filter(b => {
+      if (b.ytm_pct == null || b.ytm_pct < ytmMin || b.ytm_pct > ytmMax) return false;
+      if (b.g_spread_bp == null || b.g_spread_bp < gspMin || b.g_spread_bp > gspMax) return false;
+      const dur = b.duration_yrs ?? 0;
+      if (dur < durMin || dur > durMax) return false;
+      if ((b.num_trades ?? 0) < minTrades) return false;
+      if (!listingOk.includes(b.list_level)) return false;
+      if (!couponOk.includes(b.coupon_type)) return false;
+      if (!ratingOk.has(ratingTier(b.rating))) return false;
+      if (b.qualified && !showQualified) return false;
+      if (misFilterActive) {
+        if (b.mispricing_bp == null) return false;
+        if (b.mispricing_bp < misMin || b.mispricing_bp > misMax) return false;
+      }
+      return true;
+    });
+
+    renderStats(rows);
+    renderTableRows(rows);
+  }
+
+  function renderStats(rows) {
+    const avgG = rows.length ? Math.round(rows.reduce((s, r) => s + r.g_spread_bp, 0) / rows.length) : 0;
+    const ytms = rows.map(r => r.ytm_pct).filter(v => v != null).sort((a, b) => a - b);
+    const medYtm = ytms.length ? ytms[Math.floor(ytms.length / 2)] : 0;
+    document.getElementById('uniStats').innerHTML =
+      `<span>Показано <b>${rows.length}</b> из ${bonds.length} облигаций</span>` +
+      `<span>Средний G-спред: <b>${avgG}</b> бп</span>` +
+      `<span>Медиана YTM: <b>${medYtm.toFixed(1)}</b>%</span>`;
+  }
+
+  const cols = [
+    ['emitent_title', 'Эмитент'], ['secid', 'SECID'], ['ytm_pct', 'YTM%'],
+    ['g_spread_bp', 'G-спред'], ['implied_fair_spread_bp', 'Справ.спред'],
+    ['mispricing_bp', 'Мисценка'], ['duration_yrs', 'Дюрация'],
+    ['mat_date', 'Погашение'], ['offer_date', 'Оферта'], ['volume', 'Объём(млн₽)'],
+    ['num_trades', 'Сделок'], ['rating', 'Рейтинг'], ['list_level', 'Уровень'], ['star', '★'],
+  ];
+
+  let lastRows = [];
+
+  function renderTableRows(rows) {
+    lastRows = rows;
+    const sorted = rows.slice().sort((a, b) => {
+      let av = a[sortKey], bv = b[sortKey];
+      if (av == null) av = sortDir > 0 ? Infinity : -Infinity;
+      if (bv == null) bv = sortDir > 0 ? Infinity : -Infinity;
+      if (typeof av === 'string') return sortDir * String(av).localeCompare(String(bv));
+      return sortDir * (av - bv);
+    });
+    const showStar = document.getElementById('fWatchlistStar').checked;
+
+    const MAX_RENDER = 400; // keep the DOM light; stats above already reflect the full filtered set
+    const shown = sorted.slice(0, MAX_RENDER);
+
+    let html = `<thead><tr>${cols.map(([k, l]) =>
+      `<th data-k="${k}">${l}${sortKey===k ? `<span class="sort-arrow">${sortDir>0?'▲':'▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
+    if (!shown.length) {
+      html += `<tr><td colspan="${cols.length}"><div class="uni-empty">Нет облигаций, подходящих под фильтры.</div></td></tr>`;
+    }
+    shown.forEach(b => {
+      const yieldEst = b.yield_source === 'moex';
+      const gCell = `${yieldEst?'~':''}${Math.round(b.g_spread_bp)}`;
+      const misCell = b.signal_excluded
+        ? `<span title="Сигнал недоступен: ${b.yield_source==='commodity_linked'?'commodity_linked':'near_maturity_thin'} — G-спред структурно некорректен для этого инструмента.">⚠</span>`
+        : b.mispricing_bp != null
+        ? `<span style="color:${misColor(b.mispricing_bp)}">${b.mispricing_bp>0?'+':''}${Math.round(b.mispricing_bp)}</span>`
+        : '<span style="color:var(--text-muted)">н/д</span>';
+      const fairCell = b.implied_fair_spread_bp != null ? Math.round(b.implied_fair_spread_bp) : '—';
+      const volM = b.volume != null ? (b.volume / 1e6).toFixed(1) : '—';
+      html += `<tr>
+        <td>${(b.short_name || b.emitent_title || '—')}</td>
+        <td>${b.secid}</td>
+        <td style="color:${ytmColor(b.ytm_pct)}">${b.ytm_pct!=null?b.ytm_pct.toFixed(1):'—'}</td>
+        <td>${gCell}</td>
+        <td>${fairCell}</td>
+        <td>${misCell}</td>
+        <td>${b.duration_yrs!=null?b.duration_yrs.toFixed(2):'—'}</td>
+        <td>${b.mat_date||'—'}</td>
+        <td>${b.offer_date||'—'}</td>
+        <td>${volM}</td>
+        <td>${b.num_trades??'—'}</td>
+        <td>${b.rating||'—'}</td>
+        <td>${b.list_level??'—'}</td>
+        <td>${showStar && b.in_watchlist ? '<span class="uni-star">★</span>' : ''}</td>
+      </tr>`;
+    });
+    html += '</tbody>';
+    const table = document.getElementById('universeTable');
+    table.innerHTML = html;
+    table.querySelectorAll('th').forEach(th => th.addEventListener('click', () => {
+      const k = th.dataset.k;
+      if (k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = -1; }
+      renderTableRows(lastRows);
+    }));
+  }
+
+  function exportCsv() {
+    const header = ['emitent_title','secid','ytm_pct','g_spread_bp','implied_fair_spread_bp',
+                     'mispricing_bp','duration_yrs','mat_date','offer_date','volume',
+                     'num_trades','rating','list_level','in_watchlist'];
+    const csvRows = [header.join(',')];
+    lastRows.forEach(b => {
+      csvRows.push(header.map(k => {
+        let v = b[k];
+        if (v == null) v = '';
+        if (typeof v === 'string' && v.includes(',')) v = `"${v}"`;
+        return v;
+      }).join(','));
+    });
+    const blob = new Blob(['﻿' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `universe_screen_${UNI.snap_date || 'export'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  document.getElementById('uniFilters').addEventListener('input', applyFilters);
+  document.getElementById('uniFilters').addEventListener('change', applyFilters);
+  document.getElementById('fQualified').addEventListener('change', applyFilters);
+  document.getElementById('fWatchlistStar').addEventListener('change', () => renderTableRows(lastRows));
+  document.getElementById('uniExportCsv').addEventListener('click', exportCsv);
+
+  applyFilters();
+})();
+
+(function cbrTab() {
+  const CBR = DATA.cbr || {};
+  const meetings = CBR.meetings || [];
+  const todayISO = new Date().toISOString().slice(0, 10);
+  let activeDate = null;
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    const [y, m, d] = iso.split('-');
+    return `${d}.${m}.${y}`;
+  }
+  function fmtDateLong(iso) {
+    if (!iso) return '';
+    const months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+    const [y, m, d] = iso.split('-');
+    return `${parseInt(d, 10)} ${months[parseInt(m, 10) - 1]} ${y}`;
+  }
+  function daysUntil(dateStr) {
+    if (!dateStr) return null;
+    return Math.round((new Date(dateStr) - new Date(todayISO)) / 86400000);
+  }
+  function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+  function sigClassFor(sig) {
+    if (sig === 'SHORTEN_DURATION') return 'cbr-signal-shorten';
+    if (sig === 'EXTEND_DURATION') return 'cbr-signal-extend';
+    return 'cbr-signal-neutral';
+  }
+  function signalLabel(sig, mag) {
+    const magRu = { strong: 'сильный', moderate: 'умеренный', weak: 'слабый' }[mag] || mag || '';
+    if (sig === 'SHORTEN_DURATION') return `⚡ СОКРАЩАТЬ ДЮРАЦИЮ (${magRu})`;
+    if (sig === 'EXTEND_DURATION') return `✅ УДЛИНЯТЬ ДЮРАЦИЮ (${magRu})`;
+    return `→ НЕЙТРАЛЬНО (${magRu})`;
+  }
+
+  // ---- Section 1: state bar ----
+  function renderStateBar() {
+    const rs = CBR.rate_scenarios || {};
+    const latestDiff = (CBR.recent_diffs || [])[0] || null;
+    const sigClass = latestDiff ? sigClassFor(latestDiff.signal) : 'cbr-signal-neutral';
+    const sigText = latestDiff ? signalLabel(latestDiff.signal, latestDiff.signal_magnitude) : '— нет данных';
+    const days = daysUntil(CBR.next_meeting);
+    document.getElementById('cbrStateBar').innerHTML = `
+      <div class="stat">КС сейчас: <b>${CBR.current_rate != null ? CBR.current_rate.toFixed(2) + '%' : '—'}</b></div>
+      <div class="stat">Следующее заседание: <b>${fmtDate(CBR.next_meeting)}</b>${days != null ? ` (${days} дн.)` : ''}</div>
+      <div class="stat">Прогноз ЦБ 2026: <b>${rs.cbr_2026_forecast ? rs.cbr_2026_forecast + '%' : '—'}</b></div>
+      <div class="stat">Прогноз ЦБ 2027: <b>${rs.cbr_2027_forecast ? rs.cbr_2027_forecast + '%' : '—'}</b></div>
+      <div class="stat">Сигнал портфелю: <span class="cbr-signal-badge ${sigClass}">${sigText}</span></div>
+    `;
+  }
+
+  // ---- Section 2: timeline ----
+  function circleColor(m) {
+    const bp = m.rate_change_bp;
+    if (bp == null) return '#9a9890';
+    if (bp <= -50) return '#0a6b0a';
+    if (bp < 0) return '#5fc75f';
+    if (bp === 0) return '#9a9890';
+    return '#d03b3b';
+  }
+  function diffBadge(m) {
+    if (!m.is_anchor || !m.diff) return '';
+    const shift = m.diff.forecast_2027_shift_bp;
+    if (shift == null) return '';
+    if (shift > 50) return '🔴';
+    if (shift < -50) return '🟢';
+    return '⚪';
+  }
+  function renderTimeline() {
+    document.getElementById('cbrTimeline').innerHTML = meetings.map(m => {
+      const isPast = m.is_past;
+      const circleStyle = isPast ? `style="background:${circleColor(m)}"` : '';
+      const circleClass = isPast ? '' : 'hollow';
+      return `<div class="cbr-node${activeDate === m.date ? ' active' : ''}" data-date="${m.date}">
+        <div class="cbr-node-rate">${isPast && m.rate_after != null ? m.rate_after.toFixed(2) + '%' : ''}</div>
+        <div class="cbr-node-circle ${circleClass}" ${circleStyle}></div>
+        <div class="cbr-node-star">${m.is_anchor ? '★' : ''}</div>
+        <div class="cbr-node-change">${isPast && m.rate_change_bp != null ? (m.rate_change_bp > 0 ? '+' : '−') + Math.abs(m.rate_change_bp) + 'бп' : ''}</div>
+        <div class="cbr-node-diffbadge">${diffBadge(m)}</div>
+        <div class="cbr-node-date">${fmtDate(m.date)}</div>
+      </div>`;
+    }).join('');
+    document.querySelectorAll('#cbrTimeline .cbr-node').forEach(el => {
+      el.addEventListener('click', () => {
+        const mDate = el.dataset.date;
+        const m = meetings.find(mm => mm.date === mDate);
+        if (!m) return;
+        if (!m.is_past) { activeDate = mDate; renderTimeline(); showFutureCard(m); return; }
+        activeDate = (activeDate === mDate) ? null : mDate;
+        renderTimeline();
+        if (activeDate) showDetailCard(m); else hideDetailCard();
+      });
+    });
+  }
+
+  function hideDetailCard() {
+    document.getElementById('cbrDetailCard').classList.remove('show');
+  }
+  function showDetailCard(m) {
+    const card = document.getElementById('cbrDetailCard');
+    const d = m.diff;
+    card.innerHTML = `
+      <h3>${fmtDate(m.date)}${m.is_anchor ? ' ★ опорное' : ''} — ${m.rate_after != null ? m.rate_after.toFixed(2) + '%' : '—'}
+        (${m.rate_change_bp != null ? (m.rate_change_bp > 0 ? '+' : '') + m.rate_change_bp + 'бп' : '—'})</h3>
+      ${m.press_release_excerpt ? `<div class="press-excerpt">${escapeHtml(m.press_release_excerpt)}…</div>` : ''}
+      ${d ? `<div class="cbr-detail-metrics">
+        <span>Темп: <b>${d.pace_change || '—'}</b></span>
+        ${d.forecast_2026_shift_bp != null ? `<span>2026: <b>${d.forecast_2026_shift_bp > 0 ? '+' : ''}${d.forecast_2026_shift_bp}бп</b></span>` : ''}
+        ${d.forecast_2027_shift_bp != null ? `<span>2027: <b>${d.forecast_2027_shift_bp > 0 ? '+' : ''}${d.forecast_2027_shift_bp}бп</b></span>` : ''}
+        <span>Сигнал: <b>${(d.portfolio_signal || '—').toUpperCase()}</b> (${d.signal_magnitude || '—'})</span>
+      </div>
+      <div class="cbr-detail-note">${escapeHtml(d.diff_note_ru || '')}</div>`
+        : '<div class="cbr-detail-note" style="color:var(--text-muted)">Нет сравнения (нет предыдущего заседания с известной ставкой).</div>'}
+      ${m.press_release_url ? `<a href="${m.press_release_url}" target="_blank" rel="noopener">Полный пресс-релиз на cbr.ru →</a>` : ''}
+    `;
+    card.classList.add('show');
+  }
+  function showFutureCard(m) {
+    const card = document.getElementById('cbrDetailCard');
+    const days = daysUntil(m.date);
+    card.innerHTML = `
+      <h3>${fmtDate(m.date)}${m.is_anchor ? ' ★ опорное' : ''} — запланировано</h3>
+      <div class="cbr-detail-note">До заседания ${days} дн. Ожидаемые документы: пресс-релиз и заявление Председателя
+        (13:30 МСК)${m.is_anchor ? ', среднесрочный прогноз и комментарий к нему' : ''}.
+        Резюме обсуждения публикуется примерно через 2 недели после заседания.</div>
+    `;
+    card.classList.add('show');
+  }
+
+  // ---- Section 4: notifications ----
+  function renderNotifications() {
+    const diffs = CBR.recent_diffs || [];
+    const grid = document.getElementById('cbrNotifGrid');
+    if (!diffs.length) {
+      grid.innerHTML = '<div class="uni-empty">Нет истории сравнений.</div>';
+      return;
+    }
+    grid.innerHTML = diffs.map(d => {
+      const sigClass = d.signal === 'SHORTEN_DURATION' ? 'sig-shorten' : d.signal === 'EXTEND_DURATION' ? 'sig-extend' : 'sig-neutral';
+      const icon = d.signal === 'SHORTEN_DURATION' ? '⚡' : d.signal === 'EXTEND_DURATION' ? '✅' : '→';
+      return `<div class="cbr-notif-card ${sigClass}" data-date="${d.date}">
+        <div class="cbr-notif-head"><span>${icon} ${fmtDateLong(d.date)}</span><span>${(d.signal || '').replace('_', ' ')} · ${d.signal_magnitude || ''}</span></div>
+        <div class="cbr-notif-note clamp">${escapeHtml(d.note)}</div>
+      </div>`;
+    }).join('');
+    document.querySelectorAll('#cbrNotifGrid .cbr-notif-card').forEach(el => {
+      el.addEventListener('click', () => {
+        el.querySelector('.cbr-notif-note').classList.toggle('clamp');
+        const mDate = el.dataset.date;
+        const m = meetings.find(mm => mm.date === mDate);
+        if (!m) return;
+        activeDate = mDate;
+        renderTimeline();
+        showDetailCard(m);
+        document.getElementById('cbrDetailCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    });
+  }
+
+  // ---- Section 3: rate path chart ----
+  function monthIndex(iso) {
+    const [y, m] = iso.split('-').map(Number);
+    return (y - 2026) * 12 + (m - 1);
+  }
+  function parseRange(s) {
+    if (!s) return null;
+    const parts = s.split('-').map(parseFloat);
+    return [parts[0], parts[parts.length - 1]];
+  }
+  function drawChart() {
+    const canvas = document.getElementById('cbrChart');
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const W = rect.width, H = 320;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    const P = { l: 44, r: 16, t: 16, b: 26 };
+    const plotW = W - P.l - P.r, plotH = H - P.t - P.b;
+    const MONTHS = 24;
+    const xFor = mi => P.l + (mi / (MONTHS - 1)) * plotW;
+
+    const rs = CBR.rate_scenarios || {};
+    const band2026 = parseRange(rs.cbr_2026_forecast);
+    const band2027 = parseRange(rs.cbr_2027_forecast);
+    const actualPts = meetings.filter(m => m.is_past && m.rate_after != null)
+      .map(m => ({ mi: monthIndex(m.date), v: m.rate_after })).sort((a, b) => a.mi - b.mi);
+
+    let yVals = actualPts.map(p => p.v).concat([7.5]);
+    if (CBR.current_rate != null) yVals.push(CBR.current_rate);
+    if (band2026) yVals = yVals.concat(band2026);
+    if (band2027) yVals = yVals.concat(band2027);
+    if (!yVals.length) yVals = [7, 20];
+    const yLo = Math.min(...yVals) - 1, yHi = Math.max(...yVals) + 1;
+    const yFor = v => P.t + plotH - (v - yLo) / (yHi - yLo) * plotH;
+
+    const styles = getComputedStyle(document.documentElement);
+    const gridColor = styles.getPropertyValue('--grid').trim() || '#e1e0d9';
+    const textColor = styles.getPropertyValue('--text-secondary').trim() || '#52514e';
+    const lineColor = styles.getPropertyValue('--text-primary').trim() || '#0b0b0b';
+
+    ctx.strokeStyle = gridColor; ctx.fillStyle = textColor; ctx.font = '10px system-ui'; ctx.lineWidth = 1;
+    for (let i = 0; i < MONTHS; i += 3) {
+      const x = xFor(i);
+      ctx.beginPath(); ctx.moveTo(x, P.t); ctx.lineTo(x, P.t + plotH); ctx.stroke();
+      const y = 2026 + Math.floor(i / 12), mo = (i % 12) + 1;
+      ctx.fillText(`${String(mo).padStart(2, '0')}.${y}`, x - 16, P.t + plotH + 14);
+    }
+    const NY = 5;
+    for (let i = 0; i <= NY; i++) {
+      const v = yLo + (yHi - yLo) * i / NY, y = yFor(v);
+      ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(P.l + plotW, y); ctx.stroke();
+      ctx.fillText(v.toFixed(1), 4, y + 3);
+    }
+
+    // Forecast band: a STEP per calendar year, not a smoothed monthly curve
+    // -- CBR itself publishes these as single annual-average ranges, so a
+    // step is the faithful representation of the source data, not an
+    // interpolation artifact.
+    function drawBand(band, mi0, mi1) {
+      if (!band) return;
+      ctx.fillStyle = 'rgba(42,120,214,0.14)';
+      ctx.fillRect(xFor(mi0), yFor(band[1]), xFor(mi1) - xFor(mi0), yFor(band[0]) - yFor(band[1]));
+    }
+    drawBand(band2026, 0, 11);
+    drawBand(band2027, 12, 23);
+
+    function hline(v, color, label) {
+      const y = yFor(v);
+      ctx.save(); ctx.strokeStyle = color; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(P.l + plotW, y); ctx.stroke(); ctx.restore();
+      ctx.fillStyle = color; ctx.font = '10px system-ui';
+      ctx.fillText(label, P.l + plotW - 92, y - 4);
+    }
+    hline(7.5, '#1baf7a', 'Нейтральная ставка');
+    if (CBR.current_rate != null) hline(CBR.current_rate, '#898781', 'КС сейчас');
+
+    if (actualPts.length) {
+      ctx.strokeStyle = lineColor; ctx.lineWidth = 2;
+      ctx.beginPath();
+      let prev = null;
+      actualPts.forEach(p => {
+        const x = xFor(p.mi), y = yFor(p.v);
+        if (prev) { ctx.lineTo(x, yFor(prev.v)); ctx.lineTo(x, y); } else { ctx.moveTo(x, y); }
+        prev = p;
+      });
+      const todayMi = monthIndex(todayISO.slice(0, 7) + '-01');
+      if (prev) ctx.lineTo(xFor(Math.min(todayMi, MONTHS - 1)), yFor(prev.v));
+      ctx.stroke();
+    }
+
+    function drawScenario(annualBp, color) {
+      if (annualBp == null || CBR.current_rate == null) return;
+      const todayMi = monthIndex(todayISO.slice(0, 7) + '-01');
+      const monthlyPP = (annualBp / 100) / 12;
+      ctx.save(); ctx.strokeStyle = color; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      for (let mi = todayMi; mi < MONTHS; mi++) {
+        const v = CBR.current_rate + monthlyPP * (mi - todayMi);
+        const x = xFor(mi), y = yFor(v);
+        if (mi === todayMi) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke(); ctx.restore();
+    }
+    drawScenario(rs.base_annual_bp, '#0ca30c');
+    drawScenario(rs.stress_annual_bp, '#d03b3b');
+
+    document.getElementById('cbrChartLegend').innerHTML = `
+      <div class="legend-item"><span style="width:14px;height:2px;background:${lineColor};display:inline-block"></span>Фактическая КС</div>
+      <div class="legend-item"><span class="swatch" style="background:rgba(42,120,214,0.4);border-radius:2px;width:14px;height:10px"></span>Прогноз ЦБ (годовой диапазон)</div>
+      <div class="legend-item"><span style="width:14px;height:2px;background:#0ca30c;display:inline-block;border-top:2px dashed #0ca30c"></span>Базовый сценарий</div>
+      <div class="legend-item"><span style="width:14px;height:2px;background:#d03b3b;display:inline-block;border-top:2px dashed #d03b3b"></span>Стресс-сценарий</div>
+    `;
+  }
+
+  renderStateBar();
+  renderTimeline();
+  renderNotifications();
+  drawChart();
+  window.addEventListener('resize', drawChart);
+  window.__cbrRedraw = drawChart;
+})();
+</script>
+</body>
+</html>

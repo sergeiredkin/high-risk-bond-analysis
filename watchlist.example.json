@@ -1,0 +1,15 @@
+{
+  "_comment": "issuer_id is the INN (or any stable slug). secids are MOEX SECIDs of the issuer's traded bonds. edisclosure_id is the numeric id in the e-disclosure.ru company URL (company.aspx?id=NNN) — REQUIRED for Slice 3 scraping; find it on the issuer's disclosure page. Verify SECIDs via https://iss.moex.com/iss/engines/stock/markets/bonds/securities.json",
+  "7714699320": {
+    "name": "Example Issuer A",
+    "sector": "leasing",
+    "edisclosure_id": "17",
+    "secids": ["RU000A10XXX1", "RU000A10XXX2"]
+  },
+  "7701234567": {
+    "name": "Example Issuer B",
+    "sector": "microfinance",
+    "edisclosure_id": "38712",
+    "secids": ["RU000A10YYY3"]
+  }
+}

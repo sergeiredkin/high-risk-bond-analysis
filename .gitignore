@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Generated/accumulated data: sqlite DB, raw MOEX/CBR/e-disclosure caches,
+# logs, factlists -- all regenerable via the pipeline, not source.
+data/
+
+# Local Claude Code permission settings -- contains a live PARSER_API_KEY in
+# one of its allow-list entries, must never be committed.
+.claude/settings.local.json
