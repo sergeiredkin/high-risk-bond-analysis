@@ -38,8 +38,17 @@ if [ "$(date +%u)" = "7" ]; then
 fi
 PYTHONPATH=src python -m hybond universe $UNIVERSE_FLAGS >> "$LOG" 2>&1
 
-# Slice 3: event feed (no --selenium, uses AZIPI plain HTTP)
-PYTHONPATH=src python -m hybond scrape watchlist.json >> "$LOG" 2>&1
+# Slice 3: event feed (no --selenium, uses AZIPI plain HTTP). --smartlab
+# supplements AZIPI with smart-lab.ru's bonds feed for Interfax-only issuers
+# AZIPI has no coverage for (see scrape/smartlab.py's INTERFAX_ISSUERS map) --
+# was built earlier but never actually wired into this cron pipeline until now.
+PYTHONPATH=src python -m hybond scrape watchlist.json --smartlab >> "$LOG" 2>&1
+
+# market_note: smart-lab.ru's general news feed (RSS) -- distinct secondary
+# source from the bonds-forum --smartlab above (scrape/smartlab_news.py).
+# severity/category stay NULL until the classifier is extended for this
+# source; this step only ingests + dedupes.
+PYTHONPATH=src python -m hybond market-notes >> "$LOG" 2>&1
 
 # CBR: check if today has a scheduled document release -- fast no-op unless
 # today is a meeting date, a резюме publication date, or +14 days past an

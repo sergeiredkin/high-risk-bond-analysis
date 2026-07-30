@@ -2,7 +2,7 @@
   "_meta": {
     "version": "1.0",
     "created": "2026-07-27",
-    "note": "20 ВДО-эмитентов для первого запуска hybond. Ключ = ИНН эмитента облигаций (не холдинга). SECID — самый ликвидный выпуск на MOEX на дату составления; проверяй актуальность через ISS. edisclosure_id — id в URL company.aspx?id=NNN. Данные верифицированы по публичным источникам, но могут меняться — проверяй перед первым запуском.",
+    "note": "20 ВДО-эмитентов для первого запуска hybond. Ключ = ИНН эмитента облигаций (не холдинга). SECID — самый ликвидный выпуск на MOEX на дату составления; проверяй актуальность через ISS. edisclosure_id — id в URL company.aspx?id=NNN. Данные верифицированы по публичным источникам, но могут меняться — проверяй перед первым запуском. rating_agency (added 2026-07-30, only present for issuers with a manual/unverified rating field) records which real agency the rating string was meant to represent, where traceable from prose notes -- 'unknown' where it could not be determined from any source in this repo.",
     "risk_tiers": {
       "anchor": "Крупный, рейтинг A+/AA, опорный безрисковый кейс",
       "core": "Рейтинг BBB/BB+, нормальный ВДО, основа портфеля платформы",
@@ -15,6 +15,7 @@
     "sector": "leasing",
     "risk_tier": "anchor",
     "rating": "ruAA-",
+    "rating_agency": "unknown",
     "edisclosure_id": "37904",
     "secids": [
       "RU000A10A7C4",
@@ -27,6 +28,7 @@
     "sector": "real_estate",
     "risk_tier": "stress",
     "rating": "ruA-",
+    "rating_agency": "АКРА",
     "edisclosure_id": "38916",
     "secids": [
       "RU000A10EQ83",
@@ -39,6 +41,7 @@
     "sector": "pawnshop_resale",
     "risk_tier": "watch",
     "rating": "ruBB-",
+    "rating_agency": "unknown",
     "edisclosure_id": "34972",
     "secids": [
       "RU000A104XJ9",
@@ -50,19 +53,21 @@
     "name": "ВУШ (Whoosh)",
     "sector": "mobility_tech",
     "risk_tier": "watch",
-    "rating": "ruA-",
+    "rating": "ruBBB+",
+    "rating_agency": "АКРА",
     "edisclosure_id": "38662",
     "secids": [
       "RU000A10E6D0",
       "RU000A10EYU8"
     ],
-    "note": "Лидер кикшеринга РФ. Долг/EBITDA вырос с 1.7x до 3.7x, в 2026 погашение 4 млрд при кэше 1.6 млрд. Рейтинг выше среднего для ВДО, но рефинансовый риск структурный. Тезис: справится или нет."
+    "note": "Лидер кикшеринга РФ. Долг/EBITDA вырос с 1.7x до 3.7x, в 2026 погашение 4 млрд при кэше 1.6 млрд. Рейтинг выше среднего для ВДО, но рефинансовый риск структурный. Тезис: справится или нет. Рейтинг понижен АКРА до BBB+(RU) 01.04.2026 (было ruA-, прогноз \"развивающийся\", снят статус \"под наблюдением\") — исправлено 30.07.2026, ранее в БД была устаревшая ручная оценка ruA-."
   },
   "9703024202": {
     "name": "Сегежа Групп",
     "sector": "forestry_paper",
     "risk_tier": "stress",
     "rating": "ruBB-",
+    "rating_agency": "Эксперт РА",
     "edisclosure_id": "38038",
     "secids": [
       "RU000A108991",
@@ -75,6 +80,7 @@
     "sector": "debt_collection",
     "risk_tier": "core",
     "rating": "ruBBB-",
+    "rating_agency": "Эксперт РА",
     "edisclosure_id": "38379",
     "secids": [
       "RU000A10EDV0",
@@ -87,6 +93,7 @@
     "sector": "fuel_retail",
     "risk_tier": "stress",
     "rating": "ruCCC",
+    "rating_agency": "unknown",
     "edisclosure_id": "38758",
     "secids": [
       "RU000A10BB75",
@@ -98,19 +105,21 @@
     "name": "Селигдар",
     "sector": "gold_mining",
     "risk_tier": "core",
-    "rating": "ruA-",
+    "rating": "ruA+",
+    "rating_agency": "Эксперт РА",
     "edisclosure_id": "12557",
     "secids": [
       "RU000A10EXW6",
       "RU000A10EC22"
     ],
-    "note": "Золото + олово, Якутия. Валютная выручка защищает от инфляции и ставки. Есть золотые облигации (номинал в граммах). Интересен при слабом рубле и росте цен на золото. Умеренный долг, экспортёр."
+    "note": "Золото + олово, Якутия. Валютная выручка защищает от инфляции и ставки. Есть золотые облигации (номинал в граммах). Интересен при слабом рубле и росте цен на золото. Умеренный долг, экспортёр. Рейтинг исправлен 30.07.2026: было ruA- (устаревшая ручная оценка), реальный — Эксперт РА ruA+ (подтверждён 29.08.2025, прогноз негативный)."
   },
   "6685151087": {
     "name": "Брусника. Строительство и Девелопмент",
     "sector": "real_estate",
     "risk_tier": "watch",
     "rating": "ruA-",
+    "rating_agency": "АКРА",
     "edisclosure_id": "38535",
     "secids": [
       "RU000A107UU5",
@@ -123,6 +132,7 @@
     "sector": "real_estate",
     "risk_tier": "core",
     "rating": "ruBBB+",
+    "rating_agency": "АКРА",
     "edisclosure_id": "38535",
     "secids": [
       "RU000A10ATR2",
@@ -135,6 +145,7 @@
     "sector": "leasing",
     "risk_tier": "stress",
     "rating": "ruBB-",
+    "rating_agency": "Эксперт РА",
     "edisclosure_id": "38291",
     "secids": [
       "RU000A106T85",
@@ -164,13 +175,14 @@
       "RU000A1079G1",
       "RU000A107WD7"
     ],
-    "note": "Заменяет МФК Займер (у последнего не осталось непогашенных облигаций на MOEX — см. историю). МФК \"Мани Капитал\", ИНН 6316103050 подтверждён через MOEX ISS (emitent_inn). Три активных выпуска (МаниКап1Р1/2/3, погашение окт.2026-фев.2027, купон 15%); выбраны два самых дальних по сроку. Рейтинг и edisclosure_id не проверены — требуется отдельное подтверждение перед использованием в позиции."
+    "note": "Заменяет МФК Займер (у последнего не осталось непогашенных облигаций на MOEX — см. историю). МФК \"Мани Капитал\", ИНН 6316103050 подтверждён через MOEX ISS (emitent_inn). Три активных выпуска (МаниКап1Р1/2/3, погашение окт.2026-фев.2027, купон 15%); выбраны два самых дальних по сроку. Рейтинг и edisclosure_id не проверены — требуется отдельное подтверждение перед использованием в позиции. МФК — регулируется ЦБ РФ, не индексируется в ГИР БО/parser-api на регулярной основе; финансовые данные маловероятно появятся через этот пайплайн (проверено 30.07.2026)."
   },
   "2723115222": {
     "name": "ПКБ (Первое коллекторское бюро)",
     "sector": "debt_collection",
     "risk_tier": "core",
     "rating": "ruA-",
+    "rating_agency": "unknown",
     "edisclosure_id": "32507",
     "secids": [
       "RU000A108CC9",
@@ -183,18 +195,20 @@
     "sector": "microfinance",
     "risk_tier": "core",
     "rating": "ruA-",
+    "rating_agency": "unknown",
     "edisclosure_id": "38102",
     "secids": [
       "RU000A1087G4",
       "RU000A10E4G8"
     ],
-    "note": "Formerly CarMoney (auto-pawn lending). Acquired by ПСБ (Промсвязьбанк, state-owned). Credit risk reduced by implicit parent support; original secured-lending thesis no longer applies. Monitor for PSB integration events and any covenant changes post-acquisition."
+    "note": "Formerly CarMoney (auto-pawn lending). Acquired by ПСБ (Промсвязьбанк, state-owned). Credit risk reduced by implicit parent support; original secured-lending thesis no longer applies. Monitor for PSB integration events and any covenant changes post-acquisition. МФК — регулируется ЦБ РФ, не индексируется в ГИР БО/parser-api на регулярной основе; финансовые данные маловероятно появятся через этот пайплайн (проверено 30.07.2026)."
   },
   "7802131219": {
     "name": "Интерлизинг",
     "sector": "leasing",
     "risk_tier": "core",
     "rating": "ruA",
+    "rating_agency": "unknown",
     "edisclosure_id": "16842",
     "secids": [
       "RU000A10B4A4",
@@ -206,19 +220,21 @@
     "name": "Балтийский лизинг",
     "sector": "leasing",
     "risk_tier": "core",
-    "rating": "ruA",
+    "rating": "ruAA-",
+    "rating_agency": "Эксперт РА",
     "edisclosure_id": "17431",
     "secids": [
       "RU000A10EEE4",
       "RU000A10DUR4"
     ],
-    "note": "Петербургский лизинг, диверсифицированный портфель. Третья точка в лизинговой линейке после Европлана и Интерлизинга. Позволяет платформе строить кросс-секторный спред-анализ внутри одной отрасли."
+    "note": "Петербургский лизинг, диверсифицированный портфель. Третья точка в лизинговой линейке после Европлана и Интерлизинга. Позволяет платформе строить кросс-секторный спред-анализ внутри одной отрасли. Рейтинг исправлен 30.07.2026: было ruA (устаревшая ручная оценка), реальный — Эксперт РА ruAA- (подтверждён 28.01.2026, стабильный) и АКРА AA-(RU)."
   },
   "7705619586": {
     "name": "Эталон Финанс",
     "sector": "real_estate",
     "risk_tier": "watch",
     "rating": "ruBBB+",
+    "rating_agency": "Эксперт РА",
     "edisclosure_id": "20064",
     "secids": [
       "RU000A10DA74",
@@ -231,12 +247,16 @@
     "sector": "holding_diversified",
     "risk_tier": "core",
     "rating": "ruA-",
+    "rating_agency": "unknown",
     "edisclosure_id": "3098",
     "secids": [
       "RU000A10B024",
-      "RU000A106Z46"
+      "RU000A106Z46",
+      "RU000A10BPZ1",
+      "RU000A10EE87",
+      "RU000A1098F3"
     ],
-    "note": "Диверсифицированный холдинг — МТС, Сегежа, Агрохолдинг, медицина. Риск концентрации на Сегеже и на долге самого холдинга. Интересен как холдинг-кейс: дочки в watchlist-е (Сегежа), сам холдинг тоже. Кросс-анализ."
+    "note": "Диверсифицированный холдинг — МТС, Сегежа, Агрохолдинг, медицина. Риск концентрации на Сегеже и на долге самого холдинга. Интересен как холдинг-кейс: дочки в watchlist-е (Сегежа), сам холдинг тоже. Кросс-анализ. Систем2P02/2P12/1P31 добавлены 2026-07-30 (Smart-Lab, 30.07.2026) для заполнения term-structure между текущими выпусками -- см. RU000A10EE87's BUYBACKDATE (оферта 2028-02-21, короче итогового MATDATE 2031-02-01)."
   },
   "7726637843": {
     "name": "Гарант-Инвест",

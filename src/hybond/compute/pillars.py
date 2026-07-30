@@ -187,3 +187,29 @@ def compute_pillars(balance, fin, cf, balance_prev=None) -> Pillars:
         score_leverage=s_lev, score_liquidity=s_liq, score_refinancing=s_ref,
         score_operations=s_ops, coverage_note=note,
     )
+
+
+PILLAR_SCORE_KEYS = ["score_leverage", "score_liquidity", "score_refinancing", "score_operations"]
+
+
+def pillars_delta(current: dict, previous: dict | None) -> dict:
+    """Per-pillar current-vs-previous-snapshot delta -- 'improving' (score
+    up, higher is always safer here)/'degrading'/'flat'. Deliberately NOT a
+    z-score model like diff/engine.py's stat detector for G-spread: that
+    needs ~8+ snapshots of history to characterise normal noise, and
+    pillars_snapshot doesn't have that yet for any issuer (see
+    db.pillars_history). This is a plain two-point comparison, ready to
+    accumulate into something more statistical once real weekly history
+    exists -- don't oversell it as a trend in the meantime."""
+    if not previous:
+        return {k: {"delta": None, "direction": None} for k in PILLAR_SCORE_KEYS}
+    out = {}
+    for k in PILLAR_SCORE_KEYS:
+        cur, prev = current.get(k), previous.get(k)
+        if cur is None or prev is None:
+            out[k] = {"delta": None, "direction": None}
+            continue
+        d = cur - prev
+        out[k] = {"delta": d,
+                   "direction": "improving" if d > 0 else "degrading" if d < 0 else "flat"}
+    return out

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from .cbr_tracker import _midpoint
 from .compute import default_probs
+from .store import db
 
 FALLBACK_SCENARIOS = {
     "base": -0.010, "stress": 0.015, "bull": -0.020,
@@ -117,3 +118,49 @@ def pd_adjusted_aey(aey: float | None, rating: str | None, horizon_yr: int = 1) 
     key = default_probs._HORIZON_KEYS.get(horizon_yr, "yr1")
     pd = probs[key]
     return (1 - pd) * aey - pd * (1 - default_probs.RECOVERY_RATE)
+
+
+def apply_issuer_cap(rows: list[dict], per_issuer_cap: int = 2) -> list[dict]:
+    """Enforce a max-N-series-per-issuer cap on an already-ranked list
+    (best first) -- ranking a candidate list by return alone doesn't
+    penalize single-name concentration risk. First observed on the initial
+    top-15-by-aey_base_risk_adj run: 6 of 15 rows were all Самолёт series,
+    crowding out every other issuer in what's supposed to read as a
+    diversified candidate list, not one issuer's own curve.
+
+    Rows must already be sorted by the ranking key -- this only filters,
+    preserving relative order, so a later/lower-ranked row from an issuer
+    that hasn't hit the cap still outranks an earlier/higher-ranked row from
+    an issuer that has."""
+    counts: dict[str, int] = {}
+    capped = []
+    for row in rows:
+        inn = row.get("emitent_inn")
+        n = counts.get(inn, 0)
+        if n >= per_issuer_cap:
+            continue
+        counts[inn] = n + 1
+        capped.append(row)
+    return capped
+
+
+def rank_candidates(con, limit: int = 15, per_issuer_cap: int = 2,
+                     ytm_max: float = 0.80, in_watchlist_only: bool = True,
+                     snap_date: str | None = None) -> list[dict]:
+    """Portfolio candidate list: aey_base_risk_adj descending, with the YTM
+    sanity bound from the mispricing-scaling investigation (PD-weighting
+    alone doesn't tame nominal YTMs in the hundreds/thousands of percent --
+    those reflect distress pricing, not a return to rank on) and the
+    per-issuer cap above. `snap_date` defaults to the latest available.
+    """
+    snap_date = snap_date or db.latest_universe_snap_date(con)
+    if not snap_date:
+        return []
+    query = ("SELECT * FROM universe_snapshot WHERE snap_date=? "
+             "AND aey_base_risk_adj IS NOT NULL AND ytm < ?")
+    params: list = [snap_date, ytm_max]
+    if in_watchlist_only:
+        query += " AND in_watchlist=1"
+    query += " ORDER BY aey_base_risk_adj DESC"
+    rows = [dict(r) for r in con.execute(query, params)]
+    return apply_issuer_cap(rows, per_issuer_cap)[:limit]

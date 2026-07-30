@@ -74,13 +74,25 @@ def test_current_rating_prefers_agency_priority_on_tied_date(tmp_path):
     con.close()
 
 
-def test_current_rating_prefers_more_recent_date_over_agency(tmp_path):
+def test_current_rating_prefers_more_recent_date_among_real_agencies(tmp_path):
     con = _base_con(tmp_path, "r6.sqlite")
+    db.upsert_rating(con, ISSUER, "АКРА", "ruBBB-", None, None, "2026-01-01")
+    db.upsert_rating(con, ISSUER, "NKR", "ruB+", None, None, "2026-07-01")
+    con.commit()
+    # both real agencies -- strictly more recent date wins
+    assert db.current_rating(con, ISSUER) == "ruB+"
+    con.close()
+
+
+def test_current_rating_real_agency_beats_more_recent_manual_row(tmp_path):
+    con = _base_con(tmp_path, "r8.sqlite")
     db.upsert_rating(con, ISSUER, "АКРА", "ruBBB-", None, None, "2026-01-01")
     db.upsert_rating(con, ISSUER, "manual", "ruB+", None, None, "2026-07-01")
     con.commit()
-    # manual is lower priority but strictly more recent -- recency wins
-    assert db.current_rating(con, ISSUER) == "ruB+"
+    # manual row is strictly more recent but must NOT override a real
+    # agency's rating -- manual is an unverified bootstrap, not a signal
+    # that should ever outrank a genuine agency action.
+    assert db.current_rating(con, ISSUER) == "ruBBB-"
     con.close()
 
 
@@ -115,6 +127,84 @@ def test_factlist_pulls_default_prob_from_rating_table(tmp_path):
     assert fl["default_prob_1yr"] == 0.03056
     assert fl["implied_fair_spread_bp"] is not None
     assert fl["mispricing_bp"] is not None
+    con.close()
+
+
+def test_new_rating_defaults_needs_verification_null(tmp_path):
+    # upsert_rating's own default (None) is neither 0 nor 1 -- callers must
+    # decide explicitly; only init_rating's one-time backfill sets it based
+    # on agency='manual'.
+    con = _base_con(tmp_path, "r10.sqlite")
+    db.upsert_rating(con, ISSUER, "manual", "ruBB", None, None, "2026-07-01")
+    con.commit()
+    row = con.execute("SELECT verified_on, needs_verification FROM rating "
+                      "WHERE issuer_id=?", (ISSUER,)).fetchone()
+    assert row["verified_on"] is None
+    assert row["needs_verification"] is None
+    con.close()
+
+
+def test_upsert_rating_can_set_verified_on_and_clear_flag(tmp_path):
+    con = _base_con(tmp_path, "r11.sqlite")
+    db.upsert_rating(con, ISSUER, "Эксперт РА", "ruA+", "developing", "downgraded",
+                     "2026-06-30", verified_on="2026-07-30", needs_verification=0)
+    con.commit()
+    row = con.execute("SELECT verified_on, needs_verification FROM rating "
+                      "WHERE issuer_id=?", (ISSUER,)).fetchone()
+    assert row["verified_on"] == "2026-07-30"
+    assert row["needs_verification"] == 0
+    con.close()
+
+
+def test_retire_rating_flips_all_rows_under_that_agency(tmp_path):
+    # Needed when superseding a stale 'manual' bootstrap row with a real,
+    # differently-dated agency row -- upsert_rating's own supersession only
+    # retires rows under the SAME agency, so a stale 'manual' row would
+    # otherwise keep is_current=1 forever once a different agency is used.
+    con = _base_con(tmp_path, "r12.sqlite")
+    db.upsert_rating(con, ISSUER, "manual", "ruA-", None, None, "2026-07-27")
+    con.commit()
+    db.retire_rating(con, ISSUER, "manual")
+    db.upsert_rating(con, ISSUER, "Эксперт РА", "ruA+", "developing", "downgraded",
+                     "2026-06-30", verified_on="2026-07-30", needs_verification=0)
+    con.commit()
+    hist = db.rating_history(con, ISSUER)
+    current = [r for r in hist if r["is_current"] == 1]
+    assert len(current) == 1
+    assert current[0]["rating"] == "ruA+"
+    # earlier rated_on than the retired manual row -- would lose the
+    # date-first tiebreak if the manual row hadn't been explicitly retired.
+    assert db.current_rating(con, ISSUER) == "ruA+"
+    con.close()
+
+
+def test_init_rating_migrates_and_backfills_pre_existing_table(tmp_path):
+    # Simulates a DB created before verified_on/needs_verification existed
+    # (the real production DB's actual situation on 2026-07-30) -- a bare
+    # CREATE TABLE matching the OLD schema, populated directly via SQL
+    # (bypassing upsert_rating, which already knows about the new columns),
+    # then init_rating() must both add the columns AND backfill by agency.
+    con = db.connect(tmp_path / "r13.sqlite")
+    con.execute("""
+        CREATE TABLE rating (
+            issuer_id TEXT, secid TEXT, agency TEXT NOT NULL, rating TEXT NOT NULL,
+            outlook TEXT, action TEXT, rated_on TEXT NOT NULL,
+            source TEXT DEFAULT 'manual', is_current INTEGER DEFAULT 1,
+            PRIMARY KEY (issuer_id, agency, rated_on)
+        )
+    """)
+    con.execute("INSERT INTO rating(issuer_id,agency,rating,rated_on) "
+               "VALUES(?,?,?,?)", (ISSUER, "manual", "ruBB", "2026-07-01"))
+    con.execute("INSERT INTO rating(issuer_id,agency,rating,rated_on) "
+               "VALUES(?,?,?,?)", (ISSUER, "АКРА", "ruBBB-", "2026-07-01"))
+    con.commit()
+
+    db.init_rating(con)  # should ALTER TABLE + backfill, since columns are new
+
+    rows = {r["agency"]: r["needs_verification"] for r in
+            con.execute("SELECT agency, needs_verification FROM rating")}
+    assert rows["manual"] == 1
+    assert rows["АКРА"] == 0
     con.close()
 
 

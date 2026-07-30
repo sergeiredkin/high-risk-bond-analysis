@@ -35,20 +35,25 @@ SOURCE_MARKER = "smartlab"
 # Name/ticker -> watchlist issuer_id (ИНН). Multiple keys can map to the same
 # issuer (Cyrillic name, Latin ticker, alternate spelling).
 INTERFAX_ISSUERS = {
+    # 2026-07-30: 8 of these 11 entries carried an INN that didn't match
+    # watchlist.json's current issuer_id for the same company (confirmed via
+    # the same cross-check that found wrong INNs in watchlist.json itself
+    # earlier this session) -- a name-match here would have "succeeded" but
+    # then silently failed to attach to any real issuer row, since the
+    # target issuer_id didn't exist. Corrected against watchlist.json.
     "Самолёт": "9731004688",
     "Самолет": "9731004688",
     "SMLT": "9731004688",
-    "Сегежа": "7705878994",
-    "АФК Система": "7703206651",
+    "Сегежа": "9703024202",
+    "АФК Система": "7703104630",
     "ГлоракС": "9729387137",
-    "Монополия": "9710044621",
-    "Займер": "7733877485",
-    "CarMoney": "7714349045",
-    "КарМани": "7714349045",
-    "Интерлизинг": "7710538748",
-    "Балтийский лизинг": "7736581922",
-    "Эталон": "7731573477",
-    "Гарант-Инвест": "7708769099",
+    "Монополия": "7810766685",
+    "CarMoney": "7730634468",
+    "КарМани": "7730634468",
+    "Интерлизинг": "7802131219",
+    "Балтийский лизинг": "7826705374",
+    "Эталон": "7705619586",
+    "Гарант-Инвест": "7726637843",
 }
 
 _ITEM_RE = re.compile(

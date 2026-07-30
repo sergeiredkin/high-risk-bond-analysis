@@ -82,6 +82,34 @@ def spread_history_by_secid(con) -> dict[str, list[dict]]:
     return out
 
 
+def mispricing_delta_by_secid(con) -> dict[str, dict]:
+    """Per-bond mispricing_bp trend: current vs. previous available
+    universe_snapshot day for that secid. A plain two-point comparison (see
+    compute.pillars.pillars_delta's docstring for why this isn't a
+    statistical model) -- universe_snapshot already stores one row per day
+    per secid, so this is a query over existing data, not new storage."""
+    rows = con.execute(
+        "SELECT secid, snap_date, mispricing_bp FROM universe_snapshot "
+        "WHERE mispricing_bp IS NOT NULL ORDER BY secid, snap_date DESC"
+    ).fetchall()
+    by_secid: dict[str, list] = defaultdict(list)
+    for r in rows:
+        by_secid[r["secid"]].append((r["snap_date"], r["mispricing_bp"]))
+    out: dict[str, dict] = {}
+    for secid, vals in by_secid.items():
+        if len(vals) < 2:
+            out[secid] = {"delta_bp": None, "direction": None}
+            continue
+        cur, prev = vals[0][1], vals[1][1]
+        d = cur - prev
+        out[secid] = {
+            "delta_bp": round(d, 0),
+            "direction": "up" if d > 0 else "down" if d < 0 else "flat",
+            "since_date": vals[1][0],
+        }
+    return out
+
+
 def _nearest_snap_date_on_or_before(con, cutoff: str) -> str | None:
     row = con.execute(
         "SELECT snap_date FROM universe_snapshot WHERE snap_date<=? "
@@ -232,7 +260,87 @@ def universe_snapshot_bundle(con) -> dict:
             "fair_value_bp_by_tier": fair_value_bp_by_tier}
 
 
-def universe_for_dashboard(con) -> dict:
+def data_notes(con, watchlist: dict) -> dict:
+    """Slice status banners, computed live from the store every export run --
+    these used to be hand-maintained strings (a stale one claimed synthetic
+    day-2 data and an '11 issuers' Slice 4 count long after both were
+    overtaken by real runs, 2026-07-30). Regenerating from queries means the
+    banner can't drift from reality again the way the strings did."""
+    real_dates = [r[0] for r in con.execute(
+        "SELECT DISTINCT snap_date FROM spread_snapshot ORDER BY snap_date")]
+    synthetic_events = con.execute(
+        "SELECT COUNT(*) c FROM event WHERE summary LIKE '%SYNTHETIC%'").fetchone()["c"]
+
+    slice1_slice2 = (
+        f"Real data throughout: {len(real_dates)} trading day(s) now in "
+        f"spread_snapshot ({real_dates[0]} to {real_dates[-1]}) from live "
+        f"`hybond run` pulls -- no synthetic/jittered data remains (the "
+        f"original single-day demo, scripts/seed_day2_demo.py, was superseded "
+        f"by real runs on those same calendar dates). Floaters with a "
+        f"not-yet-fixed next coupon can't be priced from cashflows (see "
+        f"pipeline.py) -- those use MOEX's own reported yield as a G-spread "
+        f"proxy instead (marked '~'/'*' in the dashboard, yield_source='moex' "
+        f"in spread_snapshot). A bond still shows no price only if it had "
+        f"zero trades on the snapshot date."
+    )
+
+    classified_issuers = {r["issuer_id"] for r in con.execute(
+        "SELECT DISTINCT issuer_id FROM event")}
+    filing_issuers = {r["issuer_id"] for r in con.execute(
+        "SELECT DISTINCT issuer_id FROM filing")}
+    backlog_issuers = {r["issuer_id"] for r in con.execute(
+        "SELECT DISTINCT issuer_id FROM filing WHERE classified=0")}
+    wl_ids = [k for k in watchlist if not k.startswith("_")]
+    zero_filing_ids = [i for i in wl_ids if i not in filing_issuers]
+    zero_filing_names = ", ".join(
+        watchlist[i].get("name", i) for i in zero_filing_ids)
+
+    slice3 = (
+        f"{len(classified_issuers)} issuer(s) have at least one real "
+        f"CLASSIFIED event (hy-event-classify), {len(backlog_issuers)} "
+        f"issuer(s) have real filings scraped from e-disclosure.azipi.ru "
+        f"sitting unclassified in the `filing` table (pipeline backlog, not "
+        f"missing data -- see `hybond queue`), and {len(zero_filing_ids)} "
+        f"issuer(s) genuinely have zero filings scraped at all: "
+        f"{zero_filing_names or '(none)'}."
+        + (f" {synthetic_events} [SYNTHETIC DEMO] placeholder event(s) still "
+           f"remain -- investigate before trusting this note." if synthetic_events
+           else " No [SYNTHETIC DEMO] placeholder events remain platform-wide.")
+    )
+
+    pillars_issuers = {r["issuer_id"] for r in con.execute(
+        "SELECT DISTINCT issuer_id FROM pillars_snapshot")}
+    zero_pillars_ids = [i for i in wl_ids if i not in pillars_issuers]
+    zero_pillars_names = ", ".join(
+        watchlist[i].get("name", i) for i in zero_pillars_ids)
+
+    slice4 = (
+        f"Slice 4 financials: real data only. {len(pillars_issuers)} of "
+        f"{len(wl_ids)} watchlist issuers have a real ГИР БО financials row "
+        f"(parser-api.com, `hybond financials`) feeding hybond.compute.pillars. "
+        f"{len(zero_pillars_ids)} issuer(s) have no financials_snapshot/"
+        f"pillars_snapshot row: {zero_pillars_names or '(none)'} -- for the "
+        f"MFI-regulated names among these this is a confirmed structural gap "
+        f"(regulated under CBR, not indexed in ГИР БО), not a fetch failure; "
+        f"see their watchlist.json notes. The weekly cron "
+        f"(scripts/weekly_financials.sh) that keeps this current was fixed "
+        f"2026-07-30 but had not yet reached its first scheduled Sunday run "
+        f"as of this export -- check financials_snapshot dates directly "
+        f"rather than assuming the cron has already run."
+    )
+
+    return {"slice1_slice2": slice1_slice2, "slice3": slice3, "slice4": slice4}
+
+
+def _aey_source_note(scenarios: dict) -> str:
+    if scenarios["is_fallback"]:
+        return ("AEY рассчитан по консервативным значениям по умолчанию "
+                 "(нет данных последнего заседания ЦБ)")
+    d = scenarios["source_date"]
+    return f"AEY рассчитан по данным заседания ЦБ от {d[8:10]}.{d[5:7]}.{d[0:4]}"
+
+
+def universe_for_dashboard(con, scenarios: dict) -> dict:
     """Back-compat shape for the existing 'Универсум' screener tab (single
     latest snapshot, no market-map fields it doesn't use)."""
     db.init_universe(con)
@@ -241,25 +349,31 @@ def universe_for_dashboard(con) -> dict:
         return {"snap_date": None, "bonds": []}
     issuer_sectors = {r["issuer_id"]: r["sector"]
                       for r in con.execute("SELECT issuer_id, sector FROM issuer")}
-    db.init_cbr(con)
-    scenarios = portfolio.get_rate_scenarios(con)
     return {
         "snap_date": snap_date,
         "bonds": _bonds_for_snap_date(con, snap_date, issuer_sectors),
         "aey_source_date": scenarios["source_date"],
         "aey_is_fallback": scenarios["is_fallback"],
-        "aey_source_note": (
-            f"AEY рассчитан по данным заседания ЦБ от "
-            f"{scenarios['source_date'][8:10]}.{scenarios['source_date'][5:7]}."
-            f"{scenarios['source_date'][0:4]}"
-            if not scenarios["is_fallback"]
-            else "AEY рассчитан по консервативным значениям по умолчанию "
-                 "(нет данных последнего заседания ЦБ)"
-        ),
+        "aey_source_note": _aey_source_note(scenarios),
     }
 
 
-def cbr_export(con) -> dict:
+def universe_aey_by_secid(con, snap_date: str | None) -> dict[str, dict]:
+    """secid -> {mispricing_bp, aey_base, aey_stress, aey_bull,
+    aey_base_risk_adj} from the latest universe_snapshot, for enriching the
+    watchlist tab's per-issuer bonds (which come from factlists -- a
+    completely separate pipeline from universe_pipeline.py). This is a JOIN
+    by secid, not a recomputation -- there is exactly one AEY calculation in
+    the codebase (portfolio.py), read from two places."""
+    if not snap_date:
+        return {}
+    rows = con.execute(
+        "SELECT secid, mispricing_bp, aey_base, aey_stress, aey_bull, aey_base_risk_adj "
+        "FROM universe_snapshot WHERE snap_date=?", (snap_date,)).fetchall()
+    return {r["secid"]: dict(r) for r in rows}
+
+
+def cbr_export(con, scenarios: dict) -> dict:
     """CBR key-rate meeting tracker, shaped for the dashboard's fourth tab.
     Reads cbr_meeting + cbr_meeting_diff only -- no computation happens
     here, `hybond cbr --fetch-all`/`--diff-all` (cbr_tracker.py) already did
@@ -302,7 +416,6 @@ def cbr_export(con) -> dict:
     # deltas for the same meeting date. is_fallback is always surfaced
     # (never silently swallowed) so the dashboard can show a warning badge
     # instead of presenting a fallback constant as a real forecast-derived one.
-    scenarios = portfolio.get_rate_scenarios(con)
     rate_scenarios = {
         "base_annual_bp": round(scenarios["base"] * 10000),
         "stress_annual_bp": round(scenarios["stress"] * 10000),
@@ -376,12 +489,16 @@ def main() -> None:
 
     con = db.connect()
     db.init_db(con)
-    universe = universe_for_dashboard(con)
+    db.init_cbr(con)
+    scenarios = portfolio.get_rate_scenarios(con)  # single computation, shared below
+    universe = universe_for_dashboard(con, scenarios)
     market_map = universe_snapshot_bundle(con)
-    cbr = cbr_export(con)
+    cbr = cbr_export(con, scenarios)
     fhist = flag_history(con)
     shist = spread_history_by_secid(con)
     fcounts = filing_counts_by_issuer(con)
+    aey_by_secid = universe_aey_by_secid(con, universe["snap_date"])
+    mis_delta_by_secid = mispricing_delta_by_secid(con)
 
     issuers = []
     for issuer_id, meta in watchlist.items():
@@ -396,9 +513,21 @@ def main() -> None:
                 "status": thesis_row["status"],
                 "updated": thesis_row["updated"],
             }
+        rating_row = db.current_rating_row(con, issuer_id)
+        rating_needs_verification = bool(rating_row["needs_verification"]) if rating_row else False
+
         bonds = fl.get("bonds", [])
         for b in bonds:
             b["spread_history"] = shist.get(b["secid"], [])
+            aey = aey_by_secid.get(b["secid"])
+            b["mispricing_bp"] = round(aey["mispricing_bp"], 0) if aey and aey["mispricing_bp"] is not None else None
+            b["mispricing_trend"] = mis_delta_by_secid.get(
+                b["secid"], {"delta_bp": None, "direction": None})
+            b["aey_base_pct"] = round(aey["aey_base"] * 100, 2) if aey and aey["aey_base"] is not None else None
+            b["aey_stress_pct"] = round(aey["aey_stress"] * 100, 2) if aey and aey["aey_stress"] is not None else None
+            b["aey_bull_pct"] = round(aey["aey_bull"] * 100, 2) if aey and aey["aey_bull"] is not None else None
+            b["aey_base_risk_adj_pct"] = (round(aey["aey_base_risk_adj"] * 100, 2)
+                                          if aey and aey["aey_base_risk_adj"] is not None else None)
 
         issuers.append({
             "issuer_id": issuer_id,
@@ -406,6 +535,7 @@ def main() -> None:
             "sector": meta.get("sector"),
             "risk_tier": meta.get("risk_tier", "core"),
             "rating": meta.get("rating"),
+            "rating_needs_verification": rating_needs_verification,
             "note": meta.get("note"),
             "edisclosure_id": meta.get("edisclosure_id"),
             "snap_date": fl.get("snap_date"),
@@ -414,10 +544,13 @@ def main() -> None:
             "flag_history": fhist.get(issuer_id, []),
             "stat_warming_up": fl.get("stat_warming_up", True),
             "events": fl.get("events_since_last", []),
+            "market_notes": fl.get("market_notes_since_last", []),
             "six_pillars": fl.get("six_pillars", {}),
+            "six_pillars_delta": fl.get("six_pillars_delta", {}),
             "thesis": thesis,
             "filing_counts": fcounts.get(issuer_id, {"total": 0, "classified": 0}),
         })
+    notes = data_notes(con, watchlist)
     con.close()
 
     out = {
@@ -428,6 +561,8 @@ def main() -> None:
         "maturity_wall": report.get("maturity_wall", []),
         "redemptions_by_issuer": report.get("redemptions_by_issuer", {}),
         "issuers": issuers,
+        "aey_source_note": _aey_source_note(scenarios),
+        "aey_is_fallback": scenarios["is_fallback"],
         "universe": universe,
         "universe_now": market_map["universe_now"],
         "universe_week_ago": market_map["universe_week_ago"],
@@ -435,36 +570,7 @@ def main() -> None:
         "rf_curve": market_map["rf_curve"],
         "fair_value_bp_by_tier": market_map["fair_value_bp_by_tier"],
         "cbr": cbr,
-        "data_notes": {
-            "slice1_slice2": "Real data: MOEX ISS + CBR ZCYC (day 1), "
-                              "synthetic jittered day 2 for diff-engine demo "
-                              "(scripts/seed_day2_demo.py) — real trading day 2 "
-                              "will replace this on the next live `hybond run`. "
-                              "Floaters with a not-yet-fixed next coupon can't be "
-                              "priced from cashflows (see pipeline.py) — those use "
-                              "MOEX's own reported yield as a G-spread proxy instead "
-                              "(marked '~'/'*' in the dashboard, yield_source='moex' "
-                              "in spread_snapshot). A bond still shows no price only "
-                              "if it had zero trades on the snapshot date.",
-            "slice3": "All [SYNTHETIC DEMO] placeholder events have been removed "
-                      "platform-wide (2026-07-27 cleanup). 7 issuers have real "
-                      "filings scraped from e-disclosure.azipi.ru (see "
-                      "filing_counts): ЕвроТранс, МГКЛ, Селигдар, Контрол Лизинг, "
-                      "ЛК Европлан, ВУШ, Брусника — their events are real "
-                      "classified filings only. ЕвроТранс's thesis_status=broken "
-                      "is a real, human-confirmed verdict. The remaining 13 "
-                      "issuers have no AZIPI coverage found (likely "
-                      "e-disclosure.ru-only issuers, which this environment's IP "
-                      "can't reach) and now show an honest empty event history "
-                      "rather than synthetic placeholders.",
-            "slice4": "Slice 4 financials: MIXED. 11 issuers have real ГИР БО "
-                      "financials (fetched via parser-api.com, `hybond "
-                      "financials`) feeding the real hybond.compute.pillars "
-                      "module. The other 9 issuers' pillars are still fabricated "
-                      "from risk_tier (scripts/seed_demo_slice34.py) pending a "
-                      "successful ГИР БО fetch — check payload['_synthetic'] "
-                      "before treating any issuer's six_pillars as real.",
-        },
+        "data_notes": notes,
     }
     OUT_PATH.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Wrote {OUT_PATH} ({len(issuers)} issuers)")

@@ -85,6 +85,13 @@
   section { margin-top: 34px; }
   h2 { font-size: 16px; margin: 0 0 4px; }
   .section-note { color: var(--text-secondary); font-size: 12.5px; margin: 0 0 14px; max-width: 760px; }
+  h2.collapsible-h2 {
+    cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none;
+  }
+  h2.collapsible-h2:hover { color: var(--series-1); }
+  .collapse-arrow { font-size: 12px; color: var(--text-muted); transition: transform 0.15s ease; display: inline-block; }
+  section.collapsed .collapsible-body { display: none; }
+  section.collapsed .collapse-arrow { transform: rotate(-90deg); }
   .card {
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
     padding: 18px 20px;
@@ -161,6 +168,25 @@
     font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--warning);
     border: 1px solid var(--warning); border-radius: 5px; padding: 1px 5px; margin-left: 6px;
   }
+  .source-badge {
+    font-size: 10px; letter-spacing: .02em; color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; margin-left: 6px;
+    white-space: nowrap;
+  }
+  .source-badge.secondary { color: var(--warning); border-color: var(--warning); }
+  .events-filter { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .events-filter button {
+    font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); cursor: pointer;
+  }
+  .events-filter button.active { background: var(--text-primary); color: var(--surface-1); }
+  .events-filter .events-filter-note { font-size: 11.5px; color: var(--text-muted); }
+  .maturity-filter { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin-bottom: 12px; }
+  .maturity-filter label {
+    display: flex; align-items: center; gap: 5px; font-size: 12.5px; cursor: pointer;
+    color: var(--text-secondary); user-select: none;
+  }
+  .maturity-filter input[type="checkbox"] { cursor: pointer; accent-color: var(--series-1); width: 14px; height: 14px; }
   footer { margin-top: 50px; color: var(--text-muted); font-size: 11.5px; text-align: center; }
   .sort-arrow { opacity: .5; font-size: 9px; margin-left: 3px; }
   .flag-chip { display:inline-block; background: color-mix(in srgb, var(--critical) 12%, var(--surface-1));
@@ -296,22 +322,36 @@
   </section>
 
   <section id="sec-spread">
-    <h2>G-спред скрининг (день 1, реальные данные MOEX/CBR)</h2>
+    <h2 class="collapsible-h2"><span class="collapse-arrow">▼</span>G-спред скрининг (день 1, реальные данные MOEX/CBR)</h2>
+    <div class="collapsible-body">
     <p class="section-note">G-спред — надбавка доходности облигации к безрисковой кривой ОФЗ (CBR ZCYC) на сопоставимый срок, в базисных пунктах (100 бп = 1 п.п.). Чем выше спред — тем больше рынок закладывает риска дефолта/реструктуризации в цену. Флоатеры с ещё не зафиксированным следующим купоном исключены из расчёта доходности (см. примечание выше) — поэтому не все облигации из списка наблюдения показаны.</p>
+    <div class="maturity-filter" id="maturityFilter"></div>
     <div class="card"><div id="spreadChart"></div></div>
+    </div>
   </section>
 
-  <section id="sec-wall">
-    <h2>Календарь погашений (maturity wall), 24 месяца</h2>
+  <section id="sec-portfolio-rank">
+    <h2>Портфельный рейтинг (риск-скорректированный)</h2>
+    <p class="section-note">AEY (Adjusted Expected Yield) — доходность с поправкой на ожидаемый путь ключевой ставки ЦБ (база/стресс/бык) через дюрацию облигации. «AEY (риск)» дополнительно взвешивает базовый сценарий на вероятность дефолта по рейтингу (таблица Эксперт РА) и severity — превращает номинальную доходность в вероятностно-взвешенную ожидаемую. Облигации с YTM ≥ 80% (дистресс-цены, не доходность для ранжирования) исключены; не более 2 выпусков на эмитента. Клик по заголовку столбца — сортировка.</p>
+    <div class="banner" id="aeySourceBanner"></div>
+    <div class="card table-scroll"><table id="portfolioRankTable"></table></div>
+  </section>
+
+  <section id="sec-wall" class="collapsed">
+    <h2 class="collapsible-h2"><span class="collapse-arrow">▼</span>Календарь погашений (maturity wall), 24 месяца</h2>
+    <div class="collapsible-body">
     <p class="section-note">Суммарные купонные и амортизационные выплаты по облигациям из списка наблюдения, по месяцам. Единицы — ₽ на 1000 номинала, просуммировано по всем облигациям (не портфель с реальными объёмами) — показывает форму графика нагрузки, не абсолютную сумму долга.</p>
     <div class="card"><div id="wallChart"></div></div>
+    </div>
   </section>
 
-  <section id="sec-pillars">
-    <h2>Шесть столпов кредитного качества — сравнение по эмитентам</h2>
-    <div class="banner"><b>Демо-данные.</b> Оценки по столпам считаются реальной функцией <code>compute_pillars()</code>, но входные финансовые показатели — синтетические (сгенерированы по risk_tier из watchlist.json), не из ГИР БО. Для реальных данных нужен ключ parser-api.com и запуск <code>hybond financials</code>.</div>
+  <section id="sec-pillars" class="collapsed">
+    <h2 class="collapsible-h2"><span class="collapse-arrow">▼</span>Шесть столпов кредитного качества — сравнение по эмитентам</h2>
+    <div class="collapsible-body">
+    <div class="banner" id="pillarsCoverageBanner"></div>
     <p class="section-note">Каждый столп — балл 0–100, где выше = безопаснее. Leverage — долг/EBIT и покрытие процентов. Liquidity — текущая ликвидность и покрытие краткосрочного долга кэшем. Refinancing — доля краткосрочного долга в общем (выше доля = больше риска рефинансирования одномоментно). Operations — чистая маржа.</p>
     <div class="card"><div id="pillarChart"></div></div>
+    </div>
   </section>
 
   <section id="sec-table">
@@ -322,8 +362,14 @@
 
   <section id="sec-events">
     <h2>Лента событий</h2>
-    <div class="banner"><b>Демо-данные.</b> События сгенерированы скриптом <code>scripts/seed_demo_slice34.py</code> по риск-тиру эмитента, а не получены сканером e-disclosure.ru (для этого нужен ChromeDriver + Selenium, недоступны в этом окружении). Категории и структура — по реальной таксономии <code>skills/hy-event-classify/references/taxonomy.md</code>.</div>
-    <div class="card"><div id="eventsTimeline"></div></div>
+    <div class="banner">Реальные данные: классифицированные материальные факты с e-disclosure.azipi.ru (ручная классификация через навык <code>hy-event-classify</code>, таксономия — <code>skills/hy-event-classify/references/taxonomy.md</code>) плюс вторичные новости Smart-Lab (<code>market_note</code>, помечены отдельно). Показаны только уже классифицированные записи — у большинства эмитентов накопленные filings ещё в очереди на классификацию (<code>hybond queue</code> / <code>hybond market-notes-queue</code>), это стадия конвейера, а не отсутствие данных.</div>
+    <div class="card">
+      <div class="events-filter">
+        <button id="eventsFilterToggle" class="active" data-mode="critical">Только high/critical</button>
+        <span class="events-filter-note" id="eventsFilterNote"></span>
+      </div>
+      <div id="eventsTimeline"></div>
+    </div>
   </section>
   </div>
 
@@ -480,7 +526,7 @@ applyTheme(localStorage.getItem('hybond-theme') || 'auto');
 
 // ---------- header / notes ----------
 document.getElementById('subtitle').textContent =
-  `День 1 (реальные данные): ${DATA.day1_snap_date}  ·  День 2 (демо для движка сравнения): ${DATA.day2_snap_date}  ·  ${DATA.issuers.length} эмитентов в списке наблюдения`;
+  `Первый день: ${DATA.day1_snap_date}  ·  Последний день: ${DATA.day2_snap_date}  ·  ${DATA.issuers.length} эмитентов в списке наблюдения`;
 document.getElementById('genTime').textContent = DATA.generated_at || '';
 
 const notesEl = document.getElementById('sec-notes');
@@ -502,8 +548,8 @@ const stats = [
   ['Эмитентов в списке', DATA.issuers.length],
   ['Облигаций всего / с ценой', `${totalBonds} / ${pricedBonds.length}`],
   ['Средний G-спред', avgSpread + ' бп'],
-  ['Эмитентов с флагом на день 2', attentionToday],
-  ['Событий в ленте (демо)', totalEvents],
+  ['Эмитентов с флагом (посл. сравнение)', attentionToday],
+  ['Событий в ленте', totalEvents],
 ];
 document.getElementById('statRow').innerHTML = stats.map(([label, value]) => `
   <div class="stat-tile"><div class="value">${value}</div><div class="label">${label}</div></div>
@@ -556,6 +602,7 @@ function pillarPanelHtml(iss) {
   const isLeasingUnreliable = sp.sector_note && sp.sector_note.toLowerCase().includes('лизинговая компания');
   const debtToEbit = isLeasingUnreliable ? 'н/д' : (sp.debt_to_ebit != null ? sp.debt_to_ebit.toFixed(2) + 'x' : '—');
   const currentRatio = sp.current_ratio != null ? sp.current_ratio.toFixed(2) : '—';
+  const interestCoverage = sp.interest_coverage != null ? sp.interest_coverage.toFixed(2) + 'x' : '—';
 
   const note = sp.sector_note || sp.coverage_note;
   const noteIcon = note
@@ -568,59 +615,249 @@ function pillarPanelHtml(iss) {
     <div class="pillar-ratios">
       <span>debt/EBIT: <b>${debtToEbit}</b></span>
       <span>current ratio: <b>${currentRatio}</b></span>
+      <span>interest coverage: <b>${interestCoverage}</b></span>
     </div>
   </div>`;
 }
 
 // ================= G-spread horizontal bar chart =================
 (function renderSpreadChart() {
-  const rows = [];
+  const allRows = [];
   DATA.issuers.forEach(iss => {
     iss.bonds.forEach(b => {
       if (b.ytm_pct !== null && b.g_spread_bp !== null) {
-        rows.push({ issuer: iss.name, tier: iss.risk_tier, secid: b.short_name || b.secid,
+        allRows.push({ issuer: iss.name, tier: iss.risk_tier, secid: b.short_name || b.secid,
           g: b.g_spread_bp, ytm: b.ytm_pct, dur: b.mod_dur, delta: b.g_spread_delta_bp,
           estimated: b.yield_source === 'moex' });
       }
     });
   });
-  rows.sort((a, b) => b.g - a.g);
 
-  const W = 1080, rowH = 28, padL = 210, padR = 70, padT = 8;
-  const H = rows.length * rowH + padT + 10;
-  const maxG = Math.max(...rows.map(r => r.g), 100);
-  const scaleX = v => (v / maxG) * (W - padL - padR);
+  // Maturity buckets, filtering by mod_dur (the field already computed for
+  // every priced bond -- see pipeline.py) rather than raw time-to-maturity.
+  // Boundaries are midpoints between the named buckets so the partition has
+  // no gaps or overlaps: <0.5y, then a ±0.5y band around each of 1/2/3y, then
+  // everything past 3.5y.
+  const MATURITY_BUCKETS = [
+    { key: 'lt05', label: '< 0.5 лет', test: d => d < 0.5 },
+    { key: 'y1', label: '≈ 1 год', test: d => d >= 0.5 && d < 1.5 },
+    { key: 'y2', label: '≈ 2 года', test: d => d >= 1.5 && d < 2.5 },
+    { key: 'y3', label: '≈ 3 года', test: d => d >= 2.5 && d < 3.5 },
+    { key: 'gt3', label: '3+ лет', test: d => d >= 3.5 },
+  ];
+  const activeBuckets = new Set(MATURITY_BUCKETS.map(b => b.key)); // all checked by default
 
-  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="G-spread screen">`;
-  // gridlines
-  const ticks = 5;
-  for (let t = 0; t <= ticks; t++) {
-    const v = (maxG / ticks) * t;
-    const x = padL + scaleX(v);
-    svg += `<line class="grid-line" x1="${x}" x2="${x}" y1="0" y2="${H-16}"></line>`;
-    svg += `<text x="${x}" y="${H-4}" text-anchor="middle">${Math.round(v)}бп</text>`;
+  document.getElementById('maturityFilter').innerHTML = MATURITY_BUCKETS.map(b => `
+    <label><input type="checkbox" data-bucket="${b.key}" checked>${b.label}</label>
+  `).join('');
+  document.querySelectorAll('#maturityFilter input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) activeBuckets.add(cb.dataset.bucket);
+      else activeBuckets.delete(cb.dataset.bucket);
+      render();
+    });
+  });
+
+  function matchesActiveBuckets(dur) {
+    if (activeBuckets.size === MATURITY_BUCKETS.length) return true; // nothing unchecked -- no filter
+    if (dur == null) return false; // can't bucket an unknown duration once filtering is active
+    return MATURITY_BUCKETS.some(b => activeBuckets.has(b.key) && b.test(dur));
   }
-  rows.forEach((r, i) => {
-    const y = padT + i * rowH;
-    const barW = scaleX(r.g);
-    const color = TIER_COLOR[r.tier] || 'var(--series-1)';
-    svg += `<text x="${padL - 10}" y="${y + rowH/2 + 4}" text-anchor="end" style="fill:var(--text-primary)">${r.issuer}</text>`;
-    svg += `<rect class="bar" data-i="${i}" x="${padL}" y="${y+5}" width="${Math.max(barW,2)}" height="${rowH-10}" rx="4" fill="${color}" ${r.estimated ? 'stroke-dasharray="3,2" stroke="var(--text-muted)"' : ''}></rect>`;
-    svg += `<text class="value-label" x="${padL + barW + 8}" y="${y + rowH/2 + 4}">${r.estimated ? '~' : ''}${Math.round(r.g)}бп</text>`;
-  });
-  svg += `</svg>`;
-  document.getElementById('spreadChart').innerHTML = svg;
 
-  document.getElementById('spreadChart').querySelectorAll('rect.bar').forEach(el => {
-    const r = rows[+el.dataset.i];
-    el.addEventListener('mousemove', e => showTip(e,
-      `<b>${r.issuer} — ${r.secid}</b>G-спред: ${r.estimated?'~':''}${Math.round(r.g)} бп (Δ ${r.delta!==null? (r.delta>0?'+':'')+Math.round(r.delta):'н/д'} бп)<br>YTM: ${r.ytm}%<br>Дюрация: ${r.dur ?? 'н/д'} лет`
-      + (r.estimated ? `<br><i>~ G-спред оценён по доходности MOEX (флоатер — купон ещё не зафиксирован), не по расчётной YTM (ACT/365F)</i>` : '')));
-    el.addEventListener('mouseleave', hideTip);
+  function render() {
+    const rows = allRows.filter(r => matchesActiveBuckets(r.dur)).sort((a, b) => b.g - a.g);
+
+    const W = 1080, rowH = 28, padL = 210, padR = 70, padT = 8;
+    const H = rows.length * rowH + padT + 10;
+    const maxG = Math.max(...rows.map(r => r.g), 100);
+    const scaleX = v => (v / maxG) * (W - padL - padR);
+
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="G-spread screen">`;
+    if (!rows.length) {
+      document.getElementById('spreadChart').innerHTML =
+        '<div class="uni-empty">Нет облигаций в выбранных бакетах срочности.</div>';
+      return;
+    }
+    // gridlines
+    const ticks = 5;
+    for (let t = 0; t <= ticks; t++) {
+      const v = (maxG / ticks) * t;
+      const x = padL + scaleX(v);
+      svg += `<line class="grid-line" x1="${x}" x2="${x}" y1="0" y2="${H-16}"></line>`;
+      svg += `<text x="${x}" y="${H-4}" text-anchor="middle">${Math.round(v)}бп</text>`;
+    }
+    rows.forEach((r, i) => {
+      const y = padT + i * rowH;
+      const barW = scaleX(r.g);
+      const color = TIER_COLOR[r.tier] || 'var(--series-1)';
+      svg += `<text x="${padL - 10}" y="${y + rowH/2 + 4}" text-anchor="end" style="fill:var(--text-primary)">${r.issuer}</text>`;
+      svg += `<rect class="bar" data-i="${i}" x="${padL}" y="${y+5}" width="${Math.max(barW,2)}" height="${rowH-10}" rx="4" fill="${color}" ${r.estimated ? 'stroke-dasharray="3,2" stroke="var(--text-muted)"' : ''}></rect>`;
+      svg += `<text class="value-label" x="${padL + barW + 8}" y="${y + rowH/2 + 4}">${r.estimated ? '~' : ''}${Math.round(r.g)}бп</text>`;
+    });
+    svg += `</svg>`;
+    document.getElementById('spreadChart').innerHTML = svg;
+
+    document.getElementById('spreadChart').querySelectorAll('rect.bar').forEach(el => {
+      const r = rows[+el.dataset.i];
+      el.addEventListener('mousemove', e => showTip(e,
+        `<b>${r.issuer} — ${r.secid}</b>G-спред: ${r.estimated?'~':''}${Math.round(r.g)} бп (Δ ${r.delta!==null? (r.delta>0?'+':'')+Math.round(r.delta):'н/д'} бп)<br>YTM: ${r.ytm}%<br>Дюрация: ${r.dur ?? 'н/д'} лет`
+        + (r.estimated ? `<br><i>~ G-спред оценён по доходности MOEX (флоатер — купон ещё не зафиксирован), не по расчётной YTM (ACT/365F)</i>` : '')));
+      el.addEventListener('mouseleave', hideTip);
+    });
+    document.getElementById('spreadChart').insertAdjacentHTML('afterbegin',
+      `<div class="legend">${Object.entries(TIER_LABEL).map(([k,l]) =>
+        `<span class="legend-item"><span class="swatch" style="background:${TIER_COLOR[k]}"></span>${l}</span>`).join('')}</div>`);
+  }
+
+  render();
+})();
+
+// ================= Portfolio rank table (watchlist, risk-adjusted AEY) =====
+(function renderPortfolioRank() {
+  const banner = document.getElementById('aeySourceBanner');
+  banner.innerHTML = DATA.aey_is_fallback
+    ? `<b>⚠ Резервные сценарии.</b> ${DATA.aey_source_note} — доверять AEY-цифрам ниже не стоит, это консервативные значения по умолчанию, не расчёт по свежему заседанию ЦБ.`
+    : `<b>${DATA.aey_source_note}.</b>`;
+
+  // Flatten DATA.issuers[].bonds[] into one cross-issuer row set, same
+  // source data the "Универсум" tab reads (joined by secid at export time,
+  // see export_dashboard_data.py's universe_aey_by_secid) -- one AEY
+  // calculation (portfolio.py), surfaced in two views.
+  const YTM_MAX_PCT = 80; // same distress sanity bound as portfolio.rank_candidates(ytm_max=0.80)
+  const PER_ISSUER_CAP = 2;
+
+  // Last critical/high item per issuer, pooled from event + market_note --
+  // same feed and severity filter Task 4 built for the notification panel,
+  // just reduced to "most recent" per issuer instead of a full list.
+  function lastCriticalHigh(iss) {
+    const pool = [...(iss.events || []), ...(iss.market_notes || [])]
+      .filter(e => (e.severity === 'critical' || e.severity === 'high') && e.occurred);
+    if (!pool.length) return null;
+    pool.sort((a, b) => b.occurred.localeCompare(a.occurred));
+    return pool[0];
+  }
+
+  let allRows = [];
+  DATA.issuers.forEach(iss => {
+    const lastEvt = lastCriticalHigh(iss);
+    (iss.bonds || []).forEach(b => {
+      if (b.aey_base_risk_adj_pct !== null && b.aey_base_risk_adj_pct !== undefined) {
+        allRows.push({
+          issuer_id: iss.issuer_id, issuer: iss.name, rating: iss.rating, tier: iss.risk_tier,
+          rating_needs_verification: !!iss.rating_needs_verification,
+          last_event_date: lastEvt ? lastEvt.occurred : null,
+          last_event_secondary: lastEvt ? (lastEvt.source && lastEvt.source !== 'event') : false,
+          secid: b.secid, short_name: b.short_name || b.secid,
+          mat_date: b.mat_date, ytm_pct: b.ytm_pct, mispricing_bp: b.mispricing_bp,
+          mispricing_trend: b.mispricing_trend || { delta_bp: null, direction: null },
+          aey_base_pct: b.aey_base_pct, aey_stress_pct: b.aey_stress_pct,
+          aey_bull_pct: b.aey_bull_pct, aey_base_risk_adj_pct: b.aey_base_risk_adj_pct,
+        });
+      }
+    });
   });
-  document.getElementById('spreadChart').insertAdjacentHTML('afterbegin',
-    `<div class="legend">${Object.entries(TIER_LABEL).map(([k,l]) =>
-      `<span class="legend-item"><span class="swatch" style="background:${TIER_COLOR[k]}"></span>${l}</span>`).join('')}</div>`);
+
+  // Distress sanity bound: a nominal YTM in the hundreds/thousands of
+  // percent (e.g. ЕвроТранс's CCC series) isn't a yield to rank on -- it's
+  // distress pricing, and PD-weighting alone doesn't tame it (see
+  // universe_pipeline.py's NEAR_OFFER_AMPLIFIED/mispricing investigation).
+  // This mirrors portfolio.rank_candidates(ytm_max=0.80), which was applied
+  // in an ad-hoc SQL report earlier but never made it into this table.
+  allRows = allRows.filter(r => r.ytm_pct == null || r.ytm_pct < YTM_MAX_PCT);
+
+  // Per-issuer concentration cap (portfolio.apply_issuer_cap's JS
+  // equivalent): rank once by aey_base_risk_adj_pct to decide which rows
+  // make the cut at all, keeping at most PER_ISSUER_CAP per issuer -- the
+  // table stays freely sortable by any column afterwards, but always
+  // within this already-capped set, not the raw one.
+  const byRank = allRows.slice().sort((a, b) => (b.aey_base_risk_adj_pct ?? -Infinity) - (a.aey_base_risk_adj_pct ?? -Infinity));
+  const issuerCounts = {};
+  const keptSecids = new Set();
+  byRank.forEach(r => {
+    const n = issuerCounts[r.issuer_id] || 0;
+    if (n >= PER_ISSUER_CAP) return;
+    issuerCounts[r.issuer_id] = n + 1;
+    keptSecids.add(r.secid);
+  });
+  const rows = allRows.filter(r => keptSecids.has(r.secid));
+
+  let sortKey = 'aey_base_risk_adj_pct', sortDir = -1;
+  const cols = [
+    ['issuer', 'Эмитент'], ['secid', 'SECID'], ['rating', 'Рейтинг'],
+    ['ytm_pct', 'YTM%'], ['mispricing_bp', 'Мисценка'],
+    ['aey_base_pct', 'AEY база'], ['aey_stress_pct', 'AEY стресс'],
+    ['aey_bull_pct', 'AEY бык'], ['aey_base_risk_adj_pct', 'AEY (риск)'],
+    ['last_event_date', 'Посл. critical/high'], ['rating_needs_verification', 'Рейтинг подтверждён'],
+  ];
+
+  // Local copy: universeScreener()'s misColor is scoped to its own IIFE
+  // (defined later in the file) and not reachable from here.
+  function misColor(v) {
+    if (v == null) return 'var(--text-muted)';
+    if (v < 0) return 'var(--good)';
+    if (v <= 200) return 'var(--warning)';
+    if (v <= 1000) return 'var(--serious)';
+    return 'var(--critical)';
+  }
+
+  function render() {
+    const sorted = rows.slice().sort((a, b) => {
+      let av = a[sortKey], bv = b[sortKey];
+      if (av == null) av = sortDir > 0 ? Infinity : -Infinity;
+      if (bv == null) bv = sortDir > 0 ? Infinity : -Infinity;
+      if (typeof av === 'string') return sortDir * String(av).localeCompare(String(bv));
+      return sortDir * (av - bv);
+    });
+    let html = `<thead><tr>${cols.map(([k, l]) =>
+      `<th data-k="${k}">${l}${sortKey===k ? `<span class="sort-arrow">${sortDir>0?'▲':'▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
+    if (!sorted.length) {
+      html += `<tr><td colspan="${cols.length}"><div class="uni-empty">Нет данных — запустите <code>hybond universe</code> и пересоберите дашборд.</div></td></tr>`;
+    }
+    sorted.forEach(r => {
+      // Trend arrow: current vs. the ONE previous universe_snapshot day for
+      // this secid (db.mispricing_history) -- a plain two-point comparison,
+      // not the 40-day statistical model G-spread's stat detector uses.
+      const t = r.mispricing_trend || {};
+      const trendArrow = t.direction === 'up'
+        ? `<span style="color:var(--critical)" title="мисценка выросла на ${Math.abs(t.delta_bp)}бп с ${t.since_date}">▲</span>`
+        : t.direction === 'down'
+        ? `<span style="color:var(--good)" title="мисценка снизилась на ${Math.abs(t.delta_bp)}бп с ${t.since_date}">▼</span>`
+        : t.direction === 'flat'
+        ? `<span style="color:var(--text-muted)" title="без изменений с ${t.since_date}">→</span>`
+        : '';
+      const misCell = r.mispricing_bp != null
+        ? `<span style="color:${misColor(r.mispricing_bp)}">${r.mispricing_bp>0?'+':''}${Math.round(r.mispricing_bp)}</span> ${trendArrow}`
+        : '<span style="color:var(--text-muted)">н/д</span>';
+      const lastEvtCell = r.last_event_date
+        ? `${r.last_event_date}${r.last_event_secondary ? '<span class="source-badge secondary" title="по данным Smart-Lab — вторичный источник">SL</span>' : ''}`
+        : '<span style="color:var(--text-muted)">—</span>';
+      const verifCell = r.rating_needs_verification
+        ? '<span class="source-badge secondary" title="Рейтинг не верифицирован по первоисточнику агентства">⚠ не подтверждён</span>'
+        : '<span style="color:var(--text-muted)">✓</span>';
+      html += `<tr>
+        <td>${r.issuer}<div style="color:var(--text-muted);font-size:11px">${r.secid}</div></td>
+        <td>${r.short_name}<div style="color:var(--text-muted);font-size:11px">${r.mat_date||''}</div></td>
+        <td>${r.rating||'—'}</td>
+        <td>${r.ytm_pct!=null?r.ytm_pct.toFixed(1):'—'}</td>
+        <td>${misCell}</td>
+        <td>${r.aey_base_pct!=null?r.aey_base_pct.toFixed(1):'—'}</td>
+        <td>${r.aey_stress_pct!=null?r.aey_stress_pct.toFixed(1):'—'}</td>
+        <td>${r.aey_bull_pct!=null?r.aey_bull_pct.toFixed(1):'—'}</td>
+        <td><b>${r.aey_base_risk_adj_pct!=null?r.aey_base_risk_adj_pct.toFixed(1):'—'}</b></td>
+        <td>${lastEvtCell}</td>
+        <td>${verifCell}</td>
+      </tr>`;
+    });
+    html += '</tbody>';
+    const table = document.getElementById('portfolioRankTable');
+    table.innerHTML = html;
+    table.querySelectorAll('th').forEach(th => th.addEventListener('click', () => {
+      const k = th.dataset.k;
+      if (k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = -1; }
+      render();
+    }));
+  }
+  render();
 })();
 
 // ================= Maturity wall grouped bar chart =================
@@ -668,10 +905,33 @@ function pillarPanelHtml(iss) {
   const pillars = ['score_leverage', 'score_liquidity', 'score_refinancing', 'score_operations'];
   const labels = ['Leverage', 'Liquidity', 'Refinancing', 'Operations'];
   const colors = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)'];
+  // Trend arrow next to the issuer name: aggregate direction across the 4
+  // pillar deltas (see compute.pillars.pillars_delta -- current vs. the ONE
+  // previous snapshot, not a statistical trend). Renders nothing until an
+  // issuer has a second real pillars_snapshot date; today that's every
+  // issuer (see the report), so this is dormant, not broken.
+  function trendArrow(delta) {
+    if (!delta) return '';
+    const dirs = pillars.map(p => delta[p]?.direction).filter(Boolean);
+    if (!dirs.length) return '';
+    const up = dirs.filter(d => d === 'improving').length;
+    const down = dirs.filter(d => d === 'degrading').length;
+    if (up === down) return ' <tspan style="fill:var(--text-muted)">→</tspan>';
+    return up > down
+      ? ' <tspan style="fill:var(--good)" title="улучшение">▲</tspan>'
+      : ' <tspan style="fill:var(--critical)" title="ухудшение">▼</tspan>';
+  }
   const rows = DATA.issuers
     .filter(i => i.six_pillars && Object.keys(i.six_pillars).length)
-    .map(i => ({ name: i.name, tier: i.risk_tier, scores: pillars.map(p => i.six_pillars[p] ?? 0) }));
+    .map(i => ({ name: i.name, tier: i.risk_tier, scores: pillars.map(p => i.six_pillars[p] ?? 0),
+                 trend: trendArrow(i.six_pillars_delta) }));
   rows.sort((a, b) => (b.scores.reduce((s,v)=>s+v,0)) - (a.scores.reduce((s,v)=>s+v,0)));
+
+  document.getElementById('pillarsCoverageBanner').textContent =
+    `Оценки по столпам считаются реальной функцией compute_pillars() над реальными данными ГИР БО для ` +
+    `${rows.length} из ${DATA.issuers.length} эмитентов (получены через parser-api.com, hybond financials). ` +
+    `Для остальных ${DATA.issuers.length - rows.length} финансовые данные ещё не получены — панель показывает ` +
+    `«ГИР БО не найден», это отсутствие данных, а не синтетическая заглушка.`;
 
   const W = 1080, rowH = 34, padL = 210, padR = 40, padT = 10;
   const H = rows.length * rowH + padT + 20;
@@ -686,7 +946,7 @@ function pillarPanelHtml(iss) {
   });
   rows.forEach((r, i) => {
     const y0 = padT + i * rowH;
-    svg += `<text x="${padL-10}" y="${y0 + rowH/2 + 4}" text-anchor="end" style="fill:var(--text-primary)">${r.name}</text>`;
+    svg += `<text x="${padL-10}" y="${y0 + rowH/2 + 4}" text-anchor="end" style="fill:var(--text-primary)">${r.name}${r.trend}</text>`;
     r.scores.forEach((s, si) => {
       const y = y0 + si * barH;
       const w = scaleX(s);
@@ -786,7 +1046,7 @@ function renderIssuerDetail(iss) {
   if (iss.note) html += `<p style="margin:0 0 10px;color:var(--text-secondary)">${iss.note}</p>`;
   html += pillarPanelHtml(iss);
   if (iss.flags_today && iss.flags_today.length) {
-    html += `<div><b>Флаги детектора изменений (день 2, демо):</b><br>` +
+    html += `<div><b>Флаги детектора изменений (сравнение с предыдущим днём):</b><br>` +
       iss.flags_today.map(f => `<span class="flag-chip">${f.detector}/${f.signal}: ${f.detail}</span>`).join(' ') + `</div>`;
   }
   if (iss.events && iss.events.length) {
@@ -811,14 +1071,18 @@ function renderIssuerDetail(iss) {
   }
   if (iss.bonds && iss.bonds.length) {
     html += `<div style="margin-top:10px"><b>Облигации</b><table style="margin-top:6px"><thead><tr>
-      <th>SECID</th><th>Погашение</th><th>Купон, %</th><th>G-спред</th><th>YTM</th></tr></thead><tbody>` +
+      <th>SECID</th><th>Погашение</th><th>Купон, %</th><th>G-спред</th><th>YTM</th>
+      <th>Мисценка</th><th>AEY (риск)</th></tr></thead><tbody>` +
       iss.bonds.map(b => {
         const est = b.yield_source === 'moex';
         const gcell = b.g_spread_bp!=null
           ? `${est?'~':''}${Math.round(b.g_spread_bp)} бп${est?' <span title="G-спред оценён по доходности MOEX (флоатер — купон ещё не зафиксирован), не по расчётной YTM (ACT/365F)" style="cursor:help;color:var(--text-muted)">*</span>':''}`
           : 'нет цены';
+        const misCell = b.mispricing_bp!=null
+          ? `${b.mispricing_bp>0?'+':''}${Math.round(b.mispricing_bp)}` : '—';
+        const aeyCell = b.aey_base_risk_adj_pct!=null ? `${b.aey_base_risk_adj_pct.toFixed(1)}%` : '—';
         return `<tr><td>${b.short_name||b.secid}</td><td>${b.mat_date||'—'}</td><td>${b.coupon_pct??'—'}</td>` +
-          `<td>${gcell}</td><td>${b.ytm_pct??'—'}</td></tr>`;
+          `<td>${gcell}</td><td>${b.ytm_pct??'—'}</td><td>${misCell}</td><td>${aeyCell}</td></tr>`;
       }).join('') +
       `</tbody></table>` +
       (iss.bonds.some(b => b.yield_source === 'moex')
@@ -831,19 +1095,74 @@ function renderIssuerDetail(iss) {
 renderTable();
 
 // ================= Events timeline =================
+// Notification panel: pools `event` (primary, AZIPI-classified filings) and
+// `market_note` (secondary, e.g. Smart-Lab news) into one feed per issuer,
+// newest first. Default filter shows only high/critical; a single toggle
+// reveals the full history (medium/low/noise) -- deliberately one control,
+// not a per-severity taxonomy browser. market_note items are always tagged
+// with a source badge so a lower-confidence secondary item never reads with
+// the same weight as a primary AZIPI filing.
 (function renderEvents() {
-  const all = [];
-  DATA.issuers.forEach(iss => (iss.events||[]).forEach(e => all.push({ ...e, issuer: iss.name })));
-  all.sort((a, b) => b.occurred.localeCompare(a.occurred) || (SEV_ORDER(b.severity) - SEV_ORDER(a.severity)));
   function SEV_ORDER(s) { return { critical: 4, high: 3, medium: 2, low: 1, noise: 0 }[s] ?? 0; }
-  const el = document.getElementById('eventsTimeline');
-  if (!all.length) { el.innerHTML = '<span style="color:var(--text-muted)">Событий нет.</span>'; return; }
-  el.innerHTML = `<ul class="events-list">` + all.map(e => `
-    <li style="border-color:${SEV_COLOR[e.severity]||'var(--grid)'}">
-      <b>${e.occurred} · ${e.issuer} · ${e.category} <span style="color:${SEV_COLOR[e.severity]}">(${e.severity})</span></b>
-      ${e.summary}
-    </li>`).join('') + `</ul>`;
+  const all = [];
+  DATA.issuers.forEach(iss => {
+    (iss.events || []).forEach(e => all.push({ ...e, issuer: iss.name }));
+    (iss.market_notes || []).forEach(e => all.push({ ...e, issuer: iss.name }));
+  });
+  all.sort((a, b) => (b.occurred || '').localeCompare(a.occurred || '') || (SEV_ORDER(b.severity) - SEV_ORDER(a.severity)));
+
+  let mode = 'critical'; // 'critical' (default) | 'all'
+
+  function sourceBadge(e) {
+    if (e.source === 'event' || !e.source) return '';
+    return '<span class="source-badge secondary">по данным Smart-Lab</span>';
+  }
+
+  function render() {
+    const el = document.getElementById('eventsTimeline');
+    const note = document.getElementById('eventsFilterNote');
+    const shown = mode === 'critical'
+      ? all.filter(e => e.severity === 'critical' || e.severity === 'high')
+      : all;
+    if (!all.length) {
+      el.innerHTML = '<span style="color:var(--text-muted)">Событий нет.</span>';
+      note.textContent = '';
+      return;
+    }
+    if (!shown.length) {
+      el.innerHTML = '<span style="color:var(--text-muted)">Нет событий high/critical за период — переключите на «Вся история».</span>';
+    } else {
+      el.innerHTML = `<ul class="events-list">` + shown.map(e => `
+        <li style="border-color:${SEV_COLOR[e.severity]||'var(--grid)'}">
+          <b>${e.occurred || '—'} · ${e.issuer} · ${e.category} <span style="color:${SEV_COLOR[e.severity]}">(${e.severity})</span></b>${sourceBadge(e)}
+          ${e.summary}
+        </li>`).join('') + `</ul>`;
+    }
+    note.textContent = mode === 'critical'
+      ? `Показано ${shown.length} из ${all.length} (high/critical)`
+      : `Показано всё: ${all.length}`;
+  }
+
+  document.getElementById('eventsFilterToggle').addEventListener('click', function () {
+    mode = mode === 'critical' ? 'all' : 'critical';
+    this.textContent = mode === 'critical' ? 'Только high/critical' : 'Вся история';
+    this.classList.toggle('active', mode === 'critical');
+    render();
+  });
+
+  render();
 })();
+
+// ================= Collapsible sections =================
+// Lightweight header-click toggle (no accordion library) -- collapsing only
+// hides/shows the body via CSS; it never touches the section's own render
+// state (sort order, the events-filter toggle from Task 4, etc.), since that
+// state lives in each section's own closure/DOM, untouched by this class.
+document.querySelectorAll('h2.collapsible-h2').forEach(h2 => {
+  h2.addEventListener('click', () => {
+    h2.closest('section').classList.toggle('collapsed');
+  });
+});
 
 // ================= Tabs =================
 document.querySelectorAll('.tab-btn').forEach(btn => {

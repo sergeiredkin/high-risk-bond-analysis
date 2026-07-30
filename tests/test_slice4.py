@@ -189,3 +189,90 @@ def test_direct_backend_is_stub():
         assert False, "should be a stub"
     except NotImplementedError:
         pass
+
+
+# --- pillars/mispricing trend tracking -------------------------------------
+
+def test_pillars_history_accumulates_across_fetch_dates(tmp_path):
+    """The original PK (issuer_id, period) silently overwrote a same-period
+    re-fetch (e.g. a weekly cron hitting the same still-current fiscal
+    year), so no issuer could ever accumulate real history. Confirms the
+    widened PK (issuer_id, period, computed_on) actually keeps both rows."""
+    con = db.connect(tmp_path / "hist.sqlite")
+    db.init_db(con); db.init_pillars(con)
+    db.upsert_issuer(con, "I1", "E", None)
+    db.upsert_pillars(con, "I1", "2025", "2026-07-27", json.dumps({"score_leverage": 40}))
+    db.upsert_pillars(con, "I1", "2025", "2026-07-30", json.dumps({"score_leverage": 60}))
+    con.commit()
+    hist = db.pillars_history(con, "I1", limit=10)
+    assert len(hist) == 2
+    assert hist[0]["computed_on"] == "2026-07-30"  # newest first
+    assert hist[1]["computed_on"] == "2026-07-27"
+    con.close()
+
+
+def test_init_pillars_migrates_pre_existing_old_pk_table(tmp_path):
+    """Constructs a genuine pre-migration pillars_snapshot (old PK) via raw
+    SQL, inserts two same-issuer/same-period rows the old way (the second
+    silently clobbers the first, proving the bug), then confirms
+    db.init_pillars migrates the table without losing the row that made it
+    through, and that new inserts afterward actually accumulate."""
+    con = db.connect(tmp_path / "mig.sqlite")
+    db.init_db(con)
+    con.executescript("""
+        CREATE TABLE pillars_snapshot (
+            issuer_id TEXT, period TEXT, computed_on TEXT, payload TEXT,
+            PRIMARY KEY (issuer_id, period)
+        );
+    """)
+    con.execute("INSERT INTO pillars_snapshot VALUES (?,?,?,?)",
+               ("I1", "2025", "2026-07-27", json.dumps({"score_leverage": 40})))
+    con.commit()
+    db.upsert_issuer(con, "I1", "E", None)
+    db.init_pillars(con)  # migration should fire here
+    con.commit()
+    # post-migration, a same-period re-fetch on a new date must NOT clobber
+    db.upsert_pillars(con, "I1", "2025", "2026-07-30", json.dumps({"score_leverage": 60}))
+    con.commit()
+    hist = db.pillars_history(con, "I1", limit=10)
+    assert len(hist) == 2
+    con.close()
+
+
+def test_pillars_delta_improving_degrading_flat():
+    prev = {"score_leverage": 40, "score_liquidity": 60, "score_refinancing": 50, "score_operations": 70}
+    cur = {"score_leverage": 60, "score_liquidity": 60, "score_refinancing": 30, "score_operations": None}
+    d = P.pillars_delta(cur, prev)
+    assert d["score_leverage"] == {"delta": 20, "direction": "improving"}
+    assert d["score_liquidity"] == {"delta": 0, "direction": "flat"}
+    assert d["score_refinancing"] == {"delta": -20, "direction": "degrading"}
+    assert d["score_operations"] == {"delta": None, "direction": None}
+
+
+def test_pillars_delta_no_previous_returns_all_none():
+    cur = {"score_leverage": 60}
+    d = P.pillars_delta(cur, None)
+    assert d["score_leverage"] == {"delta": None, "direction": None}
+
+
+def test_mispricing_history_reads_universe_snapshot_directly(tmp_path):
+    """No new storage -- universe_snapshot already has one row per
+    (secid, snap_date); this just queries across dates for one bond."""
+    con = db.connect(tmp_path / "mis.sqlite")
+    db.init_db(con); db.init_universe(con)
+    db.upsert_issuer(con, "I1", "E", None)
+    for d, mp in [("2026-07-28", 900.0), ("2026-07-29", 1100.0), ("2026-07-30", 1500.0)]:
+        db.insert_universe_snapshot(
+            con, secid="SECX", snap_date=d, short_name="Тест", emitent_inn="I1",
+            emitent_title="E", mat_date="2030-01-01", offer_date=None,
+            coupon_pct=15.0, list_level=1, qualified=0, last_pct=90.0,
+            yield_moex=20.0, yield_to_offer=None, accrued_int=0.0, volume=100.0,
+            num_trades=5, duration_moex=2.0, ytm=0.2, tenor_yrs=2.0, rf_rate=0.14,
+            g_spread_bp=600.0, yield_source="computed", rating="ruBB", implied_fair_spread_bp=400.0,
+            mispricing_bp=mp, in_watchlist=1, signal_excluded=0, mod_dur=1.8,
+            aey_base=0.2, aey_stress=0.18, aey_bull=0.22, aey_base_risk_adj=0.19)
+    con.commit()
+    hist = db.mispricing_history(con, "SECX", limit=10)
+    assert [r["mispricing_bp"] for r in hist] == [1500.0, 1100.0, 900.0]  # newest first
+    assert [r["snap_date"] for r in hist] == ["2026-07-30", "2026-07-29", "2026-07-28"]
+    con.close()

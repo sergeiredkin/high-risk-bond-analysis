@@ -1,5 +1,6 @@
-"""Tests for portfolio.get_rate_scenarios/bond_aey. Uses a real (tmp-file)
-SQLite DB via db.connect(), same pattern as test_slice1.py -- no network.
+"""Tests for portfolio.get_rate_scenarios/bond_aey/pd_adjusted_aey. Uses a
+real (tmp-file) SQLite DB via db.connect(), same pattern as test_slice1.py --
+no network.
 """
 import sys
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from hybond import portfolio  # noqa: E402
+from hybond.compute import default_probs  # noqa: E402
 from hybond.store import db  # noqa: E402
 
 
@@ -74,8 +76,167 @@ def test_bond_aey_none_when_ytm_missing():
     assert portfolio.bond_aey(None, 1.5, -0.02) is None
 
 
+def _snapshot_row(**overrides):
+    row = dict(
+        secid="X", snap_date="2026-07-30", short_name="X", emitent_inn="INN1",
+        emitent_title="Issuer 1", mat_date="2028-01-01", offer_date=None,
+        coupon_pct=15.0, list_level=1, qualified=0, last_pct=95.0, yield_moex=20.0,
+        yield_to_offer=None, accrued_int=0.0, volume=1000.0, num_trades=50,
+        duration_moex=365.0, ytm=0.20, tenor_yrs=1.5, rf_rate=0.14, g_spread_bp=600.0,
+        yield_source="moex", rating="ruBB", implied_fair_spread_bp=153.0,
+        mispricing_bp=447.0, in_watchlist=1, signal_excluded=0,
+        mod_dur=1.0, aey_base=0.20, aey_stress=0.19, aey_bull=0.22,
+        aey_base_risk_adj=0.174,
+    )
+    row.update(overrides)
+    return row
+
+
+def _rank_con(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_universe(con)
+    return con
+
+
 def test_bond_aey_price_effect_direction():
     # Falling rates (negative delta) should raise the adjusted yield for a
     # duration-bearing bond: aey = ytm - mod_dur * delta_rate.
     aey = portfolio.bond_aey(0.20, 2.0, -0.02)
     assert abs(aey - (0.20 + 0.04)) < 1e-9
+
+
+def test_pd_adjusted_aey_known_rating_hand_computed():
+    # ruBB: yr1 PD = 0.03056 (compute/default_probs.py). Hand-computed:
+    # (1 - 0.03056) * 0.20 - 0.03056 * (1 - 0.35) = 0.174024.
+    result = portfolio.pd_adjusted_aey(0.20, "ruBB")
+    expected = (1 - 0.03056) * 0.20 - 0.03056 * (1 - default_probs.RECOVERY_RATE)
+    assert abs(result - expected) < 1e-9
+    assert abs(result - 0.174024) < 1e-6
+
+
+def test_pd_adjusted_aey_unrated_bond_returns_none():
+    assert portfolio.pd_adjusted_aey(0.20, None) is None
+    assert portfolio.pd_adjusted_aey(0.20, "") is None
+
+
+def test_pd_adjusted_aey_unknown_rating_string_returns_none():
+    # Not unrated, but a rating string that doesn't match any entry in the
+    # Эксперт РА table -- lookup() misses, same as no rating at all.
+    assert portfolio.pd_adjusted_aey(0.20, "not-a-real-rating") is None
+
+
+def test_pd_adjusted_aey_none_aey_returns_none():
+    assert portfolio.pd_adjusted_aey(None, "ruBB") is None
+
+
+def test_pd_adjusted_aey_zero_pd_equals_raw_aey(monkeypatch):
+    # PD=0 -> (1-0)*aey - 0*(1-recovery) == aey exactly: a riskless bond's
+    # expected return should just be its running yield, untouched.
+    monkeypatch.setitem(default_probs.DEFAULT_PROBS, "ruTESTPD0",
+                         {"yr1": 0.0, "yr2": 0.0, "yr3": 0.0})
+    result = portfolio.pd_adjusted_aey(0.20, "ruTESTPD0")
+    assert abs(result - 0.20) < 1e-12
+
+
+def test_pd_adjusted_aey_full_pd_equals_negative_severity(monkeypatch):
+    # PD=1 -> (1-1)*aey - 1*(1-recovery) == -(1-recovery): a certain default
+    # collapses the expected return to the pure loss-given-default term,
+    # independent of whatever the (never-realized) running yield was.
+    monkeypatch.setitem(default_probs.DEFAULT_PROBS, "ruTESTPD1",
+                         {"yr1": 1.0, "yr2": 1.0, "yr3": 1.0})
+    result = portfolio.pd_adjusted_aey(0.20, "ruTESTPD1")
+    assert abs(result - (-(1 - default_probs.RECOVERY_RATE))) < 1e-12
+
+
+# --- apply_issuer_cap: pure list logic, no DB -------------------------------
+
+def test_apply_issuer_cap_keeps_up_to_cap_per_issuer():
+    rows = [
+        {"emitent_inn": "A", "secid": "A1"},
+        {"emitent_inn": "A", "secid": "A2"},
+        {"emitent_inn": "A", "secid": "A3"},
+        {"emitent_inn": "B", "secid": "B1"},
+    ]
+    capped = portfolio.apply_issuer_cap(rows, per_issuer_cap=2)
+    assert [r["secid"] for r in capped] == ["A1", "A2", "B1"]
+
+
+def test_apply_issuer_cap_preserves_order_of_survivors():
+    # A lower-ranked row from an issuer under the cap must still outrank a
+    # higher-ranked row from an issuer that already hit it -- this is what
+    # lets rank_candidates() just slice [:limit] after capping.
+    rows = [
+        {"emitent_inn": "A", "secid": "A1"},
+        {"emitent_inn": "A", "secid": "A2"},
+        {"emitent_inn": "A", "secid": "A3"},  # dropped: A already has 2
+        {"emitent_inn": "B", "secid": "B1"},  # survives despite ranking last
+    ]
+    capped = portfolio.apply_issuer_cap(rows, per_issuer_cap=2)
+    assert capped == [
+        {"emitent_inn": "A", "secid": "A1"},
+        {"emitent_inn": "A", "secid": "A2"},
+        {"emitent_inn": "B", "secid": "B1"},
+    ]
+
+
+def test_apply_issuer_cap_cap_of_one():
+    rows = [{"emitent_inn": "A", "secid": "A1"}, {"emitent_inn": "A", "secid": "A2"}]
+    capped = portfolio.apply_issuer_cap(rows, per_issuer_cap=1)
+    assert [r["secid"] for r in capped] == ["A1"]
+
+
+# --- rank_candidates: integration through a real (tmp-file) DB -------------
+
+def test_rank_candidates_enforces_cap_and_ytm_bound(tmp_path):
+    con = _rank_con(tmp_path)
+    # Issuer 1: three series, all otherwise top-ranked -- only 2 should
+    # survive the per-issuer cap.
+    for i, risk_adj in enumerate([0.50, 0.45, 0.40]):
+        db.insert_universe_snapshot(con, **_snapshot_row(
+            secid=f"ISS1-{i}", emitent_inn="INN1", aey_base_risk_adj=risk_adj))
+    # Issuer 2: one lower-ranked series -- must still appear (not crowded
+    # out by issuer 1's third series).
+    db.insert_universe_snapshot(con, **_snapshot_row(
+        secid="ISS2-0", emitent_inn="INN2", emitent_title="Issuer 2",
+        aey_base_risk_adj=0.30))
+    # A distress-priced bond with an even higher risk_adj value but a YTM
+    # over the sanity bound -- must be excluded regardless of rank.
+    db.insert_universe_snapshot(con, **_snapshot_row(
+        secid="DISTRESS", emitent_inn="INN3", emitent_title="Distress Co",
+        ytm=3.5, aey_base_risk_adj=0.90))
+    con.commit()
+
+    result = portfolio.rank_candidates(con, limit=15, per_issuer_cap=2, ytm_max=0.80)
+
+    secids = [r["secid"] for r in result]
+    assert "DISTRESS" not in secids
+    assert secids.count("ISS1-0") == 1 and secids.count("ISS1-1") == 1
+    assert "ISS1-2" not in secids  # capped out
+    assert "ISS2-0" in secids
+    # aey_base_risk_adj descending among survivors
+    assert secids == ["ISS1-0", "ISS1-1", "ISS2-0"]
+
+
+def test_rank_candidates_respects_limit_after_capping(tmp_path):
+    con = _rank_con(tmp_path)
+    for i in range(5):
+        db.insert_universe_snapshot(con, **_snapshot_row(
+            secid=f"S{i}", emitent_inn=f"INN{i}", aey_base_risk_adj=1.0 - i * 0.1))
+    con.commit()
+    result = portfolio.rank_candidates(con, limit=3, per_issuer_cap=2)
+    assert len(result) == 3
+    assert [r["secid"] for r in result] == ["S0", "S1", "S2"]
+
+
+def test_rank_candidates_no_snapshot_data_returns_empty(tmp_path):
+    con = _rank_con(tmp_path)
+    assert portfolio.rank_candidates(con) == []
+
+
+def test_rank_candidates_excludes_bonds_outside_watchlist_by_default(tmp_path):
+    con = _rank_con(tmp_path)
+    db.insert_universe_snapshot(con, **_snapshot_row(
+        secid="NOTWL", emitent_inn="INN1", in_watchlist=0, aey_base_risk_adj=0.9))
+    con.commit()
+    assert portfolio.rank_candidates(con) == []
+    assert portfolio.rank_candidates(con, in_watchlist_only=False) != []

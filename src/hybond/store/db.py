@@ -293,6 +293,68 @@ def mark_classified(con, body_hash: str) -> None:
     con.execute("UPDATE filing SET classified=1 WHERE body_hash=?", (body_hash,))
 
 
+# --- market_note: secondary business-news/forum signal (e.g. Smart-Lab's
+# general news feed) -- deliberately a SEPARATE table from `event`, which is
+# reserved for classified AZIPI/primary material facts. severity/category
+# reuse hy-event-classify's taxonomy scale (critical/high/medium/low/noise)
+# but are left NULL until classification is wired for this source (a later
+# step, not this one -- see scrape/smartlab_news.py). ------------------------
+
+MARKET_NOTE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS market_note (
+    note_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    source        TEXT NOT NULL,      -- e.g. 'smartlab_news'
+    issuer_id     TEXT REFERENCES issuer(issuer_id),
+    occurred      TEXT,               -- publication date/time
+    headline      TEXT,
+    summary       TEXT,
+    url           TEXT,               -- link back to origin, required
+    severity      TEXT,               -- critical/high/medium/low/noise, or NULL
+    category      TEXT,               -- hy-event-classify taxonomy category, or NULL
+    confidence    REAL,
+    fetched_on    TEXT,
+    body_hash     TEXT UNIQUE         -- dedup key, sha1(title+url), same convention as `filing`
+);
+"""
+
+
+def init_market_note(con) -> None:
+    con.executescript(MARKET_NOTE_SCHEMA)
+    con.commit()
+
+
+def insert_market_note(con, **f) -> bool:
+    """Returns True if a new row was actually inserted, False if body_hash
+    already existed (dedup) -- callers use this to report a 'new' count."""
+    cols = ("source,issuer_id,occurred,headline,summary,url,severity,"
+            "category,confidence,fetched_on,body_hash")
+    placeholders = ",".join(f":{c}" for c in cols.split(","))
+    cur = con.execute(
+        f"INSERT OR IGNORE INTO market_note({cols}) VALUES({placeholders})", f)
+    return cur.rowcount > 0
+
+
+def seen_market_note_hashes(con) -> set:
+    return {r["body_hash"] for r in con.execute("SELECT body_hash FROM market_note")}
+
+
+def unclassified_market_notes(con, issuer_id: str | None = None) -> list:
+    q = "SELECT * FROM market_note WHERE severity IS NULL"
+    args: tuple = ()
+    if issuer_id:
+        q += " AND issuer_id=?"
+        args = (issuer_id,)
+    return con.execute(q + " ORDER BY occurred DESC", args).fetchall()
+
+
+def set_market_note_classification(
+    con, note_id: int, severity: str, category: str, confidence: float,
+) -> None:
+    con.execute(
+        "UPDATE market_note SET severity=?, category=?, confidence=? WHERE note_id=?",
+        (severity, category, confidence, note_id))
+
+
 def insert_event(con, **f) -> int:
     cur = con.execute(
         "INSERT INTO event(issuer_id,occurred,category,severity,summary,source_url) "
@@ -303,6 +365,17 @@ def insert_event(con, **f) -> int:
 def events_since(con, issuer_id: str, since_date: str) -> list:
     return con.execute(
         "SELECT * FROM event WHERE issuer_id=? AND occurred>=? ORDER BY occurred DESC",
+        (issuer_id, since_date)).fetchall()
+
+
+def market_notes_since(con, issuer_id: str, since_date: str) -> list:
+    """Classified (severity IS NOT NULL) market_note rows in the window --
+    mirrors events_since. Rows still awaiting classification (severity NULL,
+    see hy-event-classify's market_note input path) are excluded, same as an
+    unclassified filing never appears in events_since's `event` rows."""
+    return con.execute(
+        "SELECT * FROM market_note WHERE issuer_id=? AND occurred>=? "
+        "AND severity IS NOT NULL ORDER BY occurred DESC",
         (issuer_id, since_date)).fetchall()
 
 
@@ -324,13 +397,35 @@ CREATE TABLE IF NOT EXISTS pillars_snapshot (
     period      TEXT,
     computed_on TEXT,
     payload     TEXT,                  -- full Pillars JSON (metrics + scores)
-    PRIMARY KEY (issuer_id, period)
+    PRIMARY KEY (issuer_id, period, computed_on)
 );
 """
 
 
 def init_pillars(con) -> None:
     con.executescript(PILLARS_SCHEMA)
+    # Original PK was (issuer_id, period) -- period is the fiscal reporting
+    # year (e.g. "2025"), not the fetch date, so a weekly re-fetch that lands
+    # on the same still-current fiscal year silently OVERWROTE the prior row
+    # instead of adding a new one. That meant no issuer could ever accumulate
+    # real pillars history no matter how many times the cron ran. Widening
+    # the PK to include computed_on lets each fetch date persist as its own
+    # row (same-day reruns are still idempotent-replace). SQLite can't ALTER
+    # a PRIMARY KEY in place, so rebuild the table when the old PK is found.
+    pk_cols = {r["name"]: r["pk"] for r in con.execute("PRAGMA table_info(pillars_snapshot)")}
+    if pk_cols and pk_cols.get("computed_on", 0) == 0:
+        con.executescript("""
+            ALTER TABLE pillars_snapshot RENAME TO pillars_snapshot_old;
+            CREATE TABLE pillars_snapshot (
+                issuer_id   TEXT REFERENCES issuer(issuer_id),
+                period      TEXT,
+                computed_on TEXT,
+                payload     TEXT,
+                PRIMARY KEY (issuer_id, period, computed_on)
+            );
+            INSERT INTO pillars_snapshot SELECT * FROM pillars_snapshot_old;
+            DROP TABLE pillars_snapshot_old;
+        """)
     con.commit()
 
 
@@ -353,7 +448,28 @@ def upsert_pillars(con, issuer_id, period, computed_on, payload_json) -> None:
 def latest_pillars(con, issuer_id):
     return con.execute(
         "SELECT * FROM pillars_snapshot WHERE issuer_id=? "
-        "ORDER BY period DESC LIMIT 1", (issuer_id,)).fetchone()
+        "ORDER BY period DESC, computed_on DESC LIMIT 1", (issuer_id,)).fetchone()
+
+
+def pillars_history(con, issuer_id: str, limit: int = 10) -> list:
+    """Ordered newest-first snapshots for one issuer -- now that the PK
+    includes computed_on (see init_pillars), this actually accumulates one
+    row per fetch date instead of one per fiscal year."""
+    return con.execute(
+        "SELECT * FROM pillars_snapshot WHERE issuer_id=? "
+        "ORDER BY computed_on DESC, period DESC LIMIT ?",
+        (issuer_id, limit)).fetchall()
+
+
+def mispricing_history(con, secid: str, limit: int = 10) -> list:
+    """Ordered newest-first per-bond mispricing_bp across universe_snapshot's
+    existing daily rows (secid, snap_date) -- no new storage needed, this
+    table already accumulates one row per day."""
+    return con.execute(
+        "SELECT snap_date, mispricing_bp FROM universe_snapshot "
+        "WHERE secid=? AND mispricing_bp IS NOT NULL "
+        "ORDER BY snap_date DESC LIMIT ?",
+        (secid, limit)).fetchall()
 
 
 def upsert_thesis(con, issuer_id, thesis, assumptions, invalidation, status, updated):
@@ -391,6 +507,8 @@ CREATE TABLE IF NOT EXISTS rating (
     rated_on     TEXT NOT NULL,
     source       TEXT DEFAULT 'manual',
     is_current   INTEGER DEFAULT 1,
+    verified_on  TEXT,
+    needs_verification INTEGER DEFAULT 1,
     PRIMARY KEY (issuer_id, agency, rated_on)
 );
 """
@@ -398,48 +516,112 @@ CREATE TABLE IF NOT EXISTS rating (
 # Preference order when several agencies currently rate the same issuer.
 # 'manual' (the watchlist-seed placeholder agency) is deliberately lowest --
 # a real agency rating should always win over the bootstrap value.
+#
+# CAVEAT found 2026-07-30: current_rating()'s sort_key below compares
+# (rated_on, -priority) as a tuple, so rated_on is compared FIRST -- this
+# priority list only breaks a TIE on equal dates. It does NOT make a real
+# agency always win over 'manual' as this comment claims; a manual row with
+# a later rated_on still beats an earlier real-agency row. This hasn't bitten
+# in production yet (no issuer currently carries both a live manual row and a
+# live real-agency row at once -- confirmed by inspection 2026-07-30), but
+# it's a latent bug, not fixed here (out of scope for the АФК Система
+# correction, which sidesteps it by explicitly retiring the old manual row
+# instead of relying on this tiebreak).
 _AGENCY_PRIORITY = ["АКРА", "ACRA", "EXPERT RA", "ЭКСПЕРТ РА", "NKR", "НКР",
                     "NRA", "НРА", "MANUAL"]
 
 
 def init_rating(con) -> None:
     con.executescript(RATING_SCHEMA)
+    # verified_on/needs_verification added after the table's initial ship --
+    # verified_on records when a rating was actually cross-checked against
+    # its real agency (independent of rated_on, which is the agency's own
+    # action date); needs_verification flags rows that haven't been. Same
+    # migration + explicit backfill pattern as init_universe/init_cbr.
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(rating)")}
+    is_fresh_table = "verified_on" not in cols
+    if "verified_on" not in cols:
+        con.execute("ALTER TABLE rating ADD COLUMN verified_on TEXT")
+    if "needs_verification" not in cols:
+        con.execute("ALTER TABLE rating ADD COLUMN needs_verification INTEGER DEFAULT 1")
+    if is_fresh_table:
+        # Backfill existing rows: the 'manual' bootstrap batch (seed_ratings.py,
+        # copied verbatim from watchlist.json with no per-issuer agency
+        # verification) needs auditing; rows already carrying a real,
+        # dated agency action (via `hybond rate`) don't need this flag.
+        con.execute("UPDATE rating SET needs_verification=1 WHERE agency='manual'")
+        con.execute("UPDATE rating SET needs_verification=0 WHERE agency!='manual'")
     con.commit()
 
 
 def upsert_rating(con, issuer_id, agency, rating, outlook, action, rated_on,
-                   source="manual", secid=None) -> None:
+                   source="manual", secid=None, verified_on=None,
+                   needs_verification=None) -> None:
     con.execute(
         "UPDATE rating SET is_current=0 WHERE issuer_id=? AND agency=? AND rated_on<>?",
         (issuer_id, agency, rated_on))
     con.execute(
         "INSERT INTO rating(issuer_id,secid,agency,rating,outlook,action,"
-        "rated_on,source,is_current) VALUES(?,?,?,?,?,?,?,?,1) "
+        "rated_on,source,is_current,verified_on,needs_verification) "
+        "VALUES(?,?,?,?,?,?,?,?,1,?,?) "
         "ON CONFLICT(issuer_id,agency,rated_on) DO UPDATE SET "
         "secid=excluded.secid, rating=excluded.rating, outlook=excluded.outlook,"
-        "action=excluded.action, source=excluded.source, is_current=1",
-        (issuer_id, secid, agency, rating, outlook, action, rated_on, source))
+        "action=excluded.action, source=excluded.source, is_current=1,"
+        "verified_on=excluded.verified_on, needs_verification=excluded.needs_verification",
+        (issuer_id, secid, agency, rating, outlook, action, rated_on, source,
+         verified_on, needs_verification))
 
 
-def current_rating(con, issuer_id: str) -> str | None:
-    """Most recent rating string (ruXX format) for an issuer across all
-    agencies, preferring АКРА > Expert RA > НКР > НРА > manual on a tie."""
+def retire_rating(con, issuer_id: str, agency: str) -> None:
+    """Explicitly mark an issuer's current rating under one agency as no
+    longer current -- needed when superseding a 'manual' bootstrap row with
+    a real, differently-dated agency row, since upsert_rating's own
+    supersession only retires rows under the SAME agency (see the
+    current_rating() sort-order caveat above)."""
+    con.execute(
+        "UPDATE rating SET is_current=0 WHERE issuer_id=? AND agency=?",
+        (issuer_id, agency))
+
+
+def _current_rating_row(con, issuer_id: str):
+    """Shared selection logic behind current_rating() and current_rating_row().
+    A real-agency-sourced row always outranks a 'manual' row, regardless of
+    which is more recently dated -- 'manual' ratings are an unverified
+    bootstrap (see seed_ratings.py), not an independent signal that should
+    ever override a genuine agency action. Among rows on the same side of
+    that divide, rated_on is the tiebreaker, and _AGENCY_PRIORITY only breaks
+    an exact date tie between two real agencies (or two manual rows)."""
     rows = con.execute(
-        "SELECT agency, rating, rated_on FROM rating "
-        "WHERE issuer_id=? AND is_current=1", (issuer_id,)).fetchall()
+        "SELECT * FROM rating WHERE issuer_id=? AND is_current=1",
+        (issuer_id,)).fetchall()
     if not rows:
         return None
 
     def sort_key(r):
         agency_upper = (r["agency"] or "").strip().upper()
+        is_manual = agency_upper == "MANUAL"
         try:
             prio = _AGENCY_PRIORITY.index(agency_upper)
         except ValueError:
             prio = len(_AGENCY_PRIORITY)
-        return (r["rated_on"], -prio)
+        return (0 if is_manual else 1, r["rated_on"], -prio)
 
-    best = max(rows, key=sort_key)
-    return best["rating"]
+    return max(rows, key=sort_key)
+
+
+def current_rating(con, issuer_id: str) -> str | None:
+    """Most recent rating string (ruXX format) for an issuer across all
+    agencies -- see _current_rating_row for the selection logic."""
+    row = _current_rating_row(con, issuer_id)
+    return row["rating"] if row else None
+
+
+def current_rating_row(con, issuer_id: str) -> dict | None:
+    """Like current_rating(), but returns the full row (agency, needs_verification,
+    verified_on, ...) -- used where a caller needs to know whether the winning
+    rating has actually been verified, not just its value."""
+    row = _current_rating_row(con, issuer_id)
+    return dict(row) if row else None
 
 
 def rating_history(con, issuer_id: str) -> list:

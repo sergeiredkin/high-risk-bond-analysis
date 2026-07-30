@@ -159,6 +159,64 @@ def run_scrape(
     return summary
 
 
+def run_market_notes(snap_date: date | None = None) -> dict:
+    """Ingest smart-lab.ru's general news RSS feed (scrape/smartlab_news.py)
+    into `market_note` -- secondary business-news signal, distinct from the
+    `filing`/`event` tables (regulatory disclosures). Matching is by name
+    against the whole feed, not per-issuer requests -- one fetch covers the
+    watchlist. severity/category are left NULL: classifying this source is a
+    separate, later step (hy-event-classify doesn't yet have a market_note
+    input path), this only ingests + dedupes."""
+    from .scrape import smartlab_news as sln
+    snap_date = snap_date or date.today()
+    backend = ed.HttpBackend()
+
+    con = db.connect()
+    db.init_db(con)
+    db.init_market_note(con)
+
+    result = {"snap_date": snap_date.isoformat(), "parsed": 0, "new": 0, "error": None}
+    try:
+        xml_text = sln.fetch_feed(backend)
+        notes = sln.parse_feed(xml_text)
+    except Exception as e:  # noqa: BLE001
+        con.close()
+        result["error"] = str(e)
+        return result
+
+    result["parsed"] = len(notes)
+    for n in notes:
+        inserted = db.insert_market_note(
+            con, source=sln.SOURCE_MARKER, issuer_id=n.issuer_id,
+            occurred=n.occurred, headline=n.headline, summary=n.summary,
+            url=n.url, severity=None, category=None, confidence=None,
+            fetched_on=snap_date.isoformat(), body_hash=n.body_hash)
+        if inserted:
+            result["new"] += 1
+    con.commit()
+    con.close()
+    return result
+
+
+def market_note_queue_view() -> dict:
+    """market_note counterpart to classify_queue_view: rows still awaiting
+    classification (severity IS NULL). hy-event-classify reads headline+summary
+    for these (no filing body -- see the skill's Inputs section) and stores the
+    result via db.set_market_note_classification."""
+    con = db.connect()
+    db.init_db(con)
+    db.init_market_note(con)
+    rows = db.unclassified_market_notes(con)
+    con.close()
+    return {
+        "unclassified_count": len(rows),
+        "queue": [{"note_id": r["note_id"], "issuer_id": r["issuer_id"],
+                   "occurred": r["occurred"], "headline": r["headline"],
+                   "summary": r["summary"], "url": r["url"],
+                   "source": r["source"]} for r in rows[:50]],
+    }
+
+
 def classify_queue_view(snap_date: date | None = None) -> dict:
     """What the classifier skill would work on next: unclassified filings. This
     is the hand-off point to hy-event-classify (manual invoke now, API later)."""

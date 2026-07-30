@@ -48,7 +48,9 @@ class Factlist:
     stat_warming_up: bool = True      # True until statistical detector is live
     # reserved for later slices — schema-stable placeholders
     events_since_last: list[dict] = field(default_factory=list)   # Slice 3
+    market_notes_since_last: list[dict] = field(default_factory=list)  # Slice 3
     six_pillars: dict = field(default_factory=dict)               # Slice 4
+    six_pillars_delta: dict = field(default_factory=dict)         # Slice 4 trend
     thesis_status: str | None = None                              # Slice 4
     # Default Probability Layer (see DEFAULT_PROB_FEATURE.md). None until a
     # rating is available -- rating ingestion into six_pillars is a separate
@@ -113,6 +115,7 @@ def build_factlist(
         )))
 
     six_pillars = _latest_pillars(con, issuer_id)
+    six_pillars_delta = _pillars_delta(con, issuer_id)
 
     # Default Probability Layer (see DEFAULT_PROB_FEATURE.md). Rating comes
     # from the `rating` table (db.current_rating) -- the same source of
@@ -141,7 +144,9 @@ def build_factlist(
         flags=flags,
         stat_warming_up=stat_warming_up,
         events_since_last=_events_since_last(con, issuer_id, snap_date),
+        market_notes_since_last=_market_notes_since_last(con, issuer_id, snap_date),
         six_pillars=six_pillars,
+        six_pillars_delta=six_pillars_delta,
         thesis_status=_thesis_status(con, issuer_id),
         default_prob_1yr=default_prob_1yr,
         implied_fair_spread_bp=implied_fair,
@@ -163,7 +168,27 @@ def _events_since_last(con, issuer_id: str, snap_date: str) -> list[dict]:
     except Exception:  # noqa: BLE001 — table may not exist pre-Slice-3
         return []
     return [{"occurred": r["occurred"], "category": r["category"],
-             "severity": r["severity"], "summary": r["summary"]} for r in rows]
+             "severity": r["severity"], "summary": r["summary"],
+             "source": "event"} for r in rows]
+
+
+def _market_notes_since_last(con, issuer_id: str, snap_date: str) -> list[dict]:
+    """Classified market_note rows (secondary source, e.g. Smart-Lab news) in
+    the same recent window as _events_since_last. Tolerates the market_note
+    table not existing yet."""
+    from datetime import date as _date, timedelta as _td
+    from ..store import db
+    try:
+        since = (_date.fromisoformat(snap_date) - _td(days=30)).isoformat()
+    except ValueError:
+        return []
+    try:
+        rows = db.market_notes_since(con, issuer_id, since)
+    except Exception:  # noqa: BLE001 — table may not exist pre-market_note
+        return []
+    return [{"occurred": r["occurred"], "category": r["category"],
+             "severity": r["severity"], "summary": r["headline"],
+             "source": r["source"], "url": r["url"]} for r in rows]
 
 
 def _latest_pillars(con, issuer_id: str) -> dict:
@@ -180,6 +205,29 @@ def _latest_pillars(con, issuer_id: str) -> dict:
         return _json.loads(row["payload"])
     except (ValueError, TypeError, KeyError):
         return {}
+
+
+def _pillars_delta(con, issuer_id: str) -> dict:
+    """Per-pillar improving/degrading/flat vs the previous available
+    pillars_snapshot row (see compute.pillars.pillars_delta) -- a plain
+    two-point comparison, not a statistical model. Returns {} if fewer than
+    two snapshots exist yet for this issuer (true for every issuer today,
+    see db.pillars_history's docstring)."""
+    import json as _json
+    from ..compute import pillars as P
+    from ..store import db
+    try:
+        hist = db.pillars_history(con, issuer_id, limit=2)
+    except Exception:  # noqa: BLE001 — pillars_snapshot may not exist pre-Slice-4
+        return {}
+    if len(hist) < 2:
+        return {}
+    try:
+        current = _json.loads(hist[0]["payload"])
+        previous = _json.loads(hist[1]["payload"])
+    except (ValueError, TypeError, KeyError):
+        return {}
+    return P.pillars_delta(current, previous)
 
 
 def _thesis_status(con, issuer_id: str) -> str | None:

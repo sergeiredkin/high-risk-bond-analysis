@@ -123,6 +123,30 @@ SHORT_TENOR_THIN = lambda b: (  # noqa: E731
 # (nonsensical) ytm=0.0 for visibility.
 ZERO_YIELD_DEGENERATE = lambda b: b.get("ytm") == 0.0  # noqa: E731
 
+# Near-offer annualization amplification: investigated as part of the
+# "implausible 1000s-of-bp mispricing for IG-adjacent names" report. Most
+# such cases (e.g. Самолёт/АПРИ bonds with 24-30.5% real coupons trading
+# near par) turned out to be genuine -- a very high real coupon plus a real
+# discount legitimately produces a very high YTM, and comparing that to
+# implied_fair_spread_bp (a pure default-probability benchmark with no
+# illiquidity/duration/term-premium term) is a model-calibration gap, not a
+# bug (confirmed separately: average mispricing_bp is monotonically
+# positive across EVERY rating tier, even for un-excluded, liquid bonds).
+#
+# One genuine artifact was found among them though: RU000A109874/СамолетP15
+# (offer in 8 days, LAST=99.43% of face, coupon 19.5%) reports ytm=61.4% --
+# its whole ~1% real return over an 8-day holding period is what's being
+# annualized into that number. The tell is ytm far exceeding the bond's own
+# coupon rate while the horizon to the next put/maturity event is short:
+# for a near-par bond that isn't happening, annualized ytm tracks the
+# coupon rate itself (see the many 24-30.5%-coupon comparables above, whose
+# ytm sits within ~30% of their own coupon, not multiples of it).
+NEAR_OFFER_AMPLIFIED = lambda b: (  # noqa: E731
+    b.get("tenor_yrs") is not None and b.get("tenor_yrs") < 0.3 and
+    b.get("coupon_pct") is not None and b.get("ytm") is not None and
+    b.get("ytm") > 2 * (b.get("coupon_pct") / 100.0)
+)
+
 
 def _load_emitent_map(con, snap_date: date, force_refresh: bool) -> dict:
     """Cached SECID -> {emitent_inn, emitent_title}, re-paginated only when
@@ -185,13 +209,33 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
 
     for secid, m, q in screened_rows:
         mat = sources.parse_date(m.get("MATDATE"))
-        tenor = (mat - snap_date).days / 365.0
+        offer = sources.parse_date(m.get("OFFERDATE"))
+        tenor = (mat - snap_date).days / 365.0  # true years-to-maturity: stored/displayed as-is
+
+        # MOEX's own YIELD/DURATION are computed to the nearest OFFER (put)
+        # date when one exists and falls before maturity, NOT to final
+        # maturity -- confirmed empirically: duration_moex for a bond with a
+        # near offer matches days-to-offer, not days-to-maturity (e.g.
+        # RU000A109874/СамолетP15: duration_moex=8 days vs 10 days to its
+        # 2026-08-07 offer, vs 367 days to its real 2027-07-30 maturity).
+        # Pairing that offer-horizon yield with a risk-free rate picked off
+        # the MATURITY tenor mismatches the two horizons and inflates
+        # g_spread/mispricing hugely for any bond with a near put -- this
+        # yield_horizon (not `tenor`) is what must drive the rf lookup and
+        # the annualization-noise exclusion check below. `tenor` itself is
+        # left alone since it's stored as tenor_yrs for maturity-wall/
+        # curve-coverage uses elsewhere, which do want true time-to-maturity.
+        if offer and snap_date < offer < mat:
+            yield_horizon = (offer - snap_date).days / 365.0
+        else:
+            yield_horizon = tenor
+
         yld = q.get("YIELD")
-        if yld is None or tenor <= 0:
+        if yld is None or yield_horizon <= 0:
             continue
         ytm = float(yld) / 100.0
         try:
-            rf = bondmath.interp_curve(tenor, curve)
+            rf = bondmath.interp_curve(yield_horizon, curve)
         except (ValueError, ZeroDivisionError):
             continue
         gsp = (ytm - rf) * 1e4
@@ -209,8 +253,12 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
             n_rated += 1
 
         num_trades = q.get("NUMTRADES")
+        # SHORT_TENOR_THIN's "annualizing a handful of trades near the final
+        # weeks is noise" reasoning applies to whichever event (put or
+        # maturity) the yield is actually annualized over -- yield_horizon,
+        # not the maturity-only tenor.
         exclusion_check = {"coupon_pct": m.get("COUPONPERCENT"), "ytm": ytm,
-                            "tenor_yrs": tenor, "num_trades": num_trades}
+                            "tenor_yrs": yield_horizon, "num_trades": num_trades}
         yield_source = "moex"
         signal_excluded = False
         if COMMODITY_LINKED(exclusion_check):
@@ -222,6 +270,9 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
         elif ZERO_YIELD_DEGENERATE(exclusion_check):
             signal_excluded = True
             yield_source = "zero_yield_degenerate"
+        elif NEAR_OFFER_AMPLIFIED(exclusion_check):
+            signal_excluded = True
+            yield_source = "near_offer_amplified"
         if signal_excluded:
             implied_fair = None
             misprice = None
@@ -240,7 +291,6 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
             aey_bull = portfolio.bond_aey(ytm, mdur_yrs, scenarios["bull"])
             aey_base_risk_adj = portfolio.pd_adjusted_aey(aey_base, rating)
 
-        offer = sources.parse_date(m.get("OFFERDATE"))
         in_wl = 1 if emitent_inn in watchlist_inns else 0
 
         db.insert_universe_snapshot(

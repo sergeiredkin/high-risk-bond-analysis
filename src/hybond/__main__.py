@@ -97,12 +97,33 @@ def cmd_scrape(args) -> int:
     return 0
 
 
+def cmd_market_notes(_args) -> int:
+    from . import scrape_pipeline
+    result = scrape_pipeline.run_market_notes()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if result["error"]:
+        print(f"\n{result['error']}", file=sys.stderr)
+        return 1
+    print(f"\n{result['new']} new market note(s) out of {result['parsed']} parsed.",
+          file=sys.stderr)
+    return 0
+
+
 def cmd_queue(_args) -> int:
     from . import scrape_pipeline
     view = scrape_pipeline.classify_queue_view()
     print(json.dumps(view, ensure_ascii=False, indent=2))
     print(f"\n{view['unclassified_count']} filing(s) awaiting classification. "
           f"Invoke hy-event-classify on each.", file=sys.stderr)
+    return 0
+
+
+def cmd_market_notes_queue(_args) -> int:
+    from . import scrape_pipeline
+    view = scrape_pipeline.market_note_queue_view()
+    print(json.dumps(view, ensure_ascii=False, indent=2))
+    print(f"\n{view['unclassified_count']} market note(s) awaiting classification. "
+          f"Invoke hy-event-classify on each (headline+summary input).", file=sys.stderr)
     return 0
 
 
@@ -366,6 +387,14 @@ def main(argv=None) -> int:
     ps.set_defaults(func=cmd_scrape)
     pq = sub.add_parser("queue", help="Slice 3: show filings awaiting classification")
     pq.set_defaults(func=cmd_queue)
+
+    pmq = sub.add_parser("market-notes-queue",
+                          help="Show market_note rows awaiting classification")
+    pmq.set_defaults(func=cmd_market_notes_queue)
+    pm = sub.add_parser("market-notes",
+                        help="Ingest smart-lab.ru's general news RSS feed into market_note "
+                             "(secondary business-news signal, distinct from filing/event)")
+    pm.set_defaults(func=cmd_market_notes)
     pu = sub.add_parser("universe", help="Full MOEX corporate-bond universe screen + G-spread + mispricing")
     pu.add_argument("--refresh-emitent-map", action="store_true",
                      help="force a fresh paginated SECID->ИНН fetch instead of the cached "

@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from hybond.universe_pipeline import (  # noqa: E402
-    COMMODITY_LINKED, SHORT_TENOR_THIN, _passes_screen)
+    COMMODITY_LINKED, NEAR_OFFER_AMPLIFIED, SHORT_TENOR_THIN, _passes_screen)
 
 TODAY = date(2026, 7, 28)
 
@@ -79,6 +79,8 @@ def _apply_signal_exclusion(bond: dict, implied_fair: float | None, misprice: fl
         signal_excluded = True
     elif SHORT_TENOR_THIN(bond):
         signal_excluded = True
+    elif NEAR_OFFER_AMPLIFIED(bond):
+        signal_excluded = True
     if signal_excluded:
         implied_fair = None
         misprice = None
@@ -106,3 +108,31 @@ def test_normal_bond_keeps_mispricing_signal():
     excluded, implied_fair, misprice = _apply_signal_exclusion(bond, 199.0, 850.0)
     assert excluded is False
     assert misprice == 850.0
+
+
+def test_near_offer_amplified_excludes_mispricing_signal():
+    # RU000A109874/СамолетP15-style case: offer in 8 days (tenor_yrs here
+    # doubles as yield_horizon per run_universe()'s exclusion_check dict),
+    # coupon 19.5%, but reported ytm 61.4% -- annualizing an ~8-day, ~1%
+    # real return, not a genuinely high coupon-driven yield.
+    bond = {"coupon_pct": 19.5, "ytm": 0.614, "tenor_yrs": 8 / 365, "num_trades": 351}
+    excluded, implied_fair, misprice = _apply_signal_exclusion(bond, 53.5, 4737.0)
+    assert excluded is True
+    assert misprice is None
+
+
+def test_high_coupon_near_offer_bond_not_flagged_as_amplified():
+    # АПРИ 2Р7-style case: offer in 21 days (short horizon, same as above),
+    # but ytm (37.6%) tracks its own real 29.5% coupon rather than dwarfing
+    # it -- a genuinely high-coupon ВДО bond, not an annualization artifact.
+    bond = {"coupon_pct": 29.5, "ytm": 0.376, "tenor_yrs": 21 / 365, "num_trades": 13}
+    excluded, implied_fair, misprice = _apply_signal_exclusion(bond, 118.0, 2290.0)
+    assert excluded is False
+    assert misprice == 2290.0
+
+
+def test_near_offer_amplified_requires_short_horizon():
+    # Same ytm/coupon mismatch, but a long horizon (no imminent put/offer) --
+    # NEAR_OFFER_AMPLIFIED must not fire on ytm/coupon ratio alone.
+    bond = {"coupon_pct": 19.5, "ytm": 0.614, "tenor_yrs": 2.0, "num_trades": 351}
+    assert not NEAR_OFFER_AMPLIFIED(bond)

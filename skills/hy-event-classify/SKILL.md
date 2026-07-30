@@ -13,20 +13,35 @@ Layer 1 function is missing; stop and flag it rather than estimating.
 
 ## Inputs
 
+Two distinct input shapes feed this skill — a regulatory filing (`filing`/
+`event` tables) or a secondary news item (`market_note` table, `hybond
+market-notes-queue`). Classify both against the same taxonomy; only the source
+handling in point 3 differs by shape.
+
 1. **The issuer factlist** (JSON from `hybond diff --factlist-dir ...`): current
    spread + delta, flags, sector, issuer name. Gives you the credit context the
    filing lands in — a reporting delay on an issuer whose spread already blew out
    50bp reads differently than one on a calm name.
-2. **The filing**: title + body text (from the scraper, or pasted by the user).
+2. **The content**:
+   - `filing` shape: title + body text (from the scraper, or pasted by the user).
+   - `market_note` shape (`hybond market-notes-queue`): `headline` + `summary`
+     only — no filing body exists for this source. News-wire style: a single
+     short headline and a 1-2 sentence description, noisier and less complete
+     than AZIPI filing prose. If the headline+summary don't state a fact clearly
+     enough to pick a category with confidence, classify as `routine`/`noise`
+     rather than guess, and lower `confidence` accordingly — do not fabricate
+     detail the short-form text doesn't contain.
 3. **The source** (check `hybond queue`'s `source` field, or the filing's
    `edisclosure_id`): `primary` means a Bank-of-Russia-authorized disclosure
-   agent (АЗИПИ). `smartlab` means smart-lab.ru — community news/commentary,
-   occasionally an issuer's own IR account, but never the primary filing
-   itself. Treat `smartlab` filings as SECONDARY: cap `confidence` lower than
-   you would for an equivalent primary filing (the underlying material fact
-   hasn't been directly read, only reported on), and prefix `note_ru` with
-   "по данным Smart-Lab" so the daily brief never presents secondary-source
-   news as if it were the primary disclosure.
+   agent (АЗИПИ). `smartlab` (filing) and `smartlab_news` (market_note) both
+   mean smart-lab.ru — community news/commentary, occasionally an issuer's own
+   IR account, but never the primary filing itself. Treat these as SECONDARY:
+   cap `confidence` lower than you would for an equivalent primary filing (the
+   underlying material fact hasn't been directly read, only reported on), and
+   prefix `note_ru` with "по данным Smart-Lab" so the daily brief never
+   presents secondary-source news as if it were the primary disclosure.
+   `market_note` rows are secondary by construction — always apply this cap,
+   there is no primary-sourced case for this table.
 
 ## Method
 
@@ -73,7 +88,9 @@ Return JSON exactly matching the contract in `references/taxonomy.md`:
 Then, in prose below the JSON, give a 2–4 sentence explanation of the call for a
 human — what in the filing drove the category and severity, and what to watch
 next. This prose is for the analyst; the JSON is what gets stored in the `event`
-table and the `note_ru` is what the daily brief publishes.
+table (`filing` input) or, via `db.set_market_note_classification(con, note_id,
+severity, category, confidence)`, back onto the `market_note` row (`market_note`
+input) — and `note_ru` is what the daily brief publishes.
 
 ## Guardrails
 

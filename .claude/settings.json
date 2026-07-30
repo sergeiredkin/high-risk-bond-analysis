@@ -92,7 +92,13 @@
       "Bash(sqlite3 data/db/hybond.sqlite \".schema cbr_meeting\")",
       "Bash(sqlite3 data/db/hybond.sqlite \".schema universe_snapshot\")",
       "Bash(sqlite3 -header -column data/db/hybond.sqlite \"SELECT meeting_date, is_anchor, rate_before, rate_after, rate_2026_mid, rate_2027_mid, analysis_json FROM cbr_meeting ORDER BY meeting_date DESC LIMIT 5;\")",
-      "Bash(sqlite3 -header -column data/db/hybond.sqlite \"SELECT meeting_date, rate_2026_mid, rate_2027_mid, rate_2028_mid, rate_2029_mid FROM cbr_meeting WHERE meeting_date='2026-07-24';\")"
+      "Bash(sqlite3 -header -column data/db/hybond.sqlite \"SELECT meeting_date, rate_2026_mid, rate_2027_mid, rate_2028_mid, rate_2029_mid FROM cbr_meeting WHERE meeting_date='2026-07-24';\")",
+      "Bash(git commit -m ' *)",
+      "Bash(PYTHONPATH=src python -m pytest tests/test_portfolio.py -v)",
+      "Bash(google-chrome --headless --disable-gpu --no-sandbox --window-size=1600,9000 --screenshot=/tmp/claude-1000/-home-sergei-Documents-high-risk-bond-analysis/46bbce62-9a39-46cb-891b-335154bdba82/scratchpad/pillars_full.png \"file://$\\(pwd\\)/dashboard/index.html\")",
+      "Bash(curl -s \"https://iss.moex.com/iss/securities/RU000A10EE87.json?iss.meta=off\")",
+      "Bash(python3 -c \"import json; json.load\\(open\\('watchlist.json', encoding='utf-8'\\)\\); print\\('valid JSON'\\)\")",
+      "Bash(PYTHONPATH=src python -c ' *)"
     ]
   }
 }

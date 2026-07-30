@@ -276,12 +276,12 @@ def test_smartlab_parser_matches_title_and_author():
     filings = sl.parse_feed(SMARTLAB_FIXTURE_HTML, today=date(2026, 7, 27))
     assert len(filings) == 2                    # first item (no match) skipped
     by_issuer = {f.issuer_id: f for f in filings}
-    assert set(by_issuer) == {"9731004688", "7714349045"}  # Самолёт, CarMoney
+    assert set(by_issuer) == {"9731004688", "7730634468"}  # Самолёт, CarMoney
     # title match: date came from the feed's DD/MM (no year) -> current year
     assert by_issuer["9731004688"].published == "2026-07-24"
     assert "купон" in by_issuer["9731004688"].title
     # author-only match: title itself has no issuer name in it
-    assert by_issuer["7714349045"].title == "🔔 Уважаемые инвесторы!"
+    assert by_issuer["7730634468"].title == "🔔 Уважаемые инвесторы!"
     # both tagged with the secondary-source marker
     assert all(f.edisclosure_id == sl.SOURCE_MARKER for f in filings)
 
@@ -311,6 +311,46 @@ def test_smartlab_parser_empty_on_no_matches():
     </li>
     """
     assert sl.parse_feed(html) == []
+
+
+def test_smartlab_interfax_issuers_inn_corrections():
+    # Regression guard, 2026-07-30: 8 of 11 INTERFAX_ISSUERS entries carried
+    # an INN that didn't match watchlist.json's current issuer_id for the
+    # same company -- a name match would "succeed" in parse_feed but the
+    # resulting filing.issuer_id would reference a row that doesn't exist in
+    # the `issuer` table, so it would never surface in that issuer's real
+    # event feed. Pins the corrected values so a future edit can't silently
+    # regress one of them back to a stale/wrong INN.
+    assert sl.INTERFAX_ISSUERS["Сегежа"] == "9703024202"
+    assert sl.INTERFAX_ISSUERS["АФК Система"] == "7703104630"
+    assert sl.INTERFAX_ISSUERS["Монополия"] == "7810766685"
+    assert sl.INTERFAX_ISSUERS["CarMoney"] == "7730634468"
+    assert sl.INTERFAX_ISSUERS["КарМани"] == "7730634468"
+    assert sl.INTERFAX_ISSUERS["Интерлизинг"] == "7802131219"
+    assert sl.INTERFAX_ISSUERS["Балтийский лизинг"] == "7826705374"
+    assert sl.INTERFAX_ISSUERS["Эталон"] == "7705619586"
+    assert sl.INTERFAX_ISSUERS["Гарант-Инвест"] == "7726637843"
+    # ГлоракС and Самолёт were already correct -- confirm they're untouched.
+    assert sl.INTERFAX_ISSUERS["ГлоракС"] == "9729387137"
+    assert sl.INTERFAX_ISSUERS["Самолёт"] == "9731004688"
+    # the old, now-deleted МФК Займер issuer had its own (also wrong) entry;
+    # it's gone from watchlist.json entirely, so the key should be too.
+    assert "Займер" not in sl.INTERFAX_ISSUERS
+
+
+def test_smartlab_segezha_post_resolves_to_correct_issuer():
+    from datetime import date
+    html = """
+    <li class="bluid_777777">
+        <b>&nbsp;<u>+5</u></b>
+            24/07
+        <i><a href="/profile/someauthor/">Аналитик</a></i>
+        <a href="/blog/9999999.php" title="обзор">Сегежа объявила о новых условиях по облигациям серии 3P6R</a>
+    </li>
+    """
+    filings = sl.parse_feed(html, today=date(2026, 7, 30))
+    assert len(filings) == 1
+    assert filings[0].issuer_id == "9703024202"  # Сегежа Групп's real issuer_id
 
 
 def test_smartlab_filings_flow_through_same_dedupe_and_store(tmp_path):
