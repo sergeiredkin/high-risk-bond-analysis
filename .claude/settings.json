@@ -130,7 +130,10 @@
       "WebFetch(domain:boomin.ru)",
       "WebFetch(domain:www.ra-national.ru)",
       "Bash(sqlite3 -header -column data/db/hybond.sqlite \"SELECT DISTINCT agency FROM rating;\")",
-      "Bash(PYTHONPATH=src python -m pytest tests/test_rating.py -q)"
+      "Bash(PYTHONPATH=src python -m pytest tests/test_rating.py -q)",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0 Safari/537.36\" \"https://raexpert.ru/database/companies/1000057453/\" -o /tmp/raexpert_test.html -w \"%{http_code}\\\\n\")",
+      "Bash(grep -io \"рейтинг[^<]\\\\{0,60\\\\}\" /tmp/raexpert_test.html)",
+      "Bash(grep -io 'name=\"[^\"]*inn[^\"]*\"\\\\|ИНН[^<]\\\\{0,40\\\\}' /tmp/raexpert_test.html)"
     ],
     "additionalDirectories": [
       "/home/sergei/.ssh"
