@@ -98,7 +98,28 @@
       "Bash(google-chrome --headless --disable-gpu --no-sandbox --window-size=1600,9000 --screenshot=/tmp/claude-1000/-home-sergei-Documents-high-risk-bond-analysis/46bbce62-9a39-46cb-891b-335154bdba82/scratchpad/pillars_full.png \"file://$\\(pwd\\)/dashboard/index.html\")",
       "Bash(curl -s \"https://iss.moex.com/iss/securities/RU000A10EE87.json?iss.meta=off\")",
       "Bash(python3 -c \"import json; json.load\\(open\\('watchlist.json', encoding='utf-8'\\)\\); print\\('valid JSON'\\)\")",
-      "Bash(PYTHONPATH=src python -c ' *)"
+      "Bash(PYTHONPATH=src python -c ' *)",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0 Safari/537.36\" \"https://www.e-disclosure.ru/portal/files.aspx?id=37991&type=3\" -o /tmp/brusnika_files.html -w \"%{http_code}\\\\n\")",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0 Safari/537.36\" \"https://www.e-disclosure.azipi.ru/messages/4461327/\" -o /tmp/brusnika_msg.html -w \"%{http_code}\\\\n\")",
+      "Bash(curl -v -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0 Safari/537.36\" \"https://www.e-disclosure.azipi.ru/messages/4461327/\" -o /tmp/brusnika_msg.html)",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0 Safari/537.36\" \"https://e-disclosure.azipi.ru/messages/4461327/\" -o /tmp/brusnika_msg.html -w \"%{http_code}\\\\n\")",
+      "Bash(grep -io 'id=[0-9]\\\\{4,6\\\\}' /tmp/brusnika_msg.html)",
+      "Bash(grep -o 'ИНН[^<]\\\\{0,40\\\\}' /tmp/brusnika_msg.html)",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0 Safari/537.36\" \"https://e-disclosure.azipi.ru/search/?inn=6685151087\" -o /tmp/brusnika_search.html -w \"%{http_code}\\\\n\")",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0 Safari/537.36\" \"http://archive.org/wayback/available?url=e-disclosure.ru/portal/company.aspx%3Fid%3D37991\" -w \"\\\\n%{http_code}\\\\n\")",
+      "Bash(curl -sL \"http://web.archive.org/web/20240912075110/https://www.e-disclosure.ru/portal/company.aspx?id=37991\" -o /tmp/brusnika_wayback.html -w \"%{http_code}\\\\n\")",
+      "Bash(grep -io 'ИНН[^<]\\\\{0,60\\\\}' /tmp/brusnika_wayback.html)",
+      "Bash(curl -sL \"https://web.archive.org/cdx/search/cdx?url=e-disclosure.ru/portal/company.aspx?id=37991&output=json&limit=10\" -w \"\\\\n%{http_code}\\\\n\")",
+      "Bash(curl -sL \"https://web.archive.org/web/20200407130347if_/http://www.e-disclosure.ru/portal/company.aspx?id=37991\" -o /tmp/brusnika_2020.html -w \"%{http_code}\\\\n\")",
+      "Bash(grep -io 'ИНН[^<]\\\\{0,60\\\\}' /tmp/brusnika_2020.html)",
+      "Bash(curl -sL \"https://web.archive.org/web/2020if_/http://www.e-disclosure.ru/portal/company.aspx?id=38535\" -o /tmp/glorax_check.html -w \"%{http_code}\\\\n\")",
+      "Bash(curl -sL \"https://web.archive.org/cdx/search/cdx?url=e-disclosure.ru/portal/company.aspx?id=38535&output=json&limit=5\")",
+      "Bash(sqlite3 data/db/hybond.sqlite \".tables\")",
+      "Bash(sqlite3 -header -column data/db/hybond.sqlite \".schema event\")",
+      "Bash(sqlite3 -header -column data/db/hybond.sqlite \"SELECT event_id, issuer_id, occurred, category, summary, source_url FROM event WHERE issuer_id IN \\('6685151087','9729387137'\\) ORDER BY occurred DESC LIMIT 30;\")",
+      "WebFetch(domain:europlan.ru)",
+      "WebFetch(domain:www.all-leasing.ru)",
+      "Bash(ssh -T git@github.com)"
     ]
   }
 }
