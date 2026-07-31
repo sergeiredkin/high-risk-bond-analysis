@@ -139,7 +139,11 @@
       "Bash(rm -rf /tmp/chrome_profile_promote)",
       "Bash(mkdir -p /tmp/chrome_profile_promote)",
       "Bash(nohup google-chrome --headless --disable-gpu --no-sandbox --remote-debugging-port=9333 --remote-allow-origins=* --user-data-dir=/tmp/chrome_profile_promote)",
-      "Bash(python3 /tmp/claude-1000/-home-sergei-Documents-high-risk-bond-analysis/46bbce62-9a39-46cb-891b-335154bdba82/scratchpad/cdp_promote.py \"file://$\\(pwd\\)/dashboard/index.html\" /tmp/claude-1000/-home-sergei-Documents-high-risk-bond-analysis/46bbce62-9a39-46cb-891b-335154bdba82/scratchpad/promote_verify)"
+      "Bash(python3 /tmp/claude-1000/-home-sergei-Documents-high-risk-bond-analysis/46bbce62-9a39-46cb-891b-335154bdba82/scratchpad/cdp_promote.py \"file://$\\(pwd\\)/dashboard/index.html\" /tmp/claude-1000/-home-sergei-Documents-high-risk-bond-analysis/46bbce62-9a39-46cb-891b-335154bdba82/scratchpad/promote_verify)",
+      "Bash(PYTHONPATH=src python -m hybond --help)",
+      "Bash(PYTHONPATH=src python -m hybond financials --help)",
+      "Bash(PYTHONPATH=src python -m hybond scrape --help)",
+      "Bash(PYTHONPATH=src python -m hybond scrape watchlist.json --smartlab)"
     ],
     "additionalDirectories": [
       "/home/sergei/.ssh"
