@@ -187,6 +187,12 @@
     color: var(--text-secondary); user-select: none;
   }
   .maturity-filter input[type="checkbox"] { cursor: pointer; accent-color: var(--series-1); width: 14px; height: 14px; }
+  .candidate-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 10px; }
+  .candidate-toggle label {
+    display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;
+    color: var(--text-secondary); user-select: none; font-weight: 600;
+  }
+  .candidate-toggle input[type="checkbox"] { cursor: pointer; accent-color: var(--series-1); width: 15px; height: 15px; }
   footer { margin-top: 50px; color: var(--text-muted); font-size: 11.5px; text-align: center; }
   .sort-arrow { opacity: .5; font-size: 9px; margin-left: 3px; }
   .flag-chip { display:inline-block; background: color-mix(in srgb, var(--critical) 12%, var(--surface-1));
@@ -333,6 +339,10 @@
   <section id="sec-portfolio-rank">
     <h2>Портфельный рейтинг (риск-скорректированный)</h2>
     <p class="section-note">AEY (Adjusted Expected Yield) — доходность с поправкой на ожидаемый путь ключевой ставки ЦБ (база/стресс/бык) через дюрацию облигации. «AEY (риск)» дополнительно взвешивает базовый сценарий на вероятность дефолта по рейтингу (таблица Эксперт РА) и severity — превращает номинальную доходность в вероятностно-взвешенную ожидаемую. Облигации с YTM ≥ 80% (дистресс-цены, не доходность для ранжирования) исключены; не более 2 выпусков на эмитента. Клик по заголовку столбца — сортировка.</p>
+    <div class="candidate-toggle">
+      <label><input type="checkbox" id="candidateModeToggle"> Топ-кандидаты (риск/доходность)</label>
+      <span id="candidateModeNote" class="section-note" style="margin:0"></span>
+    </div>
     <div class="banner" id="aeySourceBanner"></div>
     <div class="card table-scroll"><table id="portfolioRankTable"></table></div>
   </section>
@@ -719,16 +729,22 @@ function pillarPanelHtml(iss) {
     ? `<b>⚠ Резервные сценарии.</b> ${DATA.aey_source_note} — доверять AEY-цифрам ниже не стоит, это консервативные значения по умолчанию, не расчёт по свежему заседанию ЦБ.`
     : `<b>${DATA.aey_source_note}.</b>`;
 
-  // Flatten DATA.issuers[].bonds[] into one cross-issuer row set, same
-  // source data the "Универсум" tab reads (joined by secid at export time,
-  // see export_dashboard_data.py's universe_aey_by_secid) -- one AEY
-  // calculation (portfolio.py), surfaced in two views.
-  const YTM_MAX_PCT = 80; // same distress sanity bound as portfolio.rank_candidates(ytm_max=0.80)
-  const PER_ISSUER_CAP = 2;
+  // Two data sources, one table, one mental model -- toggled by
+  // #candidateModeToggle instead of a separate promo-candidates section.
+  // Unchecked (default): today's watchlist-only view, unchanged.
+  // Checked: the SAME 4-stage filter as `hybond promote` (promote.py),
+  // run live in the browser over DATA.universe_now.bonds (already embedded
+  // for the market-map tab -- no new export cost). Thresholds come from
+  // DATA.promotion_thresholds/DATA.rating_order, sourced directly from
+  // promote.py/default_probs.py at export time, so this can't silently
+  // drift from what the CLI itself would report.
+  const YTM_MAX_PCT = 80; // watchlist-mode-only distress sanity bound (portfolio.rank_candidates(ytm_max=0.80))
+  const PER_ISSUER_CAP = 2; // watchlist mode's own cap (candidate mode uses DATA.promotion_thresholds.per_issuer_cap instead)
 
   // Last critical/high item per issuer, pooled from event + market_note --
   // same feed and severity filter Task 4 built for the notification panel,
   // just reduced to "most recent" per issuer instead of a full list.
+  // Watchlist-mode only -- universe-wide bonds have no per-issuer event feed.
   function lastCriticalHigh(iss) {
     const pool = [...(iss.events || []), ...(iss.market_notes || [])]
       .filter(e => (e.severity === 'critical' || e.severity === 'high') && e.occurred);
@@ -737,50 +753,103 @@ function pillarPanelHtml(iss) {
     return pool[0];
   }
 
-  let allRows = [];
-  DATA.issuers.forEach(iss => {
-    const lastEvt = lastCriticalHigh(iss);
-    (iss.bonds || []).forEach(b => {
-      if (b.aey_base_risk_adj_pct !== null && b.aey_base_risk_adj_pct !== undefined) {
-        allRows.push({
-          issuer_id: iss.issuer_id, issuer: iss.name, rating: iss.rating, tier: iss.risk_tier,
-          rating_needs_verification: !!iss.rating_needs_verification,
-          last_event_date: lastEvt ? lastEvt.occurred : null,
-          last_event_secondary: lastEvt ? (lastEvt.source && lastEvt.source !== 'event') : false,
-          secid: b.secid, short_name: b.short_name || b.secid,
-          mat_date: b.mat_date, ytm_pct: b.ytm_pct, mispricing_bp: b.mispricing_bp,
-          mispricing_trend: b.mispricing_trend || { delta_bp: null, direction: null },
-          aey_base_pct: b.aey_base_pct, aey_stress_pct: b.aey_stress_pct,
-          aey_bull_pct: b.aey_bull_pct, aey_base_risk_adj_pct: b.aey_base_risk_adj_pct,
-        });
-      }
+  function buildWatchlistRows() {
+    let allRows = [];
+    DATA.issuers.forEach(iss => {
+      const lastEvt = lastCriticalHigh(iss);
+      (iss.bonds || []).forEach(b => {
+        if (b.aey_base_risk_adj_pct !== null && b.aey_base_risk_adj_pct !== undefined) {
+          allRows.push({
+            issuer_id: iss.issuer_id, issuer: iss.name, rating: iss.rating, tier: iss.risk_tier,
+            rating_needs_verification: !!iss.rating_needs_verification,
+            last_event_date: lastEvt ? lastEvt.occurred : null,
+            last_event_secondary: lastEvt ? (lastEvt.source && lastEvt.source !== 'event') : false,
+            secid: b.secid, short_name: b.short_name || b.secid,
+            mat_date: b.mat_date, ytm_pct: b.ytm_pct, mispricing_bp: b.mispricing_bp,
+            mispricing_trend: b.mispricing_trend || { delta_bp: null, direction: null },
+            aey_base_pct: b.aey_base_pct, aey_stress_pct: b.aey_stress_pct,
+            aey_bull_pct: b.aey_bull_pct, aey_base_risk_adj_pct: b.aey_base_risk_adj_pct,
+          });
+        }
+      });
     });
-  });
 
-  // Distress sanity bound: a nominal YTM in the hundreds/thousands of
-  // percent (e.g. ЕвроТранс's CCC series) isn't a yield to rank on -- it's
-  // distress pricing, and PD-weighting alone doesn't tame it (see
-  // universe_pipeline.py's NEAR_OFFER_AMPLIFIED/mispricing investigation).
-  // This mirrors portfolio.rank_candidates(ytm_max=0.80), which was applied
-  // in an ad-hoc SQL report earlier but never made it into this table.
-  allRows = allRows.filter(r => r.ytm_pct == null || r.ytm_pct < YTM_MAX_PCT);
+    // Distress sanity bound: a nominal YTM in the hundreds/thousands of
+    // percent (e.g. ЕвроТранс's CCC series) isn't a yield to rank on -- it's
+    // distress pricing, and PD-weighting alone doesn't tame it (see
+    // universe_pipeline.py's NEAR_OFFER_AMPLIFIED/mispricing investigation).
+    // This mirrors portfolio.rank_candidates(ytm_max=0.80).
+    allRows = allRows.filter(r => r.ytm_pct == null || r.ytm_pct < YTM_MAX_PCT);
 
-  // Per-issuer concentration cap (portfolio.apply_issuer_cap's JS
-  // equivalent): rank once by aey_base_risk_adj_pct to decide which rows
-  // make the cut at all, keeping at most PER_ISSUER_CAP per issuer -- the
-  // table stays freely sortable by any column afterwards, but always
-  // within this already-capped set, not the raw one.
-  const byRank = allRows.slice().sort((a, b) => (b.aey_base_risk_adj_pct ?? -Infinity) - (a.aey_base_risk_adj_pct ?? -Infinity));
-  const issuerCounts = {};
-  const keptSecids = new Set();
-  byRank.forEach(r => {
-    const n = issuerCounts[r.issuer_id] || 0;
-    if (n >= PER_ISSUER_CAP) return;
-    issuerCounts[r.issuer_id] = n + 1;
-    keptSecids.add(r.secid);
-  });
-  const rows = allRows.filter(r => keptSecids.has(r.secid));
+    // Per-issuer concentration cap (portfolio.apply_issuer_cap's JS
+    // equivalent): rank once by aey_base_risk_adj_pct to decide which rows
+    // make the cut at all, keeping at most PER_ISSUER_CAP per issuer.
+    const byRank = allRows.slice().sort((a, b) => (b.aey_base_risk_adj_pct ?? -Infinity) - (a.aey_base_risk_adj_pct ?? -Infinity));
+    const issuerCounts = {};
+    const keptSecids = new Set();
+    byRank.forEach(r => {
+      const n = issuerCounts[r.issuer_id] || 0;
+      if (n >= PER_ISSUER_CAP) return;
+      issuerCounts[r.issuer_id] = n + 1;
+      keptSecids.add(r.secid);
+    });
+    return allRows.filter(r => keptSecids.has(r.secid));
+  }
 
+  // The Phase 2 promotion screen (promote.py), reimplemented stage-for-stage
+  // over the already-exported universe_now bundle:
+  //   1. rating floor (hard) -- ruB- or better; unrated bonds excluded here
+  //      (no near-miss sub-list in this view -- that stays a `hybond
+  //      promote` CLI-only report for now).
+  //   2. liquidity floor -- same VDO_MIN_VOLUME vdo_scope already enforces,
+  //      reapplied explicitly for parity with promote.py's own cut-count logic.
+  //   3. aey_base_risk_adj_pct descending, top N before the cap.
+  //   4. issuer concentration cap, then truncate to target_after_cap.
+  function buildCandidateRows() {
+    const th = DATA.promotion_thresholds || {};
+    const ratingOrder = DATA.rating_order || [];
+    const floorIdx = ratingOrder.indexOf(th.rating_floor);
+    const bonds = (DATA.universe_now && DATA.universe_now.bonds) || [];
+
+    const scoped = bonds.filter(b => b.vdo_scope);
+
+    const passedRating = scoped.filter(b => {
+      if (b.rating == null) return false;
+      const idx = ratingOrder.indexOf(b.rating);
+      return idx !== -1 && floorIdx !== -1 && idx <= floorIdx;
+    });
+
+    const passedLiquidity = passedRating.filter(
+      b => b.volume != null && b.volume >= (th.min_volume ?? 0));
+
+    const rankable = passedLiquidity.filter(b => b.aey_base_risk_adj_pct != null);
+    rankable.sort((a, b) => b.aey_base_risk_adj_pct - a.aey_base_risk_adj_pct);
+    const topN = rankable.slice(0, th.n_before_cap ?? rankable.length);
+
+    const cap = th.per_issuer_cap ?? 2;
+    const issuerCounts = {};
+    const capped = [];
+    topN.forEach(b => {
+      const n = issuerCounts[b.emitent_inn] || 0;
+      if (n >= cap) return;
+      issuerCounts[b.emitent_inn] = n + 1;
+      capped.push(b);
+    });
+    const final = th.target_after_cap ? capped.slice(0, th.target_after_cap) : capped;
+
+    return final.map(b => ({
+      issuer_id: b.emitent_inn, issuer: b.emitent_title || b.short_name, rating: b.rating,
+      rating_needs_verification: undefined, // not tracked at universe scale
+      last_event_date: null, last_event_secondary: false,
+      secid: b.secid, short_name: b.short_name || b.secid,
+      mat_date: b.mat_date, ytm_pct: b.ytm_pct, mispricing_bp: b.mispricing_bp,
+      mispricing_trend: {}, // no per-bond history join at universe scale
+      aey_base_pct: b.aey_base_pct, aey_stress_pct: b.aey_stress_pct,
+      aey_bull_pct: b.aey_bull_pct, aey_base_risk_adj_pct: b.aey_base_risk_adj_pct,
+    }));
+  }
+
+  let rows = buildWatchlistRows();
   let sortKey = 'aey_base_risk_adj_pct', sortDir = -1;
   const cols = [
     ['issuer', 'Эмитент'], ['secid', 'SECID'], ['rating', 'Рейтинг'],
@@ -817,6 +886,7 @@ function pillarPanelHtml(iss) {
       // Trend arrow: current vs. the ONE previous universe_snapshot day for
       // this secid (db.mispricing_history) -- a plain two-point comparison,
       // not the 40-day statistical model G-spread's stat detector uses.
+      // Empty in candidate mode (no per-bond history join at universe scale).
       const t = r.mispricing_trend || {};
       const trendArrow = t.direction === 'up'
         ? `<span style="color:var(--critical)" title="мисценка выросла на ${Math.abs(t.delta_bp)}бп с ${t.since_date}">▲</span>`
@@ -831,7 +901,12 @@ function pillarPanelHtml(iss) {
       const lastEvtCell = r.last_event_date
         ? `${r.last_event_date}${r.last_event_secondary ? '<span class="source-badge secondary" title="по данным Smart-Lab — вторичный источник">SL</span>' : ''}`
         : '<span style="color:var(--text-muted)">—</span>';
-      const verifCell = r.rating_needs_verification
+      // rating_needs_verification is undefined (not just false) for
+      // candidate-mode rows -- that's not tracked at universe scale, so show
+      // a neutral dash rather than either the checkmark or the warning icon.
+      const verifCell = r.rating_needs_verification === undefined
+        ? '<span style="color:var(--text-muted)">—</span>'
+        : r.rating_needs_verification
         ? '<span class="source-badge secondary" title="Рейтинг не верифицирован по первоисточнику агентства">⚠ не подтверждён</span>'
         : '<span style="color:var(--text-muted)">✓</span>';
       html += `<tr>
@@ -857,6 +932,23 @@ function pillarPanelHtml(iss) {
       render();
     }));
   }
+
+  const toggle = document.getElementById('candidateModeToggle');
+  const note = document.getElementById('candidateModeNote');
+  function updateNote() {
+    if (!toggle.checked) { note.textContent = ''; return; }
+    const th = DATA.promotion_thresholds || {};
+    note.textContent = `рейтинг ≥ ${th.rating_floor}, объём ≥ ${th.min_volume}, ` +
+      `топ-${th.n_before_cap} по AEY (риск) до капа, макс. ${th.per_issuer_cap}/эмитент, ` +
+      `итог ≤ ${th.target_after_cap} — те же пороги, что и \`hybond promote\` (стартовые, не финальные).`;
+  }
+  toggle.addEventListener('change', () => {
+    rows = toggle.checked ? buildCandidateRows() : buildWatchlistRows();
+    sortKey = 'aey_base_risk_adj_pct'; sortDir = -1;
+    updateNote();
+    render();
+  });
+  updateNote();
   render();
 })();
 

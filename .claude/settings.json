@@ -133,7 +133,13 @@
       "Bash(PYTHONPATH=src python -m pytest tests/test_rating.py -q)",
       "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0 Safari/537.36\" \"https://raexpert.ru/database/companies/1000057453/\" -o /tmp/raexpert_test.html -w \"%{http_code}\\\\n\")",
       "Bash(grep -io \"рейтинг[^<]\\\\{0,60\\\\}\" /tmp/raexpert_test.html)",
-      "Bash(grep -io 'name=\"[^\"]*inn[^\"]*\"\\\\|ИНН[^<]\\\\{0,40\\\\}' /tmp/raexpert_test.html)"
+      "Bash(grep -io 'name=\"[^\"]*inn[^\"]*\"\\\\|ИНН[^<]\\\\{0,40\\\\}' /tmp/raexpert_test.html)",
+      "Bash(PYTHONPATH=src python -m hybond promote --n-before-cap 40)",
+      "Bash(google-chrome --headless --disable-gpu --no-sandbox --remote-debugging-port=9333 --remote-allow-origins=* --user-data-dir=/tmp/chrome_profile_promote)",
+      "Bash(rm -rf /tmp/chrome_profile_promote)",
+      "Bash(mkdir -p /tmp/chrome_profile_promote)",
+      "Bash(nohup google-chrome --headless --disable-gpu --no-sandbox --remote-debugging-port=9333 --remote-allow-origins=* --user-data-dir=/tmp/chrome_profile_promote)",
+      "Bash(python3 /tmp/claude-1000/-home-sergei-Documents-high-risk-bond-analysis/46bbce62-9a39-46cb-891b-335154bdba82/scratchpad/cdp_promote.py \"file://$\\(pwd\\)/dashboard/index.html\" /tmp/claude-1000/-home-sergei-Documents-high-risk-bond-analysis/46bbce62-9a39-46cb-891b-335154bdba82/scratchpad/promote_verify)"
     ],
     "additionalDirectories": [
       "/home/sergei/.ssh"

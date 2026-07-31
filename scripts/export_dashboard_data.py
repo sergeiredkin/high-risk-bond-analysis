@@ -22,9 +22,12 @@ from pathlib import Path
 
 sys.path.insert(0, "src")
 
-from hybond.compute.default_probs import RECOVERY_RATE, implied_fair_spread_bp, lookup  # noqa: E402
+from hybond.compute.default_probs import (  # noqa: E402
+    RATING_ORDER, RECOVERY_RATE, implied_fair_spread_bp, lookup)
 from hybond.store import db  # noqa: E402
 from hybond import portfolio  # noqa: E402
+from hybond import promote  # noqa: E402
+from hybond.universe_pipeline import VDO_MIN_VOLUME  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 FACTLIST_DIR = ROOT / "data" / "factlists"
@@ -186,6 +189,7 @@ def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str]) ->
             "pd_gap": round(pd_gap, 5) if pd_gap is not None else None,
             "in_watchlist": bool(r["in_watchlist"]),
             "signal_excluded": signal_excluded,
+            "vdo_scope": bool(r["vdo_scope"]),
             "aey_base_pct": round(r["aey_base"] * 100, 2) if r["aey_base"] is not None else None,
             "aey_stress_pct": (round(r["aey_stress"] * 100, 2)
                                 if r["aey_stress"] is not None else None),
@@ -569,6 +573,20 @@ def main() -> None:
         "universe_month_ago": market_map["universe_month_ago"],
         "rf_curve": market_map["rf_curve"],
         "fair_value_bp_by_tier": market_map["fair_value_bp_by_tier"],
+        # Single source of truth for the dashboard's "Топ-кандидаты" toggle
+        # (Портфельный рейтинг table) -- sourced directly from promote.py's
+        # own defaults and default_probs' own rating scale, not hand-copied
+        # into JS, so the live-in-browser filter can never silently drift
+        # from what `hybond promote` itself would report. Thresholds are a
+        # starting point, not final policy -- see promote.py's docstring.
+        "promotion_thresholds": {
+            "rating_floor": promote.RATING_FLOOR_DEFAULT,
+            "n_before_cap": promote.N_BEFORE_CAP_DEFAULT,
+            "per_issuer_cap": promote.PER_ISSUER_CAP_DEFAULT,
+            "target_after_cap": promote.TARGET_AFTER_CAP_DEFAULT,
+            "min_volume": VDO_MIN_VOLUME,
+        },
+        "rating_order": RATING_ORDER,
         "cbr": cbr,
         "data_notes": notes,
     }

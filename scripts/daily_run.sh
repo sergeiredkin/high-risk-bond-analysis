@@ -38,6 +38,14 @@ if [ "$(date +%u)" = "7" ]; then
 fi
 PYTHONPATH=src python -m hybond universe $UNIVERSE_FLAGS >> "$LOG" 2>&1
 
+# Phase 2 promotion screen: rank vdo_scope over rating floor -> liquidity
+# floor -> AEY-risk-adj -> issuer concentration cap, into a deep-monitoring
+# candidate shortlist. Pure read over today's just-refreshed universe_snapshot
+# (no network of its own) -- cheap to run every cycle right after `universe`.
+# Thresholds are still a starting point (see promote.py's module docstring);
+# this only refreshes the report, it does not touch watchlist.json.
+PYTHONPATH=src python -m hybond promote >> "$LOG" 2>&1
+
 # Slice 3: event feed (no --selenium, uses AZIPI plain HTTP). --smartlab
 # supplements AZIPI with smart-lab.ru's bonds feed for Interfax-only issuers
 # AZIPI has no coverage for (see scrape/smartlab.py's INTERFAX_ISSUERS map) --
