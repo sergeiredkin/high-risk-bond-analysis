@@ -156,6 +156,50 @@ def test_upsert_rating_can_set_verified_on_and_clear_flag(tmp_path):
     con.close()
 
 
+def test_rating_is_stale_false_within_threshold():
+    from datetime import date
+    assert db.rating_is_stale("2026-01-01", as_of=date(2026, 7, 31)) is False
+
+
+def test_rating_is_stale_true_past_threshold():
+    from datetime import date
+    assert db.rating_is_stale("2023-12-05", as_of=date(2026, 7, 31)) is True
+
+
+def test_rating_is_stale_boundary_exactly_12_months():
+    # Exactly at the boundary (as_of == rated_on + 12mo) is NOT stale --
+    # only strictly older than the threshold counts.
+    from datetime import date
+    assert db.rating_is_stale("2025-07-31", as_of=date(2026, 7, 31)) is False
+
+
+def test_rating_is_stale_one_day_past_boundary():
+    from datetime import date
+    assert db.rating_is_stale("2025-07-30", as_of=date(2026, 7, 31)) is True
+
+
+def test_rating_is_stale_respects_custom_threshold():
+    from datetime import date
+    assert db.rating_is_stale("2026-06-01", as_of=date(2026, 7, 31), months=1) is True
+    assert db.rating_is_stale("2026-06-01", as_of=date(2026, 7, 31), months=3) is False
+
+
+def test_verification_flags_current_rating_clears_needs_verification():
+    from datetime import date
+    verified_on, needs_verification = db.verification_flags(
+        "2026-05-26", as_of=date(2026, 7, 31))
+    assert verified_on == "2026-07-31"
+    assert needs_verification == 0
+
+
+def test_verification_flags_stale_rating_keeps_needs_verification():
+    from datetime import date
+    verified_on, needs_verification = db.verification_flags(
+        "2023-12-05", as_of=date(2026, 7, 31))
+    assert verified_on == "2026-07-31"
+    assert needs_verification == 1
+
+
 def test_retire_rating_flips_all_rows_under_that_agency(tmp_path):
     # Needed when superseding a stale 'manual' bootstrap row with a real,
     # differently-dated agency row -- upsert_rating's own supersession only

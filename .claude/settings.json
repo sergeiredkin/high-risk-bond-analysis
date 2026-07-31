@@ -129,7 +129,8 @@
       "Bash(PYTHONPATH=src python -m hybond vdo-screen --top 20)",
       "WebFetch(domain:boomin.ru)",
       "WebFetch(domain:www.ra-national.ru)",
-      "Bash(sqlite3 -header -column data/db/hybond.sqlite \"SELECT DISTINCT agency FROM rating;\")"
+      "Bash(sqlite3 -header -column data/db/hybond.sqlite \"SELECT DISTINCT agency FROM rating;\")",
+      "Bash(PYTHONPATH=src python -m pytest tests/test_rating.py -q)"
     ],
     "additionalDirectories": [
       "/home/sergei/.ssh"

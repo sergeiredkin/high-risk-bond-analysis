@@ -8,7 +8,7 @@ upserted.
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 DB_PATH = Path("data/db/hybond.sqlite")
@@ -495,6 +495,49 @@ def set_thesis_status(con, issuer_id, status, updated):
 # agency, rated_on) -- upsert_rating flips prior rows for the same
 # issuer+agency to is_current=0 rather than overwriting them, so
 # rating_history stays a real history, not just the latest snapshot.
+
+# Staleness convention: confirming a rating via a fresh web search means "we
+# checked, and this is the real agency's most recent action" -- it does NOT
+# mean that action is recent. A rating whose own rated_on is old (e.g. an
+# agency hasn't re-confirmed it in over a year) is still the best data we
+# have, but it deserves another look later, not a clean bill of health.
+# Conflating the two (every verification pass before this one set
+# needs_verification=0 unconditionally on confirmation) hides genuinely
+# aging ratings from the needs_verification queue. 12 months is the default
+# threshold -- Russian rating agencies typically re-confirm/act on an issuer
+# at least annually, so anything older than that is overdue for a fresh
+# agency check regardless of how recently WE looked it up.
+RATING_STALENESS_MONTHS = 12
+
+
+def _add_months(d: date, months: int) -> date:
+    import calendar
+    month_index = d.month - 1 + months
+    year = d.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def rating_is_stale(rated_on: str, as_of: date | None = None,
+                     months: int = RATING_STALENESS_MONTHS) -> bool:
+    """True when the agency's own action date (`rated_on`, ISO string) is
+    more than `months` months before `as_of` (default: today)."""
+    as_of = as_of or date.today()
+    rated = datetime.strptime(rated_on, "%Y-%m-%d").date()
+    return as_of > _add_months(rated, months)
+
+
+def verification_flags(rated_on: str, as_of: date | None = None) -> tuple[str, int]:
+    """(verified_on, needs_verification) for a rating just confirmed via a
+    fresh check. verified_on is always stamped `as_of` (we DID just check
+    it) -- but needs_verification flips back to 1 if the underlying
+    rated_on is stale, so "confirmed but aging" isn't recorded the same way
+    as "confirmed and current". Callers applying a web-search-verified
+    rating should use this instead of hand-setting needs_verification=0."""
+    as_of = as_of or date.today()
+    return as_of.isoformat(), (1 if rating_is_stale(rated_on, as_of) else 0)
+
 
 RATING_SCHEMA = """
 CREATE TABLE IF NOT EXISTS rating (
