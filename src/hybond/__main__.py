@@ -179,6 +179,23 @@ def cmd_bonds(args) -> int:
     return 0
 
 
+def cmd_discover(args) -> int:
+    from . import discover
+    report = discover.run_gap_check(Path(args.watchlist))
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    gap_issuers = [r for r in report["issuers"] if r["untracked"]]
+    print(f"\n{report['total_untracked']} untracked bond(s) across "
+          f"{len(gap_issuers)}/{report['issuers_checked']} issuer(s).", file=sys.stderr)
+    for r in gap_issuers:
+        print(f"  {r['name']} ({r['issuer_id']}): tracked={r['tracked_count']} "
+              f"discovered={r['discovered_count']}", file=sys.stderr)
+        for u in r["untracked"]:
+            dur = f"{u['mod_dur']:.2f}y" if u["mod_dur"] is not None else "н/д"
+            print(f"      {u['secid']:<14} mat={u['mat_date'] or '—':<11} dur={dur}",
+                  file=sys.stderr)
+    return 0
+
+
 def cmd_rate(args) -> int:
     from datetime import date
     from .store import db
@@ -403,6 +420,11 @@ def main(argv=None) -> int:
     pb = sub.add_parser("bonds", help="Slice 1: all outstanding MOEX series for one issuer by ИНН")
     pb.add_argument("inn")
     pb.set_defaults(func=cmd_bonds)
+    pdis = sub.add_parser("discover",
+                          help="On-demand audit: MOEX-discovered bonds vs. watchlist.json "
+                               "coverage, per issuer (manual tool, not part of daily_run.sh)")
+    pdis.add_argument("watchlist", nargs="?", default="watchlist.json")
+    pdis.set_defaults(func=cmd_discover)
     pr_ = sub.add_parser("rate", help="Manual credit-rating entry (feeds the default-probability layer)")
     pr_.add_argument("--inn", help="issuer ИНН")
     pr_.add_argument("--agency", help='e.g. "АКРА", "Expert RA", "NKR", "NRA"')

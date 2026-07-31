@@ -119,7 +119,15 @@
       "Bash(sqlite3 -header -column data/db/hybond.sqlite \"SELECT event_id, issuer_id, occurred, category, summary, source_url FROM event WHERE issuer_id IN \\('6685151087','9729387137'\\) ORDER BY occurred DESC LIMIT 30;\")",
       "WebFetch(domain:europlan.ru)",
       "WebFetch(domain:www.all-leasing.ru)",
-      "Bash(ssh -T git@github.com)"
+      "Bash(ssh -T git@github.com)",
+      "Bash(ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_hybond -N \"\" -C \"hybond-deploy-key-$\\(date +%Y%m%d\\)\")",
+      "Bash(ssh-keygen -l -f ~/.ssh/id_ed25519_hybond.pub)",
+      "Bash(ssh -T git@github.com-hybond)",
+      "Bash(PYTHONPATH=src python -m pytest tests/test_discover.py -q)",
+      "Bash(PYTHONPATH=src python -m hybond discover watchlist.json)"
+    ],
+    "additionalDirectories": [
+      "/home/sergei/.ssh"
     ]
   }
 }
