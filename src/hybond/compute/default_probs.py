@@ -92,3 +92,16 @@ def mispricing_bp(actual_g_spread_bp: float, rating: str,
     if implied is None:
         return None
     return actual_g_spread_bp - implied
+
+
+# DEFAULT_PROBS is already ordered best-to-worst by construction -- exposed
+# here so callers needing a rating-band comparison (e.g. universe_pipeline's
+# ВДО-scope filter) reuse this ordering instead of hand-maintaining a second
+# rating scale.
+RATING_ORDER: list[str] = list(DEFAULT_PROBS.keys())
+
+
+def rating_rank(rating: str) -> int | None:
+    """Position on RATING_ORDER (0 = ruAAA, best), or None if unrecognised."""
+    norm = _normalise(rating)
+    return RATING_ORDER.index(norm) if norm in RATING_ORDER else None

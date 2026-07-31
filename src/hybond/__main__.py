@@ -179,6 +179,20 @@ def cmd_bonds(args) -> int:
     return 0
 
 
+def cmd_vdo_screen(args) -> int:
+    from . import universe_pipeline
+    from .store import db
+    con = db.connect()
+    db.init_db(con)
+    db.init_universe(con)
+    report = universe_pipeline.vdo_screen_report(con, top_n=args.top)
+    con.close()
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print(f"\nВДО-scope universe: {report['universe_size']} bond(s) as of "
+          f"{report['snap_date']}.", file=sys.stderr)
+    return 0
+
+
 def cmd_discover(args) -> int:
     from . import discover
     report = discover.run_gap_check(Path(args.watchlist))
@@ -420,6 +434,14 @@ def main(argv=None) -> int:
     pb = sub.add_parser("bonds", help="Slice 1: all outstanding MOEX series for one issuer by ИНН")
     pb.add_argument("inn")
     pb.set_defaults(func=cmd_bonds)
+    pvs = sub.add_parser("vdo-screen",
+                         help="Broad ВДО screen: read the vdo_scope flag already "
+                              "computed by the daily `hybond universe` run "
+                              "(rating band-or-unrated + spread + liquidity floor, "
+                              "bank sub/perp excluded) -- no network calls")
+    pvs.add_argument("--top", type=int, default=20,
+                     help="how many top-by-AEY-risk-adj bonds to list (default 20)")
+    pvs.set_defaults(func=cmd_vdo_screen)
     pdis = sub.add_parser("discover",
                           help="On-demand audit: MOEX-discovered bonds vs. watchlist.json "
                                "coverage, per issuer (manual tool, not part of daily_run.sh)")

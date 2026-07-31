@@ -667,6 +667,7 @@ CREATE TABLE IF NOT EXISTS universe_snapshot (
     aey_stress     REAL,
     aey_bull       REAL,
     aey_base_risk_adj REAL,
+    vdo_scope      INTEGER DEFAULT 0,
     PRIMARY KEY (secid, snap_date)
 );
 """
@@ -686,6 +687,12 @@ def init_universe(con) -> None:
     for col in ("mod_dur", "aey_base", "aey_stress", "aey_bull", "aey_base_risk_adj"):
         if col not in cols:
             con.execute(f"ALTER TABLE universe_snapshot ADD COLUMN {col} REAL")
+    # vdo_scope: broad-ВДО-screen flag (rating-band-or-unrated + spread
+    # threshold + liquidity floor + bank-subordinated/perpetual exclusion --
+    # see universe_pipeline.compute_vdo_scope()). Retrofit, same pattern.
+    if "vdo_scope" not in cols:
+        con.execute(
+            "ALTER TABLE universe_snapshot ADD COLUMN vdo_scope INTEGER DEFAULT 0")
     con.commit()
 
 
@@ -695,7 +702,8 @@ def insert_universe_snapshot(con, **f) -> None:
             "yield_to_offer,accrued_int,volume,num_trades,duration_moex,ytm,"
             "tenor_yrs,rf_rate,g_spread_bp,yield_source,rating,"
             "implied_fair_spread_bp,mispricing_bp,in_watchlist,signal_excluded,"
-            "mod_dur,aey_base,aey_stress,aey_bull,aey_base_risk_adj")
+            "mod_dur,aey_base,aey_stress,aey_bull,aey_base_risk_adj,vdo_scope")
+    f.setdefault("vdo_scope", 0)  # added after callers in older tests were written
     placeholders = ",".join(f":{c}" for c in cols.split(","))
     con.execute(
         f"INSERT OR REPLACE INTO universe_snapshot({cols}) VALUES({placeholders})",

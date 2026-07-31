@@ -148,6 +148,81 @@ NEAR_OFFER_AMPLIFIED = lambda b: (  # noqa: E731
 )
 
 
+# --- broad ВДО screen (Phase 1): a flag/filter over universe_snapshot, not a
+# separate table -- it's the same daily-screened bonds, just a narrower scope
+# definition on top. Computed inline in run_universe() below and stored as
+# `vdo_scope`, so it's already fresh every daily cron run (no separate
+# schedule needed).
+
+# Bank subordinated/AT1/T2/perpetual debt has different risk mechanics
+# (loss-absorption on regulatory trigger, call risk instead of a fixed
+# maturity, issuer usually investment-grade already) -- excluded from ВДО
+# scope regardless of rating/spread. No bulk MOEX field flags this (the
+# per-security `description` endpoint that would is a per-bond call, the
+# exact cost this pipeline exists to avoid at universe scale -- see
+# fetch_security_qualified()'s docstring for the same tradeoff). Keyword
+# heuristic instead, same pattern as COMMODITY_LINKED above. Verified
+# against the live bond master: matches 32 SECIDs, 100% genuine bank
+# subordinated/AT1/T2/perpetual issues (ВТБ, Сбербанк, ГПБ, Совкомбанк,
+# ДОМ.РФ, ТКБ, ТБанк/TCS) with zero false positives on ordinary corporate
+# names -- broader single-token patterns like bare "т2" were tried and
+# rejected (they matched inside ordinary tickers, e.g. "Роснфт2P1").
+_BANK_SUB_PERP_PATTERNS = (
+    "суб", "бессроч", "вечн", "perp", " т1", " т2", "-т1", "-т2", "ат1", "ат2",
+)
+
+
+def is_bank_subordinated_perpetual(short_name: str | None, secname: str | None) -> bool:
+    name = f"{short_name or ''} {secname or ''}".lower()
+    return any(p in name for p in _BANK_SUB_PERP_PATTERNS)
+
+
+# "ruBB and below, or unrated".
+VDO_RATING_CUTOFF = "ruBB"
+
+
+def is_in_vdo_rating_band(rating: str | None, cutoff: str = VDO_RATING_CUTOFF) -> bool:
+    """True for unrated (None) bonds and for any rating at or below `cutoff`
+    on Эксперт РА's scale (worse rank = higher index = riskier). Ratings not
+    on that scale (shouldn't happen; the scale spans ruAAA..ruC) are treated
+    as out-of-band rather than silently included."""
+    if rating is None:
+        return True
+    rank = default_probs.rating_rank(rating)
+    if rank is None:
+        return False
+    return rank >= default_probs.rating_rank(cutoff)
+
+
+# G-spread and daily-volume thresholds for the first-cut ВДО scope. Volume
+# floor of 300 (same raw `volume` units already stored, i.e. MOEX's VALTODAY)
+# is the lowest non-zero volume seen among the CURRENTLY TRACKED 26-issuer
+# watchlist as of 2026-07-31 (RU000A10B396/МОНОП 1P04 at 303) -- a floor at
+# that level doesn't exclude anything as illiquid as what's already being
+# actively monitored.
+VDO_MIN_G_SPREAD_BP = 500
+VDO_MIN_VOLUME = 300
+
+
+def compute_vdo_scope(*, rating: str | None, g_spread_bp: float | None,
+                      volume: float | None, short_name: str | None,
+                      secname: str | None, signal_excluded: bool) -> bool:
+    """The broad-ВДО-screen membership test for one bond. Pure function (no
+    DB/network) so it's directly unit-testable; run_universe() calls it
+    inline per screened bond and stores the result in `vdo_scope`."""
+    if signal_excluded:
+        return False
+    if is_bank_subordinated_perpetual(short_name, secname):
+        return False
+    if not is_in_vdo_rating_band(rating):
+        return False
+    if g_spread_bp is None or g_spread_bp <= VDO_MIN_G_SPREAD_BP:
+        return False
+    if volume is None or volume < VDO_MIN_VOLUME:
+        return False
+    return True
+
+
 def _load_emitent_map(con, snap_date: date, force_refresh: bool) -> dict:
     """Cached SECID -> {emitent_inn, emitent_title}, re-paginated only when
     empty, stale (>EMITENT_MAP_MAX_AGE_DAYS), or force_refresh is set."""
@@ -292,6 +367,11 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
             aey_base_risk_adj = portfolio.pd_adjusted_aey(aey_base, rating)
 
         in_wl = 1 if emitent_inn in watchlist_inns else 0
+        volume = q.get("VALTODAY")
+        vdo_scope = compute_vdo_scope(
+            rating=rating, g_spread_bp=gsp, volume=volume,
+            short_name=m.get("SHORTNAME"), secname=m.get("SECNAME"),
+            signal_excluded=signal_excluded)
 
         db.insert_universe_snapshot(
             con, secid=secid, snap_date=sd, short_name=m.get("SHORTNAME"),
@@ -301,14 +381,14 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
             qualified=1 if m.get("ISQUALIFIEDINVESTORS") else 0,
             last_pct=q.get("LAST"), yield_moex=q.get("YIELD"),
             yield_to_offer=None,  # not derivable without per-bond cashflows
-            accrued_int=q.get("ACCRUEDINT"), volume=q.get("VALTODAY"),
+            accrued_int=q.get("ACCRUEDINT"), volume=volume,
             num_trades=num_trades, duration_moex=dur_days,
             ytm=ytm, tenor_yrs=tenor, rf_rate=rf, g_spread_bp=gsp,
             yield_source=yield_source, rating=rating,
             implied_fair_spread_bp=implied_fair, mispricing_bp=misprice,
             in_watchlist=in_wl, signal_excluded=1 if signal_excluded else 0,
             mod_dur=mdur_yrs, aey_base=aey_base, aey_stress=aey_stress, aey_bull=aey_bull,
-            aey_base_risk_adj=aey_base_risk_adj,
+            aey_base_risk_adj=aey_base_risk_adj, vdo_scope=1 if vdo_scope else 0,
         )
         n_priced += 1
         top_rows.append({
@@ -336,4 +416,49 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
         "aey_source_date": scenarios["source_date"],
         "aey_is_fallback": scenarios["is_fallback"],
         "top_by_g_spread": top_rows[:10],
+    }
+
+
+def vdo_screen_report(con, snap_date: str | None = None, top_n: int = 20) -> dict:
+    """Read-only report over the already-computed `vdo_scope` flag -- no
+    network calls, just a query against the latest (or given) universe
+    snapshot. Separate from `run_universe()` deliberately: the flag itself is
+    computed daily as part of the existing cron (`hybond universe`), but
+    reviewing/re-thresholding the scope definition shouldn't require a fresh
+    MOEX pull every time."""
+    sd = snap_date or db.latest_universe_snap_date(con)
+    if not sd:
+        return {"snap_date": None, "universe_size": 0, "top_by_aey_risk_adj": [],
+                "rating_distribution": {}}
+
+    rows = con.execute(
+        "SELECT secid, short_name, emitent_title, emitent_inn, rating, "
+        "g_spread_bp, mispricing_bp, aey_base_risk_adj, volume "
+        "FROM universe_snapshot WHERE snap_date = ? AND vdo_scope = 1",
+        (sd,)).fetchall()
+    rows = [dict(r) for r in rows]
+
+    ranked = sorted(
+        (r for r in rows if r["aey_base_risk_adj"] is not None),
+        key=lambda r: r["aey_base_risk_adj"], reverse=True)
+
+    rating_dist: dict[str, int] = {}
+    for r in rows:
+        key = r["rating"] or "unrated"
+        rating_dist[key] = rating_dist.get(key, 0) + 1
+
+    return {
+        "snap_date": sd,
+        "universe_size": len(rows),
+        "top_by_aey_risk_adj": [
+            {"secid": r["secid"],
+             "name": r["short_name"] or r["emitent_title"],
+             "rating": r["rating"] or "unrated",
+             "g_spread_bp": r["g_spread_bp"],
+             "aey_base_risk_adj_pct": round(r["aey_base_risk_adj"] * 100, 2),
+             "volume": r["volume"]}
+            for r in ranked[:top_n]
+        ],
+        "rating_distribution": dict(
+            sorted(rating_dist.items(), key=lambda kv: -kv[1])),
     }

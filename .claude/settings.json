@@ -124,7 +124,9 @@
       "Bash(ssh-keygen -l -f ~/.ssh/id_ed25519_hybond.pub)",
       "Bash(ssh -T git@github.com-hybond)",
       "Bash(PYTHONPATH=src python -m pytest tests/test_discover.py -q)",
-      "Bash(PYTHONPATH=src python -m hybond discover watchlist.json)"
+      "Bash(PYTHONPATH=src python -m hybond discover watchlist.json)",
+      "Bash(PYTHONPATH=src python -m pytest tests/test_vdo_scope.py -q)",
+      "Bash(PYTHONPATH=src python -m hybond vdo-screen --top 20)"
     ],
     "additionalDirectories": [
       "/home/sergei/.ssh"
