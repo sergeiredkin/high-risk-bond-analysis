@@ -60,3 +60,55 @@ def test_ratings_are_monotone_increasing_risk():
     bb = dp.lookup("ruBB")["yr1"]
     b = dp.lookup("ruB")["yr1"]
     assert aa < bb < b
+
+
+# --- implied_annual_hazard_from_yr3 / survival_probability ------------------
+
+def test_implied_annual_hazard_from_yr3_hand_computed():
+    # ruBB yr3 PD = 0.10359. h = 1 - (1-0.10359)**(1/3).
+    h = dp.implied_annual_hazard_from_yr3("ruBB")
+    expected = 1 - (1 - 0.10359) ** (1 / 3)
+    assert abs(h - expected) < 1e-9
+
+
+def test_implied_annual_hazard_from_yr3_unknown_rating_returns_none():
+    assert dp.implied_annual_hazard_from_yr3("ruXXX") is None
+
+
+def test_survival_probability_exact_at_year_marks():
+    # Must match 1 - PD exactly at t=1,2,3 -- these are the real agency
+    # numbers, not something the interpolation is allowed to smooth over.
+    probs = dp.lookup("ruBB")
+    assert abs(dp.survival_probability("ruBB", 1) - (1 - probs["yr1"])) < 1e-12
+    assert abs(dp.survival_probability("ruBB", 2) - (1 - probs["yr2"])) < 1e-12
+    assert abs(dp.survival_probability("ruBB", 3) - (1 - probs["yr3"])) < 1e-12
+
+
+def test_survival_probability_at_zero_is_one():
+    assert dp.survival_probability("ruBB", 0) == 1.0
+
+
+def test_survival_probability_monotonically_decreasing():
+    # Survival can only fall (or stay flat) as horizon lengthens.
+    ts = [0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 10]
+    vals = [dp.survival_probability("ruB-", t) for t in ts]
+    assert all(a >= b - 1e-9 for a, b in zip(vals, vals[1:]))
+
+
+def test_survival_probability_beyond_3yr_uses_extrapolation():
+    # Past t=3, survival should keep declining at the constant hazard implied
+    # by yr3 -- i.e. S(4) == S(3) * (1 - h_ext).
+    s3 = dp.survival_probability("ruBB", 3)
+    s4 = dp.survival_probability("ruBB", 4)
+    h_ext = dp.implied_annual_hazard_from_yr3("ruBB")
+    assert abs(s4 - s3 * (1 - h_ext)) < 1e-9
+
+
+def test_survival_probability_negative_horizon_raises():
+    import pytest
+    with pytest.raises(ValueError):
+        dp.survival_probability("ruBB", -1)
+
+
+def test_survival_probability_unknown_rating_returns_none():
+    assert dp.survival_probability("ruXXX", 1) is None

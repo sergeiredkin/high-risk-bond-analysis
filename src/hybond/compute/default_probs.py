@@ -18,6 +18,32 @@ Source: Эксперт РА, «Матрица дефолтов как инстр
 апрель 2025 (raexpert.ru/press/articles/pohvalenskaya_apr2025/). АКРА publishes
 an equivalent at acra-ratings.ru/compliance/ -- cross-check if values diverge
 significantly.
+
+NOT rebased to Эксперт РА's 01.07.2026 regulatory disclosure
+(matrix_defaults_01.07.2026.pdf) despite it being newer: that filing
+(mandated under CBR Указание 6539-У) publishes only RAW OBSERVED default
+frequencies, not the theoretical logistic-model matrix this table is built
+from -- and its raw numbers reproduce the exact non-monotonicity problem
+this docstring warns about above (e.g. in that filing, ruB's 2yr/3yr
+observed frequencies are LOWER than ruB+'s, a worse-rated tier showing a
+better outcome: 10.35%/14.39% vs 12.17%/18.25%). No newer "theoretical"
+article superseding the April 2025 one was found (checked
+raexpert.ru/ratings/credits/matrix and .../corporatebond/matrix -- neither
+hosts a live theoretical table). Swapping in the raw disclosure would be a
+methodology regression dressed up as a refresh, so it was flagged rather
+than done silently -- re-check when Эксперт РА next publishes an updated
+theoretical article.
+
+Multi-year-horizon investigation (2026-07-31): none of the four Russian
+agencies (Эксперт РА, АКРА, НКР, НРА) publish cumulative PD past 3 years --
+confirmed against Эксперт РА's own 01.07.2026 disclosure text ("на
+горизонте одного, двух и трех лет"), НКР's methodology paper (which
+anchors to 3yr specifically because Basel Committee guidance recommends
+3yr as the standard cross-agency comparison horizon), and НРА's disclosure
+page (1yr/3yr only). This is a real ceiling in the published data, not a
+gap in this codebase's sourcing -- see survival_probability()'s docstring
+for how horizons beyond 3yr are handled (constant-hazard extrapolation,
+explicitly not agency data).
 """
 from __future__ import annotations
 
@@ -92,6 +118,70 @@ def mispricing_bp(actual_g_spread_bp: float, rating: str,
     if implied is None:
         return None
     return actual_g_spread_bp - implied
+
+
+def implied_annual_hazard_from_yr3(rating: str) -> float | None:
+    """Constant per-year hazard rate implied by the rating's REAL 3-year
+    cumulative PD: h = 1 - (1 - PD_yr3)**(1/3). None if rating unknown.
+
+    APPROXIMATION, used only to extrapolate survival_probability() past the
+    3-year table (see that function and this module's docstring for why no
+    agency publishes anything past 3yr). Anchored to yr3, not yr1: the raw
+    yr1->yr2->yr3 marginal hazards are not monotonic in the underlying agency
+    data (e.g. ruBB's implied yr1->yr2 marginal hazard, ~4.04%, is HIGHER
+    than its yr1 hazard of 3.056% -- small-sample/model noise, not a real
+    front-loaded-risk signal), so yr3 -- the longest real data point -- is
+    the least noisy single anchor available for projecting further out.
+    """
+    probs = lookup(rating)
+    if probs is None:
+        return None
+    return 1 - (1 - probs["yr3"]) ** (1 / 3)
+
+
+# Real coupon dates land on calendar years, so a "3-year bond" measured
+# ACT/365F is ~3.003-3.008yr once leap days are counted, not exactly 3.0.
+# This tolerance keeps that leap-day drift from being misclassified as
+# reaching past the real 3yr table -- it is calendar-arithmetic noise, not a
+# genuinely longer horizon. 0.02yr (~7 days) comfortably covers it while
+# still flagging any horizon that is actually a year or more past the table.
+YEAR_BOUNDARY_TOL = 0.02
+
+
+def survival_probability(rating: str, t_years: float) -> float | None:
+    """P(no default by t_years), for any t_years >= 0. None if rating unknown.
+
+    Exact at t=1, t=2, t=3 (matches DEFAULT_PROBS's real cumulative PDs).
+    Interpolated within (0,3) via piecewise-constant hazard per calendar
+    year -- standard actuarial treatment, and consistent with the fact the
+    underlying agency data is itself annual (there is no sub-year PD to
+    interpolate from).
+
+    Beyond t=3 (+YEAR_BOUNDARY_TOL, to absorb leap-day calendar drift):
+    extrapolated using the constant hazard rate implied by the 3-year PD
+    (implied_annual_hazard_from_yr3). THIS PORTION IS A MODEL, NOT AGENCY
+    DATA -- no Russian rating agency publishes cumulative default
+    probabilities past a 3-year horizon (checked all four: Эксперт РА, АКРА,
+    НКР, НРА). Any caller surfacing a survival/PD figure computed from t>3
+    must label it as an approximation, the same way RECOVERY_RATE and the
+    YTM sanity cap are already labeled as assumptions rather than facts.
+    """
+    if t_years < 0:
+        raise ValueError("t_years must be >= 0")
+    probs = lookup(rating)
+    if probs is None:
+        return None
+    s1, s2, s3 = 1 - probs["yr1"], 1 - probs["yr2"], 1 - probs["yr3"]
+    if t_years <= 1 + YEAR_BOUNDARY_TOL:
+        return (1 - probs["yr1"]) ** t_years
+    if t_years <= 2 + YEAR_BOUNDARY_TOL:
+        h2 = 1 - (s2 / s1) if s1 > 0 else 1.0
+        return s1 * (1 - h2) ** (t_years - 1)
+    if t_years <= 3 + YEAR_BOUNDARY_TOL:
+        h3 = 1 - (s3 / s2) if s2 > 0 else 1.0
+        return s2 * (1 - h3) ** (t_years - 2)
+    h_ext = implied_annual_hazard_from_yr3(rating)
+    return s3 * (1 - h_ext) ** (t_years - 3)
 
 
 # DEFAULT_PROBS is already ordered best-to-worst by construction -- exposed
