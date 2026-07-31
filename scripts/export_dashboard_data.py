@@ -196,8 +196,26 @@ def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str]) ->
             "aey_bull_pct": round(r["aey_bull"] * 100, 2) if r["aey_bull"] is not None else None,
             "aey_base_risk_adj_pct": (round(r["aey_base_risk_adj"] * 100, 2)
                                        if r["aey_base_risk_adj"] is not None else None),
+            "aey_risk_decomposition": _aey_risk_decomposition_pct(r["aey_base"], rating),
         })
     return bonds
+
+
+def _aey_risk_decomposition_pct(aey_base: float | None, rating: str | None) -> dict | None:
+    """Percent-scaled view of portfolio.aey_risk_decomposition() for export --
+    same PD/recovery-rate split that aey_base_risk_adj_pct already blends,
+    just exposed as the two scenarios instead of only their weighted sum.
+    expected_value_pct always equals aey_base_risk_adj_pct (mod rounding)."""
+    d = portfolio.aey_risk_decomposition(aey_base, rating)
+    if d is None:
+        return None
+    return {
+        "p_survive_pct": round(d["p_survive"] * 100, 3),
+        "return_if_survive_pct": round(d["return_if_survive"] * 100, 2),
+        "p_default_pct": round(d["p_default"] * 100, 3),
+        "return_if_default_pct": round(d["return_if_default"] * 100, 2),
+        "expected_value_pct": round(d["expected_value"] * 100, 2),
+    }
 
 
 def universe_snapshot_bundle(con) -> dict:
@@ -532,6 +550,8 @@ def main() -> None:
             b["aey_bull_pct"] = round(aey["aey_bull"] * 100, 2) if aey and aey["aey_bull"] is not None else None
             b["aey_base_risk_adj_pct"] = (round(aey["aey_base_risk_adj"] * 100, 2)
                                           if aey and aey["aey_base_risk_adj"] is not None else None)
+            b["aey_risk_decomposition"] = _aey_risk_decomposition_pct(
+                aey["aey_base"] if aey else None, meta.get("rating"))
 
         issuers.append({
             "issuer_id": issuer_id,

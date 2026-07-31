@@ -120,6 +120,34 @@ def pd_adjusted_aey(aey: float | None, rating: str | None, horizon_yr: int = 1) 
     return (1 - pd) * aey - pd * (1 - default_probs.RECOVERY_RATE)
 
 
+def aey_risk_decomposition(aey: float | None, rating: str | None,
+                            horizon_yr: int = 1) -> dict | None:
+    """Same PD/recovery-rate lookup as pd_adjusted_aey(), but returns the two
+    scenarios it blends instead of only the blended expected value -- so a
+    caller (or a future UI) can show "survive at full yield" vs "default at
+    near-total loss" as two numbers, not one that hides which one is doing
+    the work. expected_value here must always equal pd_adjusted_aey()'s
+    return for the same inputs -- this is a decomposition of that number,
+    not an independent model (see test_portfolio.py for the consistency
+    check). None under the same conditions pd_adjusted_aey() returns None."""
+    if aey is None or not rating:
+        return None
+    probs = default_probs.lookup(rating)
+    if probs is None:
+        return None
+    key = default_probs._HORIZON_KEYS.get(horizon_yr, "yr1")
+    pd = probs[key]
+    p_survive = 1 - pd
+    return_if_survive = aey
+    return_if_default = -(1 - default_probs.RECOVERY_RATE)
+    expected_value = p_survive * return_if_survive + pd * return_if_default
+    return {
+        "p_survive": p_survive, "return_if_survive": return_if_survive,
+        "p_default": pd, "return_if_default": return_if_default,
+        "expected_value": expected_value,
+    }
+
+
 def apply_issuer_cap(rows: list[dict], per_issuer_cap: int = 2) -> list[dict]:
     """Enforce a max-N-series-per-issuer cap on an already-ranked list
     (best first) -- ranking a candidate list by return alone doesn't

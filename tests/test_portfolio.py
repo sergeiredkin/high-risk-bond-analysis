@@ -148,6 +148,61 @@ def test_pd_adjusted_aey_full_pd_equals_negative_severity(monkeypatch):
     assert abs(result - (-(1 - default_probs.RECOVERY_RATE))) < 1e-12
 
 
+# --- aey_risk_decomposition: same PD/recovery math, exposed as two scenarios
+
+def test_aey_risk_decomposition_matches_pd_adjusted_aey():
+    # Decomposition's expected_value must always equal pd_adjusted_aey()'s
+    # output for the same inputs -- this is a decomposition, not a second
+    # model, across a spread of ratings.
+    for aey, rating in [(0.20, "ruBB"), (0.50, "ruB-"), (5.0, "ruCCC"), (1.2, "ruC")]:
+        blended = portfolio.pd_adjusted_aey(aey, rating)
+        decomp = portfolio.aey_risk_decomposition(aey, rating)
+        assert abs(decomp["expected_value"] - blended) < 1e-9
+
+
+def test_aey_risk_decomposition_known_rating_hand_computed():
+    # ruBB: yr1 PD = 0.03056. p_survive/p_default must sum to 1, and the
+    # blended value must hand-match the same computation as the
+    # pd_adjusted_aey test above.
+    result = portfolio.aey_risk_decomposition(0.20, "ruBB")
+    assert abs(result["p_default"] - 0.03056) < 1e-9
+    assert abs(result["p_survive"] - (1 - 0.03056)) < 1e-9
+    assert abs(result["return_if_survive"] - 0.20) < 1e-12
+    assert abs(result["return_if_default"] - (-(1 - default_probs.RECOVERY_RATE))) < 1e-12
+    assert abs(result["expected_value"] - 0.174024) < 1e-6
+
+
+def test_aey_risk_decomposition_unrated_bond_returns_none():
+    assert portfolio.aey_risk_decomposition(0.20, None) is None
+    assert portfolio.aey_risk_decomposition(0.20, "") is None
+
+
+def test_aey_risk_decomposition_unknown_rating_string_returns_none():
+    assert portfolio.aey_risk_decomposition(0.20, "not-a-real-rating") is None
+
+
+def test_aey_risk_decomposition_none_aey_returns_none():
+    assert portfolio.aey_risk_decomposition(None, "ruBB") is None
+
+
+def test_aey_risk_decomposition_zero_pd_equals_raw_aey(monkeypatch):
+    monkeypatch.setitem(default_probs.DEFAULT_PROBS, "ruTESTPD0",
+                         {"yr1": 0.0, "yr2": 0.0, "yr3": 0.0})
+    result = portfolio.aey_risk_decomposition(0.20, "ruTESTPD0")
+    assert result["p_survive"] == 1.0
+    assert result["p_default"] == 0.0
+    assert abs(result["expected_value"] - 0.20) < 1e-12
+
+
+def test_aey_risk_decomposition_full_pd_equals_negative_severity(monkeypatch):
+    monkeypatch.setitem(default_probs.DEFAULT_PROBS, "ruTESTPD1",
+                         {"yr1": 1.0, "yr2": 1.0, "yr3": 1.0})
+    result = portfolio.aey_risk_decomposition(0.20, "ruTESTPD1")
+    assert result["p_survive"] == 0.0
+    assert result["p_default"] == 1.0
+    assert abs(result["expected_value"] - (-(1 - default_probs.RECOVERY_RATE))) < 1e-12
+
+
 # --- apply_issuer_cap: pure list logic, no DB -------------------------------
 
 def test_apply_issuer_cap_keeps_up_to_cap_per_issuer():
