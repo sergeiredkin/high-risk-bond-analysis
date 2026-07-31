@@ -193,6 +193,54 @@ def cmd_vdo_screen(args) -> int:
     return 0
 
 
+def cmd_promote(args) -> int:
+    from . import promote
+    from .store import db
+    con = db.connect()
+    db.init_db(con)
+    db.init_universe(con)
+    kwargs = {}
+    if args.rating_floor is not None:
+        kwargs["rating_floor"] = args.rating_floor
+    if args.n_before_cap is not None:
+        kwargs["n_before_cap"] = args.n_before_cap
+    if args.cap is not None:
+        kwargs["per_issuer_cap"] = args.cap
+    if args.target is not None:
+        kwargs["target_after_cap"] = args.target
+    report = promote.promote_candidates(con, **kwargs)
+    con.close()
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+    print(f"\n=== Promotion screen as of {report['snap_date']} "
+          f"(THRESHOLDS ARE A STARTING POINT, NOT FINAL -- rating_floor="
+          f"{report['rating_floor']}, n_before_cap={report['n_before_cap']}, "
+          f"per_issuer_cap={report['per_issuer_cap']}) ===", file=sys.stderr)
+    print(f"ВДО-scope universe:        {report['scope_total']}", file=sys.stderr)
+    print(f"  cut by rating floor:     {report['cut_by_rating_floor']}", file=sys.stderr)
+    print(f"  cut by liquidity floor:  {report['cut_by_liquidity_floor']}", file=sys.stderr)
+    print(f"  cut (no AEY/no rating):  {report['cut_by_missing_aey']}", file=sys.stderr)
+    print(f"  cut by concentration cap:{report['cut_by_concentration_cap']}", file=sys.stderr)
+    print(f"FINAL CANDIDATES:          {len(report['candidates'])}", file=sys.stderr)
+    print(file=sys.stderr)
+    print(f"{'issuer':<40} {'secid':<14} {'rating':<8} {'aey_risk_adj%':>13}",
+          file=sys.stderr)
+    for r in report["candidates"]:
+        aey_pct = r["aey_base_risk_adj"] * 100
+        name = (r.get("short_name") or r.get("emitent_title") or "")[:39]
+        print(f"{name:<40} {r['secid']:<14} {r['rating'] or '—':<8} {aey_pct:>12.2f}%",
+              file=sys.stderr)
+
+    print(f"\n{len(report['unrated_near_miss'])} unrated near-miss bond(s) "
+          f"(would qualify if rated) -- top 15 by raw G-spread:", file=sys.stderr)
+    for r in report["unrated_near_miss"][:15]:
+        name = (r.get("short_name") or r.get("emitent_title") or "")[:39]
+        gsp = r.get("g_spread_bp")
+        gsp_s = f"{gsp:.0f}bp" if gsp is not None else "—"
+        print(f"  {name:<40} {r['secid']:<14} {gsp_s}", file=sys.stderr)
+    return 0
+
+
 def cmd_discover(args) -> int:
     from . import discover
     report = discover.run_gap_check(Path(args.watchlist))
@@ -442,6 +490,21 @@ def main(argv=None) -> int:
     pvs.add_argument("--top", type=int, default=20,
                      help="how many top-by-AEY-risk-adj bonds to list (default 20)")
     pvs.set_defaults(func=cmd_vdo_screen)
+    ppr = sub.add_parser("promote",
+                         help="Phase 2: rank the ВДО-scope screen down to a deep-"
+                              "monitoring candidate shortlist (rating floor -> "
+                              "liquidity floor -> AEY-risk-adj ranking -> issuer "
+                              "concentration cap). On-demand only -- not scheduled. "
+                              "Thresholds are a starting point, not final policy.")
+    ppr.add_argument("--rating-floor", default=None,
+                     help="e.g. ruB- (default: ruB-)")
+    ppr.add_argument("--n-before-cap", type=int, default=None,
+                     help="how many bonds survive to the concentration-cap stage (default 32)")
+    ppr.add_argument("--cap", type=int, default=None,
+                     help="max bonds per issuer after ranking (default 2)")
+    ppr.add_argument("--target", type=int, default=None,
+                     help="final candidate list size after capping (default 25)")
+    ppr.set_defaults(func=cmd_promote)
     pdis = sub.add_parser("discover",
                           help="On-demand audit: MOEX-discovered bonds vs. watchlist.json "
                                "coverage, per issuer (manual tool, not part of daily_run.sh)")
