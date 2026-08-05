@@ -113,6 +113,73 @@ def mispricing_delta_by_secid(con) -> dict[str, dict]:
     return out
 
 
+def full_events_by_issuer(con) -> dict[str, list[dict]]:
+    """ALL classified events/market_notes per issuer, not just the 30-day
+    'since_last' window assemble.py builds for the notification panel
+    (events_since_last/market_notes_since_last -- deliberately narrow for
+    that use). Part D's per-bond detail panel needs the real history (the
+    2026-07-31 classification pass alone covered filings back to January),
+    so this is a second, separate query rather than widening the shared
+    30-day one and risking changing what the notification panel shows."""
+    events_by_issuer: dict[str, list[dict]] = defaultdict(list)
+    for r in con.execute(
+            "SELECT issuer_id, occurred, category, severity, summary "
+            "FROM event ORDER BY occurred DESC"):
+        events_by_issuer[r["issuer_id"]].append({
+            "occurred": r["occurred"], "category": r["category"],
+            "severity": r["severity"], "summary": r["summary"], "source": "event",
+        })
+    try:
+        for r in con.execute(
+                "SELECT issuer_id, occurred, category, severity, headline, source, url "
+                "FROM market_note WHERE severity IS NOT NULL ORDER BY occurred DESC"):
+            events_by_issuer[r["issuer_id"]].append({
+                "occurred": r["occurred"], "category": r["category"],
+                "severity": r["severity"], "summary": r["headline"],
+                "source": r["source"], "url": r["url"],
+            })
+    except Exception:  # noqa: BLE001 -- market_note may not exist yet
+        pass
+    for issuer_id, evs in events_by_issuer.items():
+        evs.sort(key=lambda e: e["occurred"] or "", reverse=True)
+    return events_by_issuer
+
+
+def expected_returns_by_secid(con) -> dict[str, dict]:
+    """Part B projections (compute/expected_return.py), keyed by secid, each
+    holding whatever of {1y, 2y, maturity} was computed. Reads the MOST
+    RECENT snap_date available per secid rather than requiring an exact
+    match to today -- pipeline.py (hybond run) computes these, and if that
+    hasn't run yet today (or a network hiccup skipped a bond), this degrades
+    to the last good value instead of silently going blank. Empty for any
+    secid pipeline.py hasn't reached yet (e.g. floaters, which have no fixed
+    schedule to project -- see expected_return.py's own scoping note)."""
+    try:
+        rows = con.execute(
+            "SELECT secid, snap_date, horizon_label, horizon_yr, irr_pct, "
+            "undiscounted_npv, undiscounted_total_cashflow, "
+            "horizon_capped_by_maturity, uses_extrapolated_pd "
+            "FROM expected_return_snapshot ORDER BY secid, snap_date DESC"
+        ).fetchall()
+    except Exception:  # noqa: BLE001 -- table may not exist yet
+        return {}
+    out: dict[str, dict] = {}
+    seen_date: dict[str, str] = {}
+    for r in rows:
+        secid = r["secid"]
+        if secid in seen_date and seen_date[secid] != r["snap_date"]:
+            continue  # already have this secid's most-recent date; skip older rows
+        seen_date[secid] = r["snap_date"]
+        out.setdefault(secid, {})[r["horizon_label"]] = {
+            "horizon_yr": r["horizon_yr"], "irr_pct": r["irr_pct"],
+            "undiscounted_npv": r["undiscounted_npv"],
+            "undiscounted_total_cashflow": r["undiscounted_total_cashflow"],
+            "horizon_capped_by_maturity": bool(r["horizon_capped_by_maturity"]),
+            "uses_extrapolated_pd": bool(r["uses_extrapolated_pd"]),
+        }
+    return out
+
+
 def _nearest_snap_date_on_or_before(con, cutoff: str) -> str | None:
     row = con.execute(
         "SELECT snap_date FROM universe_snapshot WHERE snap_date<=? "
@@ -521,6 +588,8 @@ def main() -> None:
     fcounts = filing_counts_by_issuer(con)
     aey_by_secid = universe_aey_by_secid(con, universe["snap_date"])
     mis_delta_by_secid = mispricing_delta_by_secid(con)
+    events_full_by_issuer = full_events_by_issuer(con)
+    expected_returns = expected_returns_by_secid(con)
 
     issuers = []
     for issuer_id, meta in watchlist.items():
@@ -537,6 +606,20 @@ def main() -> None:
             }
         rating_row = db.current_rating_row(con, issuer_id)
         rating_needs_verification = bool(rating_row["needs_verification"]) if rating_row else False
+        rating_detail = None
+        if rating_row:
+            rated_on = rating_row["rated_on"]
+            is_stale = None
+            if rated_on:
+                try:
+                    is_stale = db.rating_is_stale(rated_on)
+                except ValueError:
+                    is_stale = None
+            rating_detail = {
+                "agency": rating_row["agency"], "rated_on": rated_on,
+                "outlook": rating_row["outlook"], "action": rating_row["action"],
+                "is_stale": is_stale,
+            }
 
         bonds = fl.get("bonds", [])
         for b in bonds:
@@ -552,6 +635,7 @@ def main() -> None:
                                           if aey and aey["aey_base_risk_adj"] is not None else None)
             b["aey_risk_decomposition"] = _aey_risk_decomposition_pct(
                 aey["aey_base"] if aey else None, meta.get("rating"))
+            b["expected_return"] = expected_returns.get(b["secid"], {})
 
         issuers.append({
             "issuer_id": issuer_id,
@@ -560,6 +644,7 @@ def main() -> None:
             "risk_tier": meta.get("risk_tier", "core"),
             "rating": meta.get("rating"),
             "rating_needs_verification": rating_needs_verification,
+            "rating_detail": rating_detail,
             "note": meta.get("note"),
             "edisclosure_id": meta.get("edisclosure_id"),
             "snap_date": fl.get("snap_date"),
@@ -569,6 +654,7 @@ def main() -> None:
             "stat_warming_up": fl.get("stat_warming_up", True),
             "events": fl.get("events_since_last", []),
             "market_notes": fl.get("market_notes_since_last", []),
+            "events_full": events_full_by_issuer.get(issuer_id, []),
             "six_pillars": fl.get("six_pillars", {}),
             "six_pillars_delta": fl.get("six_pillars_delta", {}),
             "thesis": thesis,

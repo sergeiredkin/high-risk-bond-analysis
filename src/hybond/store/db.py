@@ -186,6 +186,58 @@ def insert_spread_snapshot(con, **f):
     )
 
 
+# --- Part B: survival-weighted expected-return projections (compute/
+# expected_return.py). Computed once per watchlist bond during pipeline.py's
+# `hybond run` (where the real coupon/amortization schedule + dirty price are
+# already in hand from the YTM/duration calc, so this is free to compute
+# alongside them, not a second fetch) and persisted here so
+# export_dashboard_data.py can read them offline -- same division of labour
+# as spread_snapshot (computed once, read many times), and it keeps the
+# dashboard export script from needing a live MOEX call of its own.
+
+EXPECTED_RETURN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS expected_return_snapshot (
+    secid           TEXT REFERENCES bond(secid),
+    snap_date       TEXT NOT NULL,
+    horizon_label   TEXT NOT NULL,      -- '1y' | '2y' | 'maturity'
+    horizon_yr      REAL,               -- actual horizon used (may be capped)
+    irr_pct         REAL,
+    undiscounted_npv REAL,
+    undiscounted_total_cashflow REAL,
+    horizon_capped_by_maturity INTEGER, -- 0/1
+    uses_extrapolated_pd INTEGER,       -- 0/1 -- see default_probs.survival_probability
+    PRIMARY KEY (secid, snap_date, horizon_label)
+);
+"""
+
+
+def init_expected_return(con: sqlite3.Connection) -> None:
+    con.executescript(EXPECTED_RETURN_SCHEMA)
+    con.commit()
+
+
+def insert_expected_return_snapshot(con, **f):
+    con.execute(
+        "INSERT OR REPLACE INTO expected_return_snapshot(secid,snap_date,"
+        "horizon_label,horizon_yr,irr_pct,undiscounted_npv,"
+        "undiscounted_total_cashflow,horizon_capped_by_maturity,"
+        "uses_extrapolated_pd) VALUES(:secid,:snap_date,:horizon_label,"
+        ":horizon_yr,:irr_pct,:undiscounted_npv,:undiscounted_total_cashflow,"
+        ":horizon_capped_by_maturity,:uses_extrapolated_pd)",
+        f,
+    )
+
+
+def latest_expected_returns(con, secid: str, on_date: str) -> list:
+    return con.execute(
+        "SELECT horizon_label, horizon_yr, irr_pct, undiscounted_npv, "
+        "undiscounted_total_cashflow, horizon_capped_by_maturity, "
+        "uses_extrapolated_pd FROM expected_return_snapshot "
+        "WHERE secid=? AND snap_date=?",
+        (secid, on_date),
+    ).fetchall()
+
+
 # --- Slice 2: history reads + flag logging --------------------------------
 
 def spread_history(con, secid: str, before: str, limit: int = 40) -> list:

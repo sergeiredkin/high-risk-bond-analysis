@@ -143,7 +143,8 @@
       "Bash(PYTHONPATH=src python -m hybond --help)",
       "Bash(PYTHONPATH=src python -m hybond financials --help)",
       "Bash(PYTHONPATH=src python -m hybond scrape --help)",
-      "Bash(PYTHONPATH=src python -m hybond scrape watchlist.json --smartlab)"
+      "Bash(PYTHONPATH=src python -m hybond scrape watchlist.json --smartlab)",
+      "Bash(node --check /tmp/claude-1000/-home-sergei-Documents-high-risk-bond-analysis/46bbce62-9a39-46cb-891b-335154bdba82/scratchpad/dash.js)"
     ],
     "additionalDirectories": [
       "/home/sergei/.ssh"

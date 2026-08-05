@@ -193,6 +193,40 @@
     color: var(--text-secondary); user-select: none; font-weight: 600;
   }
   .candidate-toggle input[type="checkbox"] { cursor: pointer; accent-color: var(--series-1); width: 15px; height: 15px; }
+  .aey-slider-wrap { margin: 4px 0 14px; max-width: 480px; }
+  .aey-slider-labels { display: flex; align-items: baseline; gap: 10px; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 4px; flex-wrap: wrap; }
+  .aey-slider-labels b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .aey-slider-count { color: var(--text-muted); }
+  .dual-slider { position: relative; height: 26px; }
+  .dual-slider input[type="range"] {
+    position: absolute; left: 0; right: 0; top: 0; margin: 0; width: 100%; height: 26px;
+    -webkit-appearance: none; appearance: none; background: transparent; pointer-events: none;
+  }
+  .dual-slider input[type="range"]::-webkit-slider-runnable-track { background: transparent; height: 26px; }
+  .dual-slider input[type="range"]::-moz-range-track { background: transparent; height: 26px; }
+  .dual-slider input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; pointer-events: auto; width: 15px; height: 15px; border-radius: 50%;
+    background: var(--series-1); cursor: pointer; margin-top: 6px; position: relative; z-index: 3;
+    border: 2px solid var(--surface-1);
+  }
+  .dual-slider input[type="range"]::-moz-range-thumb {
+    pointer-events: auto; width: 15px; height: 15px; border-radius: 50%; background: var(--series-1);
+    cursor: pointer; border: 2px solid var(--surface-1);
+  }
+  .dual-slider-track { position: absolute; top: 11px; left: 0; right: 0; height: 4px; background: var(--border); border-radius: 2px; }
+  .dual-slider-fill { position: absolute; top: 11px; height: 4px; background: var(--series-1); border-radius: 2px; }
+  #portfolioRankTable tbody tr.bond-row { cursor: pointer; }
+  #portfolioRankTable tbody tr.bond-row:hover { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
+  .bond-detail-block { margin-bottom: 16px; }
+  .bond-detail-block:last-child { margin-bottom: 0; }
+  .bond-detail-block > b { display: block; margin-bottom: 6px; font-size: 13px; }
+  .detail-mini-table { border-collapse: collapse; font-size: 12.5px; }
+  .detail-mini-table td, .detail-mini-table th { padding: 3px 12px 3px 0; text-align: left; }
+  .bond-events-toggle {
+    font-size: 11px; padding: 3px 9px; border-radius: 12px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-secondary); cursor: pointer; margin: 0 0 8px;
+  }
+  .bond-not-watchlist { color: var(--text-muted); font-size: 13px; }
   footer { margin-top: 50px; color: var(--text-muted); font-size: 11.5px; text-align: center; }
   .sort-arrow { opacity: .5; font-size: 9px; margin-left: 3px; }
   .flag-chip { display:inline-block; background: color-mix(in srgb, var(--critical) 12%, var(--surface-1));
@@ -342,6 +376,18 @@
     <div class="candidate-toggle">
       <label><input type="checkbox" id="candidateModeToggle"> Топ-кандидаты (риск/доходность)</label>
       <span id="candidateModeNote" class="section-note" style="margin:0"></span>
+    </div>
+    <div class="aey-slider-wrap" id="aeySliderWrap" style="display:none">
+      <div class="aey-slider-labels">
+        <span>Диапазон AEY (риск): <b id="aeySliderRangeLabel"></b></span>
+        <span class="aey-slider-count" id="aeySliderCount"></span>
+      </div>
+      <div class="dual-slider">
+        <div class="dual-slider-track"></div>
+        <div class="dual-slider-fill" id="aeySliderFill"></div>
+        <input type="range" id="aeySliderMin" step="0.1">
+        <input type="range" id="aeySliderMax" step="0.1">
+      </div>
     </div>
     <div class="banner" id="aeySourceBanner"></div>
     <div class="card table-scroll"><table id="portfolioRankTable"></table></div>
@@ -797,15 +843,26 @@ function pillarPanelHtml(iss) {
   }
 
   // The Phase 2 promotion screen (promote.py), reimplemented stage-for-stage
-  // over the already-exported universe_now bundle:
+  // over the already-exported universe_now bundle -- but with the AEY
+  // ranking step replaced by a live min/max slider (Part C) instead of a
+  // fixed top-N cutoff. Gates 1-3 are FIXED (computed once per candidate-
+  // mode entry, same as promote.py's own cut-count logic); the slider only
+  // narrows the AEY band within whatever survives them:
   //   1. rating floor (hard) -- ruB- or better; unrated bonds excluded here
   //      (no near-miss sub-list in this view -- that stays a `hybond
   //      promote` CLI-only report for now).
   //   2. liquidity floor -- same VDO_MIN_VOLUME vdo_scope already enforces,
   //      reapplied explicitly for parity with promote.py's own cut-count logic.
-  //   3. aey_base_risk_adj_pct descending, top N before the cap.
-  //   4. issuer concentration cap, then truncate to target_after_cap.
-  function buildCandidateRows() {
+  //   3. issuer concentration cap -- applied over ALL rateable/liquid bonds
+  //      ranked by aey_base_risk_adj_pct (not just whatever's in the current
+  //      slider band), so narrowing the slider can never change WHICH bonds
+  //      counted as an issuer's "top N" -- the cap is a fixed gate, not
+  //      re-evaluated per slider position.
+  // No top-N-before-cap / target_after_cap truncation anymore -- the full
+  // capped pool is what the slider filters, so the slider's full-range
+  // default shows every candidate that cleared gates 1-3, not just the
+  // 25-32 that used to fit under the old fixed cutoff.
+  function buildCandidatePool() {
     const th = DATA.promotion_thresholds || {};
     const ratingOrder = DATA.rating_order || [];
     const floorIdx = ratingOrder.indexOf(th.rating_floor);
@@ -824,20 +881,18 @@ function pillarPanelHtml(iss) {
 
     const rankable = passedLiquidity.filter(b => b.aey_base_risk_adj_pct != null);
     rankable.sort((a, b) => b.aey_base_risk_adj_pct - a.aey_base_risk_adj_pct);
-    const topN = rankable.slice(0, th.n_before_cap ?? rankable.length);
 
     const cap = th.per_issuer_cap ?? 2;
     const issuerCounts = {};
     const capped = [];
-    topN.forEach(b => {
+    rankable.forEach(b => {
       const n = issuerCounts[b.emitent_inn] || 0;
       if (n >= cap) return;
       issuerCounts[b.emitent_inn] = n + 1;
       capped.push(b);
     });
-    const final = th.target_after_cap ? capped.slice(0, th.target_after_cap) : capped;
 
-    return final.map(b => ({
+    return capped.map(b => ({
       issuer_id: b.emitent_inn, issuer: b.emitent_title || b.short_name, rating: b.rating,
       rating_needs_verification: undefined, // not tracked at universe scale
       last_event_date: null, last_event_secondary: false,
@@ -849,7 +904,94 @@ function pillarPanelHtml(iss) {
     }));
   }
 
+  let candidatePool = []; // fixed once per candidate-mode entry (gates 1-3)
   let rows = buildWatchlistRows();
+
+  // Part D: per-bond detail panel. Scoped to watchlist bonds ONLY -- rating
+  // staleness, full event history, six-pillar financials, and the Part B
+  // horizon projections only exist on DATA.issuers[].bonds (the watchlist
+  // export path), not on DATA.universe_now.bonds (the candidate-mode path,
+  // which only carries what's cheap to compute for ~1500 bonds). Clicking a
+  // candidate-mode row that isn't also on the watchlist shows a short note
+  // instead of fabricating a degraded panel.
+  const bondLookup = new Map(); // secid -> {bond, issuer}
+  DATA.issuers.forEach(iss => (iss.bonds || []).forEach(b => bondLookup.set(b.secid, { bond: b, issuer: iss })));
+  const bondEventsMode = new Map(); // secid -> 'critical' | 'all', preserved across re-renders
+
+  function renderBondEventsHtml(iss, secid) {
+    const mode = bondEventsMode.get(secid) || 'critical';
+    const all = iss.events_full || [];
+    const shown = mode === 'critical' ? all.filter(e => e.severity === 'critical' || e.severity === 'high') : all;
+    const listHtml = shown.length
+      ? `<ul class="events-list">` + shown.slice(0, 30).map(e => `
+          <li style="border-color:${SEV_COLOR[e.severity] || 'var(--grid)'}">
+            <b>${e.occurred || '—'} · ${e.category} <span style="color:${SEV_COLOR[e.severity]}">(${e.severity})</span></b>
+            ${e.source && e.source !== 'event' ? '<span class="source-badge secondary">по данным Smart-Lab</span>' : ''}
+            ${e.summary}
+          </li>`).join('') + `</ul>` +
+        (shown.length > 30 ? `<div class="section-note" style="margin-top:6px">показаны последние 30 из ${shown.length}</div>` : '')
+      : `<span style="color:var(--text-muted)">Нет событий${mode === 'critical' ? ' high/critical' : ''}.</span>`;
+    return `<div class="bond-detail-block">
+      <b>История событий эмитента (${all.length} всего)</b>
+      <button type="button" class="bond-events-toggle" data-secid="${secid}">${mode === 'critical' ? 'Вся история' : 'Только high/critical'}</button>
+      ${listHtml}
+    </div>`;
+  }
+
+  function renderBondDetail(secid) {
+    const rec = bondLookup.get(secid);
+    if (!rec) {
+      return `<p class="bond-not-watchlist">Эта облигация не в списке наблюдения — рейтинг-staleness, история событий, финансовые показатели и прогноз доходности считаются только для отслеживаемых выпусков. Базовая AEY-разбивка риска показана в таблице выше.</p>`;
+    }
+    const { bond: b, issuer: iss } = rec;
+    let html = '';
+
+    const rd = iss.rating_detail;
+    let staleBadge = '';
+    if (rd && rd.is_stale === true) {
+      staleBadge = ` <span class="source-badge secondary" title="Рейтинговое действие старше 12 месяцев">⚠ устарел</span>`;
+    } else if (rd && rd.is_stale === false) {
+      staleBadge = ` <span style="color:var(--good)">✓ свежий</span>`;
+    }
+    html += `<div class="bond-detail-block"><b>Рейтинг</b>
+      ${iss.rating || '—'}${staleBadge}
+      ${rd ? `<div style="color:var(--text-muted);font-size:12px;margin-top:2px">${rd.agency || '?'} · ${rd.action || ''} ${rd.rated_on || ''} · прогноз: ${rd.outlook || '—'}</div>` : ''}
+    </div>`;
+
+    const dec = b.aey_risk_decomposition;
+    html += `<div class="bond-detail-block"><b>Разбивка риска (Part A)</b>`;
+    html += dec
+      ? `<table class="detail-mini-table">
+          <tr><td>Survive (${dec.p_survive_pct.toFixed(1)}%)</td><td>${dec.return_if_survive_pct >= 0 ? '+' : ''}${dec.return_if_survive_pct.toFixed(1)}%</td></tr>
+          <tr><td>Default (${dec.p_default_pct.toFixed(1)}%)</td><td>${dec.return_if_default_pct.toFixed(1)}%</td></tr>
+          <tr><td><b>Ожидаемое значение</b></td><td><b>${dec.expected_value_pct.toFixed(1)}%</b></td></tr>
+        </table>`
+      : `<span style="color:var(--text-muted)">Нет рейтинга или AEY — расчёт недоступен.</span>`;
+    html += `</div>`;
+
+    const er = b.expected_return || {};
+    const horizons = [['1y', '1 год'], ['2y', '2 года'], ['maturity', 'До погашения']];
+    html += `<div class="bond-detail-block"><b>Прогноз доходности (Part B, survival-weighted IRR)</b>`;
+    const withData = horizons.filter(([k]) => er[k]);
+    html += withData.length
+      ? `<table class="detail-mini-table"><tr><th>Горизонт</th><th>Факт. срок</th><th>IRR</th><th>Undisc. NPV</th></tr>` +
+        withData.map(([k, label]) => {
+          const p = er[k];
+          const extrapBadge = p.uses_extrapolated_pd
+            ? ` <span class="source-badge secondary" title="Горизонт превышает 3-летнюю таблицу агентства — модельная экстраполяция hazard rate, не реальные данные">модель &gt;3г</span>`
+            : '';
+          const cappedNote = p.horizon_capped_by_maturity ? ' (огранич. погашением)' : '';
+          return `<tr><td>${label}${extrapBadge}</td><td>${p.horizon_yr.toFixed(2)}г${cappedNote}</td>` +
+            `<td>${p.irr_pct.toFixed(1)}%</td><td>${p.undiscounted_npv >= 0 ? '+' : ''}${Math.round(p.undiscounted_npv)}</td></tr>`;
+        }).join('') + `</table>`
+      : `<span style="color:var(--text-muted)">Ещё не рассчитан (флоатер без фиксированного графика, либо облигация не попала в последний прогон \`hybond run\`).</span>`;
+    html += `</div>`;
+
+    html += `<div class="bond-detail-block">${pillarPanelHtml(iss)}</div>`;
+    html += renderBondEventsHtml(iss, secid);
+    return html;
+  }
+
   let sortKey = 'aey_base_risk_adj_pct', sortDir = -1;
   const cols = [
     ['issuer', 'Эмитент'], ['secid', 'SECID'], ['rating', 'Рейтинг'],
@@ -909,7 +1051,7 @@ function pillarPanelHtml(iss) {
         : r.rating_needs_verification
         ? '<span class="source-badge secondary" title="Рейтинг не верифицирован по первоисточнику агентства">⚠ не подтверждён</span>'
         : '<span style="color:var(--text-muted)">✓</span>';
-      html += `<tr>
+      html += `<tr class="bond-row" data-secid="${r.secid}">
         <td>${r.issuer}<div style="color:var(--text-muted);font-size:11px">${r.secid}</div></td>
         <td>${r.short_name}<div style="color:var(--text-muted);font-size:11px">${r.mat_date||''}</div></td>
         <td>${r.rating||'—'}</td>
@@ -921,7 +1063,8 @@ function pillarPanelHtml(iss) {
         <td><b>${r.aey_base_risk_adj_pct!=null?r.aey_base_risk_adj_pct.toFixed(1):'—'}</b></td>
         <td>${lastEvtCell}</td>
         <td>${verifCell}</td>
-      </tr>`;
+      </tr>
+      <tr class="detail-row" data-secid="${r.secid}"><td colspan="${cols.length}"><div class="detail-inner" id="bond-detail-${r.secid}"></div></td></tr>`;
     });
     html += '</tbody>';
     const table = document.getElementById('portfolioRankTable');
@@ -931,22 +1074,117 @@ function pillarPanelHtml(iss) {
       if (k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = -1; }
       render();
     }));
+
+    // Part D: click a bond row to open its detail panel inline (same
+    // expand pattern as the issuer table). Delegated once per render()
+    // call since rows are rebuilt each time.
+    table.querySelectorAll('tr.bond-row').forEach(tr => tr.addEventListener('click', () => {
+      const secid = tr.dataset.secid;
+      const detail = document.getElementById('bond-detail-' + secid);
+      const open = detail.classList.contains('open');
+      table.querySelectorAll('.detail-inner.open').forEach(d => d.classList.remove('open'));
+      if (!open) {
+        detail.innerHTML = renderBondDetail(secid);
+        detail.classList.add('open');
+      }
+    }));
   }
+
+  // Severity toggle inside an open bond-detail panel -- delegated on the
+  // TABLE ELEMENT ITSELF (which persists across render() calls; only its
+  // innerHTML is rebuilt each time), so this is attached exactly once
+  // rather than re-added -- and stacking -- on every sort/slider re-render.
+  // stopPropagation keeps the click from also bubbling to the row handler,
+  // which would immediately close the panel this button just updated.
+  document.getElementById('portfolioRankTable').addEventListener('click', (e) => {
+    const btn = e.target.closest('.bond-events-toggle');
+    if (!btn) return;
+    e.stopPropagation();
+    const secid = btn.dataset.secid;
+    bondEventsMode.set(secid, (bondEventsMode.get(secid) || 'critical') === 'critical' ? 'all' : 'critical');
+    const detail = document.getElementById('bond-detail-' + secid);
+    if (detail) detail.innerHTML = renderBondDetail(secid);
+  });
 
   const toggle = document.getElementById('candidateModeToggle');
   const note = document.getElementById('candidateModeNote');
+  const sliderWrap = document.getElementById('aeySliderWrap');
+  const sliderMin = document.getElementById('aeySliderMin');
+  const sliderMax = document.getElementById('aeySliderMax');
+  const sliderFill = document.getElementById('aeySliderFill');
+  const sliderRangeLabel = document.getElementById('aeySliderRangeLabel');
+  const sliderCount = document.getElementById('aeySliderCount');
+
   function updateNote() {
     if (!toggle.checked) { note.textContent = ''; return; }
     const th = DATA.promotion_thresholds || {};
     note.textContent = `рейтинг ≥ ${th.rating_floor}, объём ≥ ${th.min_volume}, ` +
-      `топ-${th.n_before_cap} по AEY (риск) до капа, макс. ${th.per_issuer_cap}/эмитент, ` +
-      `итог ≤ ${th.target_after_cap} — те же пороги, что и \`hybond promote\` (стартовые, не финальные).`;
+      `макс. ${th.per_issuer_cap}/эмитент — фиксированные пороги, те же что и \`hybond promote\`; ` +
+      `ползунок ниже дополнительно сужает список по AEY (риск).`;
   }
+
+  function updateSliderFillVisual() {
+    const lo = parseFloat(sliderMin.min), hi = parseFloat(sliderMin.max);
+    const span = (hi - lo) || 1;
+    const loPct = ((parseFloat(sliderMin.value) - lo) / span) * 100;
+    const hiPct = ((parseFloat(sliderMax.value) - lo) / span) * 100;
+    sliderFill.style.left = loPct + '%';
+    sliderFill.style.width = Math.max(hiPct - loPct, 0) + '%';
+  }
+
+  function applySliderFilter() {
+    const lo = parseFloat(sliderMin.value), hi = parseFloat(sliderMax.value);
+    // Bounds are rounded to 1dp (floor/ceil) when the slider is set up, so a
+    // raw value like 111.38 can sit just inside a displayed bound of 111.4
+    // -- a small epsilon keeps a handle parked exactly at min/max from
+    // excluding the bond that defined that boundary in the first place.
+    const EPS = 0.05;
+    rows = candidatePool.filter(r => r.aey_base_risk_adj_pct != null &&
+      r.aey_base_risk_adj_pct >= lo - EPS && r.aey_base_risk_adj_pct <= hi + EPS);
+    sliderRangeLabel.textContent = `${lo.toFixed(1)}% – ${hi.toFixed(1)}%`;
+    sliderCount.textContent = `${rows.length} из ${candidatePool.length} облигаций в диапазоне`;
+    updateSliderFillVisual();
+    render();
+  }
+
+  // Edge case (min could be dragged past max or vice versa): CLAMP rather
+  // than allow an inverted range or silently show 0 rows -- dragging one
+  // handle past the other pushes the other handle along with it, so the
+  // band stays valid and non-empty by construction. Chosen over "show 0
+  // results" because an accidentally-crossed drag is far more likely than
+  // a deliberate empty-range query, and clamping needs no extra empty-state
+  // UI to design for.
+  sliderMin.addEventListener('input', () => {
+    if (parseFloat(sliderMin.value) > parseFloat(sliderMax.value)) sliderMax.value = sliderMin.value;
+    applySliderFilter();
+  });
+  sliderMax.addEventListener('input', () => {
+    if (parseFloat(sliderMax.value) < parseFloat(sliderMin.value)) sliderMin.value = sliderMax.value;
+    applySliderFilter();
+  });
+
+  function enterCandidateMode() {
+    candidatePool = buildCandidatePool();
+    const vals = candidatePool.map(r => r.aey_base_risk_adj_pct).filter(v => v != null);
+    const lo = vals.length ? Math.floor(Math.min(...vals) * 10) / 10 : 0;
+    const hi = vals.length ? Math.ceil(Math.max(...vals) * 10) / 10 : 0;
+    [sliderMin, sliderMax].forEach(s => { s.min = lo; s.max = hi; s.step = 0.1; });
+    sliderMin.value = lo;
+    sliderMax.value = hi;
+    sliderWrap.style.display = candidatePool.length ? '' : 'none';
+    applySliderFilter();
+  }
+
   toggle.addEventListener('change', () => {
-    rows = toggle.checked ? buildCandidateRows() : buildWatchlistRows();
     sortKey = 'aey_base_risk_adj_pct'; sortDir = -1;
     updateNote();
-    render();
+    if (toggle.checked) {
+      enterCandidateMode();
+    } else {
+      sliderWrap.style.display = 'none';
+      rows = buildWatchlistRows();
+      render();
+    }
   });
   updateNote();
   render();

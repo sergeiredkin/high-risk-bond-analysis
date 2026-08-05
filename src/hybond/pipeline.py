@@ -15,7 +15,7 @@ from datetime import date
 from pathlib import Path
 
 from .calendar.wall import build_wall, redemptions_by_issuer
-from .compute import bondmath, cashflows, default_probs
+from .compute import bondmath, cashflows, default_probs, expected_return
 from .ingest import sources
 from .store import db
 
@@ -42,6 +42,7 @@ def run(watchlist_path: Path, snap_date: date | None = None) -> dict:
     con = db.connect()
     db.init_db(con)
     db.init_rating(con)
+    db.init_expected_return(con)
 
     screen_rows = []
     flows_by_issuer: dict[str, list] = {}
@@ -134,9 +135,30 @@ def run(watchlist_path: Path, snap_date: date | None = None) -> dict:
             # watchlist dict directly. None for issuers with no current
             # rating row, or whose rating string doesn't parse against the
             # ruXX table; lookup() degrades gracefully rather than raising.
-            implied_fair = default_probs.implied_fair_spread_bp(
-                db.current_rating(con, issuer_id) or "")
+            rating = db.current_rating(con, issuer_id)
+            implied_fair = default_probs.implied_fair_spread_bp(rating or "")
             misprice = (gsp - implied_fair) if implied_fair is not None else None
+
+            # Part B: survival-weighted expected-return IRR at 1yr/2yr/to-
+            # maturity (compute/expected_return.py). Only possible for
+            # non-floaters -- the real coupon/amortization schedule (`coupons`,
+            # `amorts`, `dirty`) only exists in this branch; a floater has no
+            # fixed future schedule to survival-weight.
+            if yield_source == "computed":
+                for label, horizon in (("1y", 1.0), ("2y", 2.0), ("maturity", None)):
+                    proj = expected_return.project_expected_return(
+                        coupons, amorts, snap_date, face, dirty, rating, horizon)
+                    if proj is None:
+                        continue
+                    db.insert_expected_return_snapshot(
+                        con, secid=secid, snap_date=snap_date.isoformat(),
+                        horizon_label=label, horizon_yr=proj["horizon_yr"],
+                        irr_pct=proj["irr_pct"],
+                        undiscounted_npv=proj["undiscounted_npv"],
+                        undiscounted_total_cashflow=proj["undiscounted_total_cashflow"],
+                        horizon_capped_by_maturity=int(proj["horizon_capped_by_maturity"]),
+                        uses_extrapolated_pd=int(proj["uses_extrapolated_pd"]),
+                    )
 
             screen_rows.append({
                 "secid": secid, "issuer": v["name"], "ytm_pct": round(ytm * 100, 2),
