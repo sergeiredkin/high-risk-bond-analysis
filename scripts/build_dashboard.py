@@ -11,10 +11,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data" / "dashboard_data.json"
+NARRATIVE_PROMPT = ROOT / "skills" / "bond-narrative-card" / "PROMPT.md"
+COMPANY_SCAN_PROMPT = ROOT / "skills" / "bond-narrative-card" / "bond_screening_prompt_v3.5.1.md"
 
 BUILDS = [
     (ROOT / "dashboard" / "template.html", ROOT / "dashboard" / "index.html"),
-    (ROOT / "dashboard" / "market_map_template.html", ROOT / "dashboard" / "market_map.html"),
 ]
 
 
@@ -23,9 +24,28 @@ def main() -> None:
     payload = json.dumps(data, ensure_ascii=False)
     # </script> can't appear literally inside the embedded JSON blob
     payload = payload.replace("</script", "<\\/script")
+
+    # skills/bond-narrative-card/PROMPT.md is the reasoning engine behind the
+    # Part D "Generate full analysis" trigger -- embedded as a JS string
+    # constant so the dashboard stays a single self-contained file (see
+    # module docstring); the trigger's own JS only assembles ISSUER_DATA and
+    # renders the model's response, it never reimplements this prompt.
+    prompt_payload = json.dumps(NARRATIVE_PROMPT.read_text(encoding="utf-8"), ensure_ascii=False)
+    prompt_payload = prompt_payload.replace("</script", "<\\/script")
+
+    # bond_screening_prompt_v3.5.1.md is the ORIGINAL, unadapted, web-research
+    # prompt -- the reasoning engine behind the "Проверить компанию" scan for
+    # issuers not yet in hybond's DB (Task 2). Deliberately a separate file
+    # from PROMPT.md above, never merged: PROMPT.md's data-gathering section
+    # points at hybond tables that don't exist yet for an unonboarded issuer.
+    company_scan_payload = json.dumps(COMPANY_SCAN_PROMPT.read_text(encoding="utf-8"), ensure_ascii=False)
+    company_scan_payload = company_scan_payload.replace("</script", "<\\/script")
+
     for template_path, out_path in BUILDS:
         template = template_path.read_text(encoding="utf-8")
         html = template.replace("/*__DASHBOARD_DATA__*/", payload)
+        html = html.replace("/*__NARRATIVE_PROMPT__*/", prompt_payload)
+        html = html.replace("/*__COMPANY_SCAN_PROMPT__*/", company_scan_payload)
         out_path.write_text(html, encoding="utf-8")
         print(f"Wrote {out_path} ({len(html)/1024:.0f} KB)")
 

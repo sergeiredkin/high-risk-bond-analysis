@@ -32,7 +32,14 @@ CREATE TABLE IF NOT EXISTS bond (
     coupon_pct  REAL,
     list_level  INTEGER,
     qualified   INTEGER,               -- 0/1
-    updated     TEXT
+    updated     TEXT,
+    issue_size          REAL,          -- MOEX ISSUESIZE: registered issue size
+    issue_size_placed   REAL,          -- MOEX ISSUESIZEPLACED: actually placed so far
+    placement_pct       REAL,          -- issue_size_placed / issue_size * 100
+    placement_partial_since TEXT       -- ISO date this bond was FIRST observed
+                                        -- not-yet-fully-placed (placement_pct
+                                        -- < ~100%); cleared once it reaches
+                                        -- ~100%. See placement_is_stalled().
 );
 
 CREATE TABLE IF NOT EXISTS price_snapshot (
@@ -138,6 +145,13 @@ def init_db(con: sqlite3.Connection) -> None:
     if "yield_source" not in cols:
         con.execute(
             "ALTER TABLE spread_snapshot ADD COLUMN yield_source TEXT DEFAULT 'computed'")
+    # bond may already exist from before the placement-tracking columns were
+    # added; same retrofit pattern as spread_snapshot above.
+    bond_cols = {r["name"] for r in con.execute("PRAGMA table_info(bond)")}
+    for col, decl in (("issue_size", "REAL"), ("issue_size_placed", "REAL"),
+                       ("placement_pct", "REAL"), ("placement_partial_since", "TEXT")):
+        if col not in bond_cols:
+            con.execute(f"ALTER TABLE bond ADD COLUMN {col} {decl}")
     con.commit()
 
 
@@ -150,20 +164,79 @@ def upsert_issuer(con, issuer_id: str, name: str, sector: str | None = None, not
     )
 
 
+PLACEMENT_FULL_THRESHOLD_PCT = 99.5  # >= this counts as "fully placed" (odd-lot
+                                      # rounding rarely lands exactly on 100.0)
+
+
 def upsert_bond(con, **f):
+    """`issue_size`/`issue_size_placed`/`placement_pct` are optional (default
+    None) so existing callers that don't pass them keep working unchanged.
+
+    `placement_partial_since` is NOT a caller-supplied field -- it's tracked
+    here: set to `updated` the first time a bond is observed below
+    PLACEMENT_FULL_THRESHOLD_PCT, held at that original date on every
+    subsequent still-partial run (not bumped forward each time), and cleared
+    back to NULL once placement reaches the threshold. This is what lets
+    placement_is_stalled() answer "how long has this sat partially placed",
+    the same style of question rating_is_stale() answers for rated_on."""
+    f.setdefault("issue_size", None)
+    f.setdefault("issue_size_placed", None)
+    f.setdefault("placement_pct", None)
+    # if THIS call doesn't carry placement data (fields omitted / MOEX
+    # columns missing this run), COALESCE keeps whatever was already stored
+    # rather than overwriting real data with NULL -- callers that never pass
+    # these fields (e.g. existing tests) must not silently erase them.
+    pct = f["placement_pct"]
+    initial_partial_since = f["updated"] if (pct is not None and pct < PLACEMENT_FULL_THRESHOLD_PCT) else None
     con.execute(
         "INSERT INTO bond(secid,isin,issuer_id,short_name,mat_date,face_value,"
-        "face_unit,coupon_pct,list_level,qualified,updated) "
+        "face_unit,coupon_pct,list_level,qualified,updated,"
+        "issue_size,issue_size_placed,placement_pct,placement_partial_since) "
         "VALUES(:secid,:isin,:issuer_id,:short_name,:mat_date,:face_value,"
-        ":face_unit,:coupon_pct,:list_level,:qualified,:updated) "
+        ":face_unit,:coupon_pct,:list_level,:qualified,:updated,"
+        ":issue_size,:issue_size_placed,:placement_pct,:initial_partial_since) "
         "ON CONFLICT(secid) DO UPDATE SET isin=excluded.isin, "
         "issuer_id=excluded.issuer_id, short_name=excluded.short_name, "
         "mat_date=excluded.mat_date, face_value=excluded.face_value, "
         "face_unit=excluded.face_unit, coupon_pct=excluded.coupon_pct, "
         "list_level=excluded.list_level, qualified=excluded.qualified, "
-        "updated=excluded.updated",
-        f,
+        "updated=excluded.updated, "
+        "issue_size=COALESCE(excluded.issue_size, bond.issue_size), "
+        "issue_size_placed=COALESCE(excluded.issue_size_placed, bond.issue_size_placed), "
+        "placement_pct=COALESCE(excluded.placement_pct, bond.placement_pct), "
+        "placement_partial_since = CASE "
+        "  WHEN excluded.placement_pct IS NULL THEN bond.placement_partial_since "
+        f"  WHEN excluded.placement_pct >= {PLACEMENT_FULL_THRESHOLD_PCT} THEN NULL "
+        "  WHEN bond.placement_partial_since IS NOT NULL THEN bond.placement_partial_since "
+        "  ELSE excluded.updated "
+        "END",
+        {**f, "initial_partial_since": initial_partial_since},
     )
+
+
+PLACEMENT_STALL_WEEKS = 4            # "extended period without progressing"
+PLACEMENT_STALL_THRESHOLD_PCT = 50.0  # "low placement percentage"
+
+
+def placement_is_stalled(placement_pct: float | None, partial_since: str | None,
+                          as_of: date | None = None,
+                          weeks: int = PLACEMENT_STALL_WEEKS,
+                          threshold_pct: float = PLACEMENT_STALL_THRESHOLD_PCT) -> bool:
+    """True when a bond has been sitting below `threshold_pct` placed for at
+    least `weeks` since it was first observed partially placed
+    (placement_partial_since, tracked by upsert_bond). Mirrors
+    rating_is_stale()'s shape -- a simple elapsed-time-since-a-tracked-date
+    check, not a trend/velocity model. First cut per the task's own framing
+    ("otherwise just surface the raw percentage... revisit staleness logic
+    later") -- doesn't distinguish "climbing slowly" from "flat at 12% for
+    two months", both currently read as stalled once past the threshold."""
+    if placement_pct is None or partial_since is None:
+        return False
+    if placement_pct >= threshold_pct:
+        return False
+    as_of = as_of or date.today()
+    since = datetime.strptime(partial_since, "%Y-%m-%d").date()
+    return (as_of - since).days >= weeks * 7
 
 
 def insert_price_snapshot(con, **f):
@@ -725,6 +798,19 @@ def rating_history(con, issuer_id: str) -> list:
         (issuer_id,)).fetchall()
 
 
+def all_current_ratings(con, issuer_id: str) -> list:
+    """All is_current=1 rows across every agency for an issuer -- unlike
+    current_rating()/current_rating_row(), which pick a single winner via the
+    agency-priority tiebreak, this exposes every currently-live rating so a
+    caller (e.g. the narrative-card export) can detect and surface genuine
+    cross-agency disagreement instead of silently hiding it behind the
+    tiebreak's choice."""
+    rows = con.execute(
+        "SELECT * FROM rating WHERE issuer_id=? AND is_current=1 ORDER BY agency",
+        (issuer_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
 # --- Universe screener: the full MOEX corporate-bond universe, not just the
 # watchlist (see universe_pipeline.py) -------------------------------------
 
@@ -829,6 +915,66 @@ def universe_traded_recently(con, secid: str, before_date: str, since_date: str)
         "AND snap_date<? AND num_trades>=1 LIMIT 1",
         (secid, since_date, before_date)).fetchone()
     return row is not None
+
+
+# --- OFZ carry/roll-down: real MOEX government-bond data (see
+# ofz_pipeline.py). This is the mirror-image of universe_snapshot's OFZ
+# exclusion (TQOB/SPOB boards, SU-prefixed secids) -- same MOEX bulk fetch,
+# opposite filter, kept in a separate table because OFZ carries no
+# credit-rating/mispricing columns (sovereign, no PD layer) and instead
+# carries instrument_type + real duration/convexity where computable. -----
+
+OFZ_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ofz_snapshot (
+    secid           TEXT NOT NULL,
+    snap_date       TEXT NOT NULL,
+    short_name      TEXT,
+    isin            TEXT,
+    board_id        TEXT,
+    instrument_type TEXT,       -- ПД | ПК | ИН | АД (see ofz_pipeline.classify_instrument_type)
+    mat_date        TEXT,
+    coupon_pct      REAL,       -- annual coupon, % of face; NULL for floaters between resets
+    face_value      REAL,
+    last_pct        REAL,       -- clean price, % of face
+    accrued_int_pct REAL,       -- НКД, % of face
+    dirty_price_pct REAL,
+    ytm             REAL,
+    mod_dur         REAL,
+    convexity       REAL,       -- NULL where not computable (floater/linker proxy path)
+    tenor_yrs       REAL,
+    volume          REAL,
+    num_trades      INTEGER,
+    yield_source    TEXT,       -- 'computed' (real cashflows) | 'moex' (proxy)
+    PRIMARY KEY (secid, snap_date)
+);
+"""
+
+
+def init_ofz(con) -> None:
+    con.executescript(OFZ_SCHEMA)
+    con.commit()
+
+
+def upsert_ofz_snapshot(con, **f) -> None:
+    cols = ("secid,snap_date,short_name,isin,board_id,instrument_type,mat_date,"
+            "coupon_pct,face_value,last_pct,accrued_int_pct,dirty_price_pct,"
+            "ytm,mod_dur,convexity,tenor_yrs,volume,num_trades,yield_source")
+    placeholders = ",".join(f":{c}" for c in cols.split(","))
+    con.execute(
+        f"INSERT OR REPLACE INTO ofz_snapshot({cols}) VALUES({placeholders})", f)
+
+
+def latest_ofz_snap_date(con) -> str | None:
+    row = con.execute(
+        "SELECT snap_date FROM ofz_snapshot ORDER BY snap_date DESC LIMIT 1"
+    ).fetchone()
+    return row["snap_date"] if row else None
+
+
+def ofz_snapshot_rows(con, snap_date: str) -> list:
+    return con.execute(
+        "SELECT * FROM ofz_snapshot WHERE snap_date=? ORDER BY mat_date",
+        (snap_date,)).fetchall()
 
 
 EMITENT_MAP_SCHEMA = """
@@ -981,3 +1127,74 @@ def upsert_cbr_meeting_diff(con, **f) -> None:
 def get_cbr_meeting_diff(con, meeting_date: str):
     return con.execute(
         "SELECT * FROM cbr_meeting_diff WHERE meeting_date=?", (meeting_date,)).fetchone()
+
+
+COMPANY_SCAN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS company_scan_result (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    inn                     TEXT,
+    query                   TEXT NOT NULL,
+    scanned_at              TEXT NOT NULL,
+    model                   TEXT,
+    issuer_name             TEXT,
+    track                   TEXT,
+    issuer_quality          TEXT,
+    bond_suitability        TEXT,
+    confidence              TEXT,
+    data_coverage_pct       REAL,
+    raw_markdown            TEXT,
+    json_addendum           TEXT,
+    input_tokens            INTEGER,
+    output_tokens           INTEGER,
+    cache_read_tokens       INTEGER,
+    cache_creation_tokens   INTEGER,
+    web_searches            INTEGER,
+    elapsed_ms              INTEGER,
+    rating_snapshot         TEXT,
+    rated_on_snapshot       TEXT,
+    filing_count_snapshot   INTEGER,
+    filing_latest_snapshot  TEXT
+);
+"""
+
+
+def init_company_scan(con) -> None:
+    """company-scan pipeline (src/hybond/company_scan_pipeline.py):
+    server-side port of dashboard/template.html's "Проверить компанию"
+    panel. One row per scan (an issuer can be scanned multiple times over
+    time -- `id` is the PK, not `inn`), so history/drift can be queried
+    later rather than only the latest result."""
+    con.executescript(COMPANY_SCAN_SCHEMA)
+    con.commit()
+
+
+def insert_company_scan_result(con, **f) -> int:
+    cols = ("inn,query,scanned_at,model,issuer_name,track,issuer_quality,"
+            "bond_suitability,confidence,data_coverage_pct,raw_markdown,"
+            "json_addendum,input_tokens,output_tokens,cache_read_tokens,"
+            "cache_creation_tokens,web_searches,elapsed_ms,rating_snapshot,"
+            "rated_on_snapshot,filing_count_snapshot,filing_latest_snapshot")
+    values = {c: f.get(c) for c in cols.split(",")}
+    placeholders = ",".join(f":{c}" for c in cols.split(","))
+    cur = con.execute(
+        f"INSERT INTO company_scan_result({cols}) VALUES({placeholders})", values)
+    return cur.lastrowid
+
+
+def latest_company_scan_by_inn(con) -> dict[str, dict]:
+    """Most recent company_scan_result row per ИНН (rows with inn IS NULL --
+    free-text queries that never resolved to an ИНН, see
+    company_scan_pipeline.resolve_inn -- can't be tracked this way, same
+    limitation as the browser's localStorage history)."""
+    rows = con.execute(
+        "SELECT * FROM company_scan_result WHERE inn IS NOT NULL "
+        "AND scanned_at = (SELECT MAX(scanned_at) FROM company_scan_result r2 "
+        "WHERE r2.inn = company_scan_result.inn)"
+    ).fetchall()
+    return {r["inn"]: dict(r) for r in rows}
+
+
+def company_scan_history(con, inn: str) -> list[dict]:
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM company_scan_result WHERE inn=? ORDER BY scanned_at DESC",
+        (inn,)).fetchall()]

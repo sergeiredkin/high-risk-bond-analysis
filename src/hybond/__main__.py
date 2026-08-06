@@ -155,6 +155,26 @@ def cmd_universe(args) -> int:
     return 0
 
 
+def cmd_ofz(_args) -> int:
+    from . import ofz_pipeline
+    r = ofz_pipeline.run_ofz()
+    print(f"OFZ snapshot: {r['snap_date']}")
+    print(f"Total OFZ pulled from MOEX (deduped across TQOB/SPOB): {r['total_ofz_pulled']}")
+    print(f"Stored: {r['stored']}")
+    print(f"Skipped (matured/no maturity date): {r['skipped_matured_or_no_date']}")
+    print(f"Skipped (no price): {r['skipped_no_price']}")
+    print(f"By instrument type: {r['by_instrument_type']}")
+    if r["unrecognised_type_secids"]:
+        print(f"Unrecognised SU-code prefix (defaulted to ПД, flagged): {r['unrecognised_type_secids']}")
+    print(f"Real computed YTM/duration/convexity: {r['computed_yield_count']} bonds")
+    print(f"MOEX-yield proxy (floater/linker, no convexity): {r['moex_proxy_yield_count']} bonds")
+    scen = r["rate_scenarios"]
+    fallback_tag = " [FALLBACK — no CBR meeting analysis available]" if scen.get("is_fallback") else ""
+    print(f"CBR rate scenarios: base={scen.get('base')} stress={scen.get('stress')} "
+          f"bull={scen.get('bull')}{fallback_tag}")
+    return 0
+
+
 def cmd_bonds(args) -> int:
     from .ingest import sources
     bonds = sources.fetch_bonds_by_inn(args.inn)
@@ -313,6 +333,55 @@ def cmd_financials(args) -> int:
         return 1
     print(f"\n{len(summary['issuers'])} issuer(s) scored, "
           f"{len(summary['errors'])} error(s).", file=sys.stderr)
+    return 0
+
+
+def cmd_scan_company(args) -> int:
+    from . import company_scan_pipeline as csp
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    result = csp.scan_company(con, args.query, api_key=args.key)
+    con.close()
+    if "error" in result:
+        print(result["error"], file=sys.stderr)
+        return 1
+    print(json.dumps({k: v for k, v in result.items() if k != "card"},
+                     ensure_ascii=False, indent=2))
+    card = result.get("card")
+    if card:
+        print(f"\n{card.get('issuer_name', args.query)}: "
+              f"issuer={card.get('issuer_quality', '?')} "
+              f"bond={card.get('bond_suitability', '?')} "
+              f"confidence={card.get('confidence', '?')} "
+              f"coverage={card.get('data_coverage_pct', '?')}%", file=sys.stderr)
+    else:
+        print(f"\nNo JSON addendum parsed -- see raw_markdown in "
+              f"company_scan_result id={result['id']}.", file=sys.stderr)
+    return 0
+
+
+def cmd_scan_candidates(args) -> int:
+    from . import company_scan_pipeline as csp
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    limit = None if args.limit == 0 else args.limit
+    summary = csp.run_scan_candidates(
+        con, api_key=args.key, limit=limit, include_rescan=not args.no_rescan,
+        log=lambda s: print(s, file=sys.stderr))
+    con.close()
+    if "error" in summary:
+        print(summary["error"], file=sys.stderr)
+        return 1
+    print(json.dumps({k: v for k, v in summary.items() if k != "results"},
+                     ensure_ascii=False, indent=2))
+    print(f"\n{summary['scanned_this_run']} scanned, {summary['errors']} error(s), "
+          f"{summary['skipped_by_limit']} left for a later run (--limit), "
+          f"{summary['candidates_found']} candidate(s) found, "
+          f"{summary['already_scanned']} previously scanned.", file=sys.stderr)
     return 0
 
 
@@ -479,6 +548,8 @@ def main(argv=None) -> int:
                      help="force a fresh paginated SECID->ИНН fetch instead of the cached "
                           "emitent_map table (normally refreshed weekly)")
     pu.set_defaults(func=cmd_universe)
+    po = sub.add_parser("ofz", help="OFZ (government bond) universe: real MOEX data + carry/roll-down projection")
+    po.set_defaults(func=cmd_ofz)
     pb = sub.add_parser("bonds", help="Slice 1: all outstanding MOEX series for one issuer by ИНН")
     pb.add_argument("inn")
     pb.set_defaults(func=cmd_bonds)
@@ -524,6 +595,26 @@ def main(argv=None) -> int:
     pf.add_argument("watchlist")
     pf.add_argument("--key", help="parser-api key (or set PARSER_API_KEY)")
     pf.set_defaults(func=cmd_financials)
+    psc = sub.add_parser("scan-company",
+                         help="LLM company-scan for an issuer not yet in hybond "
+                              "(web-research prompt, same as the dashboard's "
+                              "\"Проверить компанию\" panel) -- stores the result "
+                              "in company_scan_result")
+    psc.add_argument("query", help="ИНН or company name to screen")
+    psc.add_argument("--key", help="Anthropic API key (or set ANTHROPIC_API_KEY)")
+    psc.set_defaults(func=cmd_scan_company)
+    pscb = sub.add_parser("scan-candidates",
+                          help="Batch company-scan: the auto-flagged candidate list "
+                               "(unrated, cleared ВДО screen, not yet tracked) plus "
+                               "any previously-scanned issuer whose rating/filings "
+                               "have drifted since its last scan")
+    pscb.add_argument("--key", help="Anthropic API key (or set ANTHROPIC_API_KEY)")
+    pscb.add_argument("--limit", type=int, default=10,
+                      help="max NEW scans this run, guards against an accidental "
+                           "full-batch run (default 10; pass 0 for unlimited)")
+    pscb.add_argument("--no-rescan", action="store_true",
+                      help="only scan brand-new candidates, skip the rescan-due list")
+    pscb.set_defaults(func=cmd_scan_candidates)
     pc = sub.add_parser("cbr", help="CBR key-rate meeting tracker")
     pc.add_argument("--fetch", metavar="YYYY-MM-DD",
                     help="fetch/backfill all available documents for one meeting date")

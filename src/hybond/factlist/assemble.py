@@ -33,6 +33,8 @@ class BondFacts:
     last_pct: float | None
     volume: float | None
     num_trades: int | None
+    placement_pct: float | None            # None if issue_size unknown
+    placement_partial_since: str | None    # ISO date, None once fully placed
 
 
 @dataclass
@@ -83,7 +85,8 @@ def build_factlist(
     sector = irow["sector"] if irow else None
 
     bond_rows = con.execute(
-        "SELECT secid, isin, short_name, mat_date, coupon_pct FROM bond "
+        "SELECT secid, isin, short_name, mat_date, coupon_pct, "
+        "placement_pct, placement_partial_since FROM bond "
         "WHERE issuer_id=?", (issuer_id,)).fetchall()
 
     bonds: list[dict] = []
@@ -112,6 +115,8 @@ def build_factlist(
             last_pct=pr["last_pct"] if pr else None,
             volume=pr["volume"] if pr else None,
             num_trades=pr["num_trades"] if pr else None,
+            placement_pct=b["placement_pct"],
+            placement_partial_since=b["placement_partial_since"],
         )))
 
     six_pillars = _latest_pillars(con, issuer_id)

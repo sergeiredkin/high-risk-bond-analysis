@@ -84,6 +84,86 @@ def test_maturity_wall_buckets():
     assert "7707654321" in by_month["2026-09"].issuers
 
 
+# --- registered-vs-placed volume (Task 3 follow-up) ------------------------
+
+def test_upsert_bond_tracks_placement_partial_since(tmp_path):
+    con = db.connect(tmp_path / "placement.sqlite")
+    db.init_db(con)
+    db.upsert_issuer(con, "7701234567", "ТестЭмитент", "industrials")
+
+    # first observation: 11.78% placed -> partial_since set to today's snap date
+    db.upsert_bond(con, secid="RU000PART1", isin="RU000PART1", issuer_id="7701234567",
+                   short_name="Тест2", mat_date="2029-01-01", face_value=1000.0,
+                   face_unit="SUR", coupon_pct=20.0, list_level=3, qualified=1,
+                   updated="2026-07-01", issue_size=300000, issue_size_placed=35325,
+                   placement_pct=11.78)
+    con.commit()
+    row = con.execute("SELECT * FROM bond WHERE secid='RU000PART1'").fetchone()
+    assert row["placement_pct"] == 11.78
+    assert row["placement_partial_since"] == "2026-07-01"
+
+    # second observation, still partial a month later -> partial_since NOT
+    # bumped forward (it tracks when partial placement was FIRST seen)
+    db.upsert_bond(con, secid="RU000PART1", isin="RU000PART1", issuer_id="7701234567",
+                   short_name="Тест2", mat_date="2029-01-01", face_value=1000.0,
+                   face_unit="SUR", coupon_pct=20.0, list_level=3, qualified=1,
+                   updated="2026-08-01", issue_size=300000, issue_size_placed=60000,
+                   placement_pct=20.0)
+    con.commit()
+    row = con.execute("SELECT * FROM bond WHERE secid='RU000PART1'").fetchone()
+    assert row["placement_pct"] == 20.0
+    assert row["placement_partial_since"] == "2026-07-01"
+
+    # third observation, fully placed -> partial_since cleared
+    db.upsert_bond(con, secid="RU000PART1", isin="RU000PART1", issuer_id="7701234567",
+                   short_name="Тест2", mat_date="2029-01-01", face_value=1000.0,
+                   face_unit="SUR", coupon_pct=20.0, list_level=3, qualified=1,
+                   updated="2026-09-01", issue_size=300000, issue_size_placed=300000,
+                   placement_pct=100.0)
+    con.commit()
+    row = con.execute("SELECT * FROM bond WHERE secid='RU000PART1'").fetchone()
+    assert row["placement_partial_since"] is None
+
+
+def test_upsert_bond_omitted_placement_fields_dont_erase_prior_data(tmp_path):
+    """A caller that doesn't pass placement fields at all (existing tests,
+    or a run where MOEX temporarily drops the columns) must not wipe out
+    previously-stored real placement data, nor reset the stall clock."""
+    con = db.connect(tmp_path / "placement2.sqlite")
+    db.init_db(con)
+    db.upsert_issuer(con, "7701234567", "ТестЭмитент", "industrials")
+    db.upsert_bond(con, secid="RU000PART2", isin="RU000PART2", issuer_id="7701234567",
+                   short_name="Тест3", mat_date="2029-01-01", face_value=1000.0,
+                   face_unit="SUR", coupon_pct=20.0, list_level=3, qualified=1,
+                   updated="2026-07-01", issue_size=100000, issue_size_placed=10000,
+                   placement_pct=10.0)
+    con.commit()
+    db.upsert_bond(con, secid="RU000PART2", isin="RU000PART2", issuer_id="7701234567",
+                   short_name="Тест3", mat_date="2029-01-01", face_value=1000.0,
+                   face_unit="SUR", coupon_pct=20.0, list_level=3, qualified=1,
+                   updated="2026-07-15")  # placement fields omitted this run
+    con.commit()
+    row = con.execute("SELECT * FROM bond WHERE secid='RU000PART2'").fetchone()
+    assert row["placement_pct"] == 10.0  # preserved, not wiped to NULL
+    assert row["issue_size"] == 100000
+    assert row["placement_partial_since"] == "2026-07-01"  # stall clock untouched
+
+
+def test_placement_is_stalled():
+    # not stalled: still None/missing partial_since
+    assert db.placement_is_stalled(20.0, None) is False
+    # not stalled: already >= 50%
+    assert db.placement_is_stalled(60.0, "2026-01-01", as_of=date(2026, 8, 1)) is False
+    # not stalled: below 50% but not yet 4 weeks since first seen partial
+    assert db.placement_is_stalled(20.0, "2026-07-25", as_of=date(2026, 8, 1)) is False
+    # stalled: below 50%, exactly 4 weeks (28 days) since first seen partial
+    assert db.placement_is_stalled(20.0, "2026-07-04", as_of=date(2026, 8, 1)) is True
+    # stalled: below 50%, well past 4 weeks
+    assert db.placement_is_stalled(12.0, "2026-01-01", as_of=date(2026, 8, 1)) is True
+    # not stalled: no placement_pct at all
+    assert db.placement_is_stalled(None, "2026-01-01", as_of=date(2026, 8, 1)) is False
+
+
 def test_redemptions_by_issuer():
     reds = wall.redemptions_by_issuer(sample.FLOWS_BY_ISSUER,
                                       today=date(2026, 7, 25))

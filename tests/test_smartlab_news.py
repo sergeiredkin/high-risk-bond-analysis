@@ -137,3 +137,19 @@ def test_news_aliases_resolve_to_real_watchlist_issuers(tmp_path):
     bad = {name: inn for name, inn in sln.NEWS_ALIASES.items() if inn not in real_ids}
     assert not bad, f"NEWS_ALIASES entries with no matching issuer row: {bad}"
     con.close()
+
+
+def test_every_watchlist_issuer_has_at_least_one_news_alias():
+    """Coverage guard, added 2026-08-05 after finding 11 of 37 watchlist
+    issuers had NO alias at all -- not deliberate, NEWS_ALIASES was built
+    2026-07-30, one day before the promotion batches that added all 11 (see
+    watchlist.json's per-issuer notes), and was never synced afterward. This
+    doesn't catch a thin real-world news feed (that's a genuine coverage
+    limit for small ВДО names, not a bug) -- it only catches the case this
+    test was written for: an issuer that could NEVER match even if smart-lab
+    wrote about it, because nothing in NEWS_ALIASES points at it."""
+    wl = json.loads((ROOT / "watchlist.json").read_text(encoding="utf-8"))
+    wl_ids = {k for k in wl if not k.startswith("_")}
+    aliased_ids = set(sln.NEWS_ALIASES.values())
+    missing = wl_ids - aliased_ids
+    assert not missing, f"Watchlist issuers with no NEWS_ALIASES entry: {missing}"

@@ -61,7 +61,8 @@ def fetch_bond_master(snapshot: bool = True) -> list[dict[str, Any]]:
     """
     cols = ["SECID", "ISIN", "SHORTNAME", "SECNAME", "MATDATE", "FACEVALUE",
             "FACEUNIT", "COUPONVALUE", "COUPONPERCENT", "COUPONPERIOD",
-            "LISTLEVEL", "ISQUALIFIEDINVESTORS", "BOARDID", "OFFERDATE"]
+            "LISTLEVEL", "ISQUALIFIEDINVESTORS", "BOARDID", "OFFERDATE",
+            "ISSUESIZE", "ISSUESIZEPLACED"]
     r = _get(f"{MOEX_BASE}/engines/stock/markets/bonds/securities.json",
              params={"iss.meta": "off", "iss.only": "securities",
                      "securities.columns": ",".join(cols)})

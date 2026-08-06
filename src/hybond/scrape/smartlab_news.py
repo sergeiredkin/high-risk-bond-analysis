@@ -76,6 +76,27 @@ NEWS_ALIASES = {
     "Уральская Сталь": "5607019523",
     "Лизинг-Трейд": "1655096633",
     "Роделен": "7813379412",
+    # Added 2026-08-05: 11 of 37 watchlist issuers had NO alias at all --
+    # not a deliberate omission, this dict predates them (built 2026-07-30,
+    # one day before the 2026-07-31 promotion batches that added all 11 --
+    # see watchlist.json's per-issuer notes). Confirmed via a direct diff
+    # against watchlist.json's current issuer_id set (see
+    # test_smartlab_news.py's coverage test). Distinctive multi-word/
+    # single-distinctive-word aliases only, same rule as above -- "ПИР"
+    # bare is deliberately EXCLUDED (common Russian word, "пир" = feast,
+    # would false-match constantly in general market news); its full legal
+    # name is used instead, which will rarely match but won't false-positive.
+    "АНТЕРРА": "7730176955",
+    "Л-Старт": "7703550709",
+    "Моторные технологии": "5835115642",
+    "Идель Нефтемаш": "0261012138",
+    "РДВ Технолоджи": "9721088350",
+    "Сибнефтехимтрейд": "7206033362",
+    "СтанкоМашСтрой": "5835103100",
+    "Кеарли Групп": "9715397054",
+    "Агро-Фрегат": "6141055691",
+    "КОРПСАН": "5032292806",
+    "Партнерство, Инвестиции, Развитие": "7841422483",  # NOT bare "ПИР" -- see note above
 }
 
 

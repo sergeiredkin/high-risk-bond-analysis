@@ -48,9 +48,10 @@ scripts/
   seed_*.py, bulk_mark_routine.py, revert_board_decisions_routine.py  one-off/demo tooling
 
 dashboard/
-  template.html            main 4-tab dashboard (Скрининг / Универсум / Карта рынка / ЦБ РФ)
-  market_map_template.html market-map tab source template
-  index.html, market_map.html  built output
+  template.html            main 3-tab dashboard (Вотчлист / Рынок / ЦБ РФ) --
+                           Рынок merges the former Универсум + Карта рынка
+                           tabs into one shared-filter table/scatter view
+  index.html               built output (scripts/build_dashboard.py)
 
 skills/                    Claude Code skills invoked manually at the LLM steps
   hy-event-classify, hy-daily-brief, hy-credit-scorecard, hy-thesis-check,
@@ -107,10 +108,31 @@ PYTHONPATH=src python scripts/export_dashboard_data.py   # -> data/dashboard_dat
 python scripts/build_dashboard.py                         # -> dashboard/index.html
 ```
 
-Four tabs: **Скрининг** (watchlist spread screen + maturity wall + factlists),
-**Универсум** (full MOEX universe screener), **Карта рынка** (scatter market
-map with a time toggle and fair-value curve overlay), **ЦБ РФ** (key-rate
-meeting timeline, rate-path chart, and the AEY rate-scenario panel).
+Three tabs: **Вотчлист** (watchlist spread screen + maturity wall + factlists
++ per-bond detail panel), **Рынок** (full MOEX universe screener and scatter
+market map, merged into one view with shared rating-floor/liquidity-floor/
+maturity-bucket/AEY filters — see `dashboard/template.html`'s `marketTab()`),
+**ЦБ РФ** (key-rate meeting timeline, rate-path chart, and the AEY
+rate-scenario panel).
+
+### Narrative card ("Generate full analysis") — local-only key assumption
+
+The per-bond detail panel on the Вотчлист tab can call the Anthropic API
+directly from the browser to generate a full WUSH-style credit narrative
+(`skills/bond-narrative-card/PROMPT.md` is the reasoning engine; see that
+file's header note). **This assumes a single-user, local-only deployment.**
+The API key is entered once and stored in the browser's `localStorage`
+(plaintext, unencrypted, per-origin); every generation call goes straight
+from this page's JS to `api.anthropic.com` with no backend and no proxy
+holding the key server-side. That is only safe because the dashboard is a
+self-contained HTML file opened locally by one person on their own machine.
+
+**If this dashboard is ever hosted, shared with other people, or opened on a
+shared/untrusted device, this key-handling approach must not be carried
+over as-is** — move key storage and the API call behind a small server-side
+proxy that holds the key (env var / secrets manager) and never exposes it to
+the client. See the `SECURITY ASSUMPTION` comment in `template.html` right
+above `NARRATIVE_KEY_STORAGE`.
 
 ## Default probability / mispricing layer
 

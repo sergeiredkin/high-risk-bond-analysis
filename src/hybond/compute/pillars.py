@@ -75,6 +75,7 @@ class Pillars:
     cash_to_short_term_debt: float | None
     # refinancing
     short_term_debt_share: float | None       # ST debt / total debt
+    debt_coverage_stress: float | None        # ST debt / (cash + operating CF) -- see compute_pillars docstring
     # operations
     net_margin: float | None
     ocf_to_debt: float | None
@@ -137,6 +138,14 @@ def _score_bands(value: float | None, bands: list[tuple[float, int]],
     return bands[-1][1]
 
 
+def _sum_available(*vals: float | None) -> float | None:
+    """Sum whatever inputs are present; None only when ALL are missing --
+    unlike _ratio's num/den, a resource POOL shouldn't collapse to None just
+    because one component (e.g. this period's operating_cf) is absent."""
+    present = [v for v in vals if v is not None]
+    return sum(present) if present else None
+
+
 def compute_pillars(balance, fin, cf, balance_prev=None) -> Pillars:
     inp = extract_inputs(balance, fin, cf)
 
@@ -148,6 +157,31 @@ def compute_pillars(balance, fin, cf, balance_prev=None) -> Pillars:
     st_debt_share = _ratio(inp.short_term_debt, inp.total_debt)
     net_margin = _ratio(inp.net_income, inp.revenue)
     ocf_to_debt = _ratio(inp.operating_cf, inp.total_debt)
+
+    # Stress-ratio framing for refinancing risk: near-term debt vs. the
+    # resources actually available to cover/refinance it, as opposed to
+    # short_term_debt_share's pure capital-structure-composition view (what
+    # FRACTION of debt is short-dated, regardless of whether the company can
+    # cover it). This is the closest computable analogue to a "debt maturing
+    # within 24mo / (cash + expected FCF + committed credit lines)" stress
+    # ratio using only standard РСБУ 66н line codes:
+    #   - numerator is short_term_debt (1510, due within 12mo per accounting
+    #     classification) -- РСБУ's long-term/short-term split doesn't carry
+    #     a maturity SCHEDULE, so a 24-month window isn't computable; using
+    #     the available 12mo figure makes this ratio, if anything, more
+    #     conservative (a smaller numerator) than the target framing.
+    #   - denominator is cash + operating_cf (4100) as an FCF proxy (same
+    #     proxy ocf_to_debt already uses elsewhere in this module) --
+    #     committed/undrawn credit lines have no РСБУ line code and aren't
+    #     available from any source this pipeline currently ingests, so
+    #     they're omitted. This makes the ratio LESS conservative than the
+    #     target framing (a company with real undrawn facilities looks
+    #     worse here than it should).
+    # These two gaps partially offset in unclear directions -- treat this as
+    # a real but rougher signal than the stress ratio as specified, not an
+    # exact implementation of it.
+    resource_pool = _sum_available(inp.cash, inp.operating_cf)
+    debt_coverage_stress = _ratio(inp.short_term_debt, resource_pool)
 
     # leverage: lower debt/EBIT and higher coverage are safer
     s_lev = None
@@ -161,12 +195,46 @@ def compute_pillars(balance, fin, cf, balance_prev=None) -> Pillars:
         s_liq = _score_bands(current_ratio,
                             [(2.0, 100), (1.5, 80), (1.2, 60), (1.0, 40), (0.8, 20)],
                             higher_is_better=True)
-    # refinancing: lower short-term-debt share is safer (less imminent rollover)
-    s_ref = None
+    # refinancing: two component scores, averaged when both are available.
+    # short_term_debt_share is capital-structure composition (what fraction
+    # of debt is short-dated -- lower is safer, less imminent rollover).
+    # debt_coverage_stress is the stress-ratio framing (near-term debt vs.
+    # cash+FCF resources actually available to cover it -- see its comment
+    # above for the exact task-requested framing and the two data gaps that
+    # keep this from being an exact match). Neither alone is the full
+    # picture: a company can have a small short-term-debt share yet still
+    # lack the resources to cover even that; or a large share but ample cash
+    # to cover it comfortably. Averaged rather than min()'d -- the coverage
+    # ratio is a rougher proxy (see comment above), so letting it alone drag
+    # the score down whenever it looks bad would over-penalise the proxy's
+    # own gaps rather than a real weakness.
+    s_ref_structure = None
     if st_debt_share is not None:
-        s_ref = _score_bands(st_debt_share,
+        s_ref_structure = _score_bands(st_debt_share,
                             [(0.2, 100), (0.35, 80), (0.5, 60), (0.7, 40), (0.9, 20)],
                             higher_is_better=False)
+    s_ref_stress = None
+    if debt_coverage_stress is not None:
+        if resource_pool <= 0:
+            # A zero/negative resource pool (operating_cf negative enough to
+            # wipe out cash) makes the ratio negative -- "lower is better"
+            # banding would misread that as the SAFEST tier (<=0.8), when a
+            # negative cash+FCF pool against real short-term debt is the
+            # worst case this ratio can represent, not the best. Force the
+            # bottom tier rather than let the sign flip the interpretation.
+            s_ref_stress = 15
+        else:
+            # bands per the task's explicit stress-ratio framing: <0.8
+            # comfortable / 0.8-1.2 monitor / 1.2-2.0 material dependence /
+            # >2.0 high risk -- scored 100/70/40/15 to span the same 0-100
+            # range the rest of this module uses.
+            s_ref_stress = _score_bands(debt_coverage_stress,
+                                [(0.8, 100), (1.2, 70), (2.0, 40), (10**9, 15)],
+                                higher_is_better=False)
+    if s_ref_structure is not None and s_ref_stress is not None:
+        s_ref = round((s_ref_structure + s_ref_stress) / 2)
+    else:
+        s_ref = s_ref_structure if s_ref_structure is not None else s_ref_stress
     # operations: net margin
     s_ops = None
     if net_margin is not None:
@@ -183,6 +251,7 @@ def compute_pillars(balance, fin, cf, balance_prev=None) -> Pillars:
         debt_to_ebit=debt_to_ebit, interest_coverage=interest_coverage,
         debt_to_assets=debt_to_assets, current_ratio=current_ratio,
         cash_to_short_term_debt=cash_to_st_debt, short_term_debt_share=st_debt_share,
+        debt_coverage_stress=debt_coverage_stress,
         net_margin=net_margin, ocf_to_debt=ocf_to_debt,
         score_leverage=s_lev, score_liquidity=s_liq, score_refinancing=s_ref,
         score_operations=s_ops, coverage_note=note,

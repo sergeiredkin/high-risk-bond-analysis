@@ -180,6 +180,59 @@ def expected_returns_by_secid(con) -> dict[str, dict]:
     return out
 
 
+def data_conflicts_for_issuer(con, issuer_id: str, ratings_all: list[dict]) -> list[dict]:
+    """Detects genuine disagreements between hybond's own DB rows for one
+    issuer, for the narrative-card generator (skills/bond-narrative-card) to
+    surface explicitly rather than silently resolving. Two kinds, matching
+    the two the prompt's Data Sources section calls out:
+      - cross-agency rating disagreement: more than one currently-live
+        `rating` row (db.all_current_ratings) whose letter grade differs.
+        Differing outlook/action alone is not a conflict (agencies routinely
+        run on different review cadences); differing grade is.
+      - pillars re-computation drift: the two most recent pillars_snapshot
+        rows share a fiscal `period` but their payload disagrees on a
+        headline metric -- a same-period recompute that changed the answer
+        (e.g. a restated financials_snapshot feeding it), not just a new
+        period arriving.
+    Best-effort: returns [] rather than raising if a table/column is
+    missing, since this is a display-only enrichment, not core pipeline
+    output."""
+    conflicts: list[dict] = []
+
+    grades = {r["rating"] for r in ratings_all if r.get("rating")}
+    if len(grades) > 1:
+        conflicts.append({
+            "type": "rating_disagreement",
+            "detail": [
+                {"agency": r["agency"], "rating": r["rating"],
+                 "outlook": r.get("outlook"), "rated_on": r.get("rated_on")}
+                for r in ratings_all
+            ],
+        })
+
+    try:
+        hist = db.pillars_history(con, issuer_id, limit=2)
+    except Exception:  # noqa: BLE001 -- pillars_snapshot may not exist yet
+        hist = []
+    if len(hist) == 2 and hist[0]["period"] == hist[1]["period"]:
+        try:
+            cur = json.loads(hist[0]["payload"])
+            prev = json.loads(hist[1]["payload"])
+        except (ValueError, TypeError, KeyError):
+            cur = prev = None
+        if cur is not None and prev is not None and cur != prev:
+            conflicts.append({
+                "type": "pillars_recompute_drift",
+                "period": hist[0]["period"],
+                "detail": [
+                    {"computed_on": hist[1]["computed_on"], "payload": prev},
+                    {"computed_on": hist[0]["computed_on"], "payload": cur},
+                ],
+            })
+
+    return conflicts
+
+
 def _nearest_snap_date_on_or_before(con, cutoff: str) -> str | None:
     row = con.execute(
         "SELECT snap_date FROM universe_snapshot WHERE snap_date<=? "
@@ -285,6 +338,63 @@ def _aey_risk_decomposition_pct(aey_base: float | None, rating: str | None) -> d
     }
 
 
+def ofz_bundle(con, scenarios: dict) -> dict:
+    """Real OFZ data (ofz_pipeline.py, `hybond ofz`) + carry/roll-down
+    projections under the same base/stress/bull CBR scenarios used
+    everywhere else in this dashboard -- not a separate/hardcoded scenario
+    set. `scenarios` is the SAME dict main() already computed once via
+    portfolio.get_rate_scenarios(con), passed in rather than recomputed."""
+    from hybond import ofz_pipeline
+
+    db.init_ofz(con)
+    snap_date = db.latest_ofz_snap_date(con)
+    if not snap_date:
+        return {"snap_date": None, "bonds": [], "is_fallback": scenarios.get("is_fallback"),
+                "rate_scenarios": {}}
+
+    rows = db.ofz_snapshot_rows(con, snap_date)
+    projections_by_secid = {
+        p["secid"]: p["projections"]
+        for p in ofz_pipeline.carry_rolldown_for_snapshot(con, snap_date, scenarios)
+    }
+
+    bonds = []
+    for r in rows:
+        bonds.append({
+            "secid": r["secid"], "short_name": r["short_name"], "isin": r["isin"],
+            "board_id": r["board_id"], "instrument_type": r["instrument_type"],
+            "mat_date": r["mat_date"], "coupon_pct": r["coupon_pct"],
+            "last_pct": r["last_pct"], "dirty_price_pct": r["dirty_price_pct"],
+            "ytm_pct": round(r["ytm"] * 100, 2) if r["ytm"] is not None else None,
+            "mod_dur": round(r["mod_dur"], 3) if r["mod_dur"] is not None else None,
+            "convexity": round(r["convexity"], 3) if r["convexity"] is not None else None,
+            "tenor_yrs": r["tenor_yrs"], "volume": r["volume"], "num_trades": r["num_trades"],
+            "yield_source": r["yield_source"],
+            "carry_rolldown": projections_by_secid.get(r["secid"]),  # None if excluded (near-maturity/no coupon)
+        })
+
+    return {
+        "snap_date": snap_date,
+        "bonds": bonds,
+        "rate_scenarios": {
+            "base": scenarios.get("base"), "stress": scenarios.get("stress"),
+            "bull": scenarios.get("bull"), "source_meeting": scenarios.get("source_date"),
+            # Provenance fields for the OFZ tab's Base/Stress/Bull labels
+            # (Task 5): the exact meeting date + forecast ranges the base/
+            # stress/bull deltas above were derived from, straight from the
+            # same get_rate_scenarios() dict -- no second copy, no separate
+            # lookup that could drift from it.
+            "current_rate": scenarios.get("current_rate"),
+            "cbr_2026": scenarios.get("cbr_2026"),
+            "cbr_2027": scenarios.get("cbr_2027"),
+            "cbr_2029": scenarios.get("cbr_2029"),
+        },
+        "is_fallback": scenarios.get("is_fallback"),
+        "min_tenor_for_projection_years": ofz_pipeline.MIN_TENOR_FOR_PROJECTION_YEARS,
+        "graduated_shift": ofz_pipeline.ofz_carry.GRADUATED_SHIFT,
+    }
+
+
 def universe_snapshot_bundle(con) -> dict:
     """Three time-buckets of universe data for the market map's time toggle
     (Сейчас / -1 нед. / -1 мес.), plus the derived curve/fair-value overlays.
@@ -347,6 +457,43 @@ def universe_snapshot_bundle(con) -> dict:
 
     return {**buckets, "rf_curve": rf_curve,
             "fair_value_bp_by_tier": fair_value_bp_by_tier}
+
+
+def known_issuers_meta(con) -> dict[str, dict]:
+    """Every issuer_id already in the `issuer` table -- NOT just the current
+    watchlist.json subset (DATA.issuers). The issuer table also holds
+    held-back candidates that were investigated and explicitly NOT promoted
+    (e.g. Альфа Дон Транс, ЛКХ, ПЛАЗА-Телеком, СМАК -- see
+    project_watchlist_flags memory) -- those must not be re-surfaced as
+    "new" scan candidates just because they're absent from watchlist.json.
+
+    Also carries current rating (value + rated_on) and filing count/latest
+    published date per issuer, so the dashboard's company-scan panel can
+    detect "hybond's own data changed since you last scanned this issuer"
+    (Part B: new rating captured, new AZIPI filing appeared) without a
+    second export round-trip -- a plain snapshot comparison against
+    whatever was true at scan time (stored client-side), not a live diff.
+    """
+    rows = con.execute("SELECT issuer_id, name FROM issuer").fetchall()
+    filing_stats = {
+        r["issuer_id"]: {"count": r["cnt"], "latest_published": r["latest"]}
+        for r in con.execute(
+            "SELECT issuer_id, COUNT(*) cnt, MAX(published) latest "
+            "FROM filing GROUP BY issuer_id")
+    }
+    out = {}
+    for r in rows:
+        rating_row = db.current_rating_row(con, r["issuer_id"])
+        fstat = filing_stats.get(r["issuer_id"], {"count": 0, "latest_published": None})
+        out[r["issuer_id"]] = {
+            "name": r["name"],
+            "rating": rating_row["rating"] if rating_row else None,
+            "rated_on": rating_row["rated_on"] if rating_row else None,
+            "rating_needs_verification": bool(rating_row["needs_verification"]) if rating_row else None,
+            "filing_count": fstat["count"],
+            "filing_latest_published": fstat["latest_published"],
+        }
+    return out
 
 
 def data_notes(con, watchlist: dict) -> dict:
@@ -569,6 +716,46 @@ def cbr_export(con, scenarios: dict) -> dict:
     }
 
 
+def company_scan_history_export(con) -> list[dict]:
+    """Latest company_scan_result row per ИНН (src/hybond/company_scan_pipeline.py,
+    `hybond scan-company`/`scan-candidates`) -- lets the dashboard's
+    "Проверить компанию" panel render a past scan straight from the DB, no
+    fresh API call needed. Free-text queries that never resolved to an ИНН
+    (see company_scan_pipeline.resolve_inn) aren't trackable this way and
+    are excluded here, same limitation as the browser's own localStorage
+    history -- they simply don't appear in this list.
+
+    json_addendum is stored as a TEXT blob in the DB (see
+    db.insert_company_scan_result) -- parsed back into a real object here so
+    the dashboard can feed it straight into renderNarrativeCardHtml() without
+    a second JSON.parse of a JSON string inside JSON."""
+    db.init_company_scan(con)
+    latest = db.latest_company_scan_by_inn(con)
+    out = []
+    for inn, row in sorted(latest.items(), key=lambda kv: kv[1].get("scanned_at") or "", reverse=True):
+        addendum = row.get("json_addendum")
+        card = None
+        if addendum:
+            try:
+                card = json.loads(addendum)
+            except json.JSONDecodeError:
+                card = None
+        out.append({
+            "id": row["id"], "inn": inn, "query": row["query"],
+            "issuer_name": row.get("issuer_name") or row["query"],
+            "scanned_at": row["scanned_at"], "model": row.get("model"),
+            "issuer_quality": row.get("issuer_quality"),
+            "bond_suitability": row.get("bond_suitability"),
+            "confidence": row.get("confidence"),
+            "data_coverage_pct": row.get("data_coverage_pct"),
+            "raw_markdown": row.get("raw_markdown"),
+            "card": card,
+            "input_tokens": row.get("input_tokens"), "output_tokens": row.get("output_tokens"),
+            "cache_read_tokens": row.get("cache_read_tokens"), "web_searches": row.get("web_searches"),
+        })
+    return out
+
+
 def main() -> None:
     watchlist = json.loads((ROOT / "watchlist.json").read_text(encoding="utf-8"))
     watchlist = {k: v for k, v in watchlist.items() if not k.startswith("_")}
@@ -582,6 +769,7 @@ def main() -> None:
     scenarios = portfolio.get_rate_scenarios(con)  # single computation, shared below
     universe = universe_for_dashboard(con, scenarios)
     market_map = universe_snapshot_bundle(con)
+    ofz = ofz_bundle(con, scenarios)
     cbr = cbr_export(con, scenarios)
     fhist = flag_history(con)
     shist = spread_history_by_secid(con)
@@ -606,6 +794,7 @@ def main() -> None:
             }
         rating_row = db.current_rating_row(con, issuer_id)
         rating_needs_verification = bool(rating_row["needs_verification"]) if rating_row else False
+        ratings_all = db.all_current_ratings(con, issuer_id)
         rating_detail = None
         if rating_row:
             rated_on = rating_row["rated_on"]
@@ -622,8 +811,17 @@ def main() -> None:
             }
 
         bonds = fl.get("bonds", [])
+        wall_by_secid = report.get("maturity_wall_by_secid", {})
         for b in bonds:
             b["spread_history"] = shist.get(b["secid"], [])
+            # Real per-bond monthly coupon/principal buckets (pipeline.py,
+            # same build_wall() the watchlist-wide maturity wall uses, just
+            # scoped to this one secid's own cashflows) -- feeds the
+            # Портфель tab's weight-scaled combined wall. Empty for floaters
+            # (no fixed schedule, same gap the watchlist-wide wall already
+            # has) or if `hybond run` hasn't been re-run since this field
+            # was added.
+            b["maturity_wall"] = wall_by_secid.get(b["secid"], [])
             aey = aey_by_secid.get(b["secid"])
             b["mispricing_bp"] = round(aey["mispricing_bp"], 0) if aey and aey["mispricing_bp"] is not None else None
             b["mispricing_trend"] = mis_delta_by_secid.get(
@@ -636,6 +834,14 @@ def main() -> None:
             b["aey_risk_decomposition"] = _aey_risk_decomposition_pct(
                 aey["aey_base"] if aey else None, meta.get("rating"))
             b["expected_return"] = expected_returns.get(b["secid"], {})
+            # Registered-vs-placed volume (Task 3 follow-up): placement_pct/
+            # placement_partial_since are raw facts from the bond table
+            # (pipeline.py/db.upsert_bond); is_placement_stalled is the same
+            # interpretive-flag-computed-at-export-time pattern rating_detail's
+            # is_stale already uses (db.rating_is_stale above), not baked into
+            # the factlist itself.
+            b["is_placement_stalled"] = db.placement_is_stalled(
+                b.get("placement_pct"), b.get("placement_partial_since"))
 
         issuers.append({
             "issuer_id": issuer_id,
@@ -645,6 +851,8 @@ def main() -> None:
             "rating": meta.get("rating"),
             "rating_needs_verification": rating_needs_verification,
             "rating_detail": rating_detail,
+            "ratings_all": ratings_all,
+            "data_conflicts": data_conflicts_for_issuer(con, issuer_id, ratings_all),
             "note": meta.get("note"),
             "edisclosure_id": meta.get("edisclosure_id"),
             "snap_date": fl.get("snap_date"),
@@ -661,6 +869,8 @@ def main() -> None:
             "filing_counts": fcounts.get(issuer_id, {"total": 0, "classified": 0}),
         })
     notes = data_notes(con, watchlist)
+    known_issuers = known_issuers_meta(con)
+    company_scan_history = company_scan_history_export(con)
     con.close()
 
     out = {
@@ -679,6 +889,7 @@ def main() -> None:
         "universe_month_ago": market_map["universe_month_ago"],
         "rf_curve": market_map["rf_curve"],
         "fair_value_bp_by_tier": market_map["fair_value_bp_by_tier"],
+        "ofz": ofz,
         # Single source of truth for the dashboard's "Топ-кандидаты" toggle
         # (Портфельный рейтинг table) -- sourced directly from promote.py's
         # own defaults and default_probs' own rating scale, not hand-copied
@@ -693,8 +904,15 @@ def main() -> None:
             "min_volume": VDO_MIN_VOLUME,
         },
         "rating_order": RATING_ORDER,
+        "placement_thresholds": {
+            "stall_weeks": db.PLACEMENT_STALL_WEEKS,
+            "stall_threshold_pct": db.PLACEMENT_STALL_THRESHOLD_PCT,
+            "full_threshold_pct": db.PLACEMENT_FULL_THRESHOLD_PCT,
+        },
         "cbr": cbr,
         "data_notes": notes,
+        "known_issuers": known_issuers,
+        "company_scan_history": company_scan_history,
     }
     OUT_PATH.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Wrote {OUT_PATH} ({len(issuers)} issuers)")

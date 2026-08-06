@@ -46,13 +46,23 @@ def run(watchlist_path: Path, snap_date: date | None = None) -> dict:
 
     screen_rows = []
     flows_by_issuer: dict[str, list] = {}
+    # Per-bond mirror of flows_by_issuer, same (when, amount, kind) tuples --
+    # feeds maturity_wall_by_secid below (Task: portfolio-level coupon/
+    # maturity-wall aggregate in the dashboard's Портфель tab, which needs
+    # each SELECTED bond's own real cashflow timing, not just the
+    # per-issuer aggregate the existing watchlist-wide wall uses -- an
+    # issuer with 2 series in the portfolio would otherwise double up or
+    # misattribute cashflows if only one series is actually held). Same
+    # floater exclusion as flows_by_issuer (floaters never populate `flows`
+    # at all, see the `else` branch below -- not a new gap this introduces).
+    flows_by_secid: dict[str, list] = {}
 
     for issuer_id, v in wl.items():
         db.upsert_issuer(con, issuer_id, v["name"], v.get("sector"))
         for secid in v["secids"]:
             m = master.get(secid)
             q = md.get(secid)
-            if not m or not q or q.get("LAST") in (None, 0):
+            if not m:
                 continue
             face = float(m.get("FACEVALUE") or 1000.0)
             mat = sources.parse_date(m.get("MATDATE"))
@@ -61,6 +71,24 @@ def run(watchlist_path: Path, snap_date: date | None = None) -> dict:
             # instead. Only ~25-30 calls here (watchlist size), not viable
             # at universe scale (~1000 bonds), see fetch_security_qualified.
             qualified = sources.fetch_security_qualified(secid)
+            # Registered-vs-placed volume: same fetch_bond_master() call, two
+            # more columns (see sources.py) -- no new endpoint. issue_size is
+            # the registered size, issue_size_placed how much has actually
+            # sold so far; a bond still in book-building sits below 100%.
+            issue_size = m.get("ISSUESIZE")
+            issue_size_placed = m.get("ISSUESIZEPLACED")
+            placement_pct = (round(issue_size_placed / issue_size * 100, 2)
+                             if issue_size not in (None, 0) and issue_size_placed is not None
+                             else None)
+            # Descriptor + placement data comes from `m` (bond master) alone
+            # and is upserted regardless of whether `q` (marketdata/price)
+            # is available this run -- deliberately NOT folded into the
+            # price guard below. A bond early in book-building can have
+            # ISSUESIZEPLACED without a single trade yet (confirmed live:
+            # МоторТ2Р01 at ~12% placed had LAST=None the same day its
+            # placement data was already populated) -- exactly the "thinner
+            # initial liquidity" case this field exists to flag, so it must
+            # not be skipped for the same reason a price is missing.
             db.upsert_bond(
                 con, secid=secid, isin=m.get("ISIN"), issuer_id=issuer_id,
                 short_name=m.get("SHORTNAME"), mat_date=mat.isoformat() if mat else None,
@@ -68,7 +96,13 @@ def run(watchlist_path: Path, snap_date: date | None = None) -> dict:
                 coupon_pct=m.get("COUPONPERCENT"), list_level=m.get("LISTLEVEL"),
                 qualified=1 if qualified else 0,
                 updated=snap_date.isoformat(),
+                issue_size=issue_size, issue_size_placed=issue_size_placed,
+                placement_pct=placement_pct,
             )
+
+            if not q or q.get("LAST") in (None, 0):
+                continue
+
             db.insert_price_snapshot(
                 con, secid=secid, snap_date=snap_date.isoformat(),
                 last_pct=q.get("LAST"), yield_moex=q.get("YIELD"),
@@ -109,6 +143,9 @@ def run(watchlist_path: Path, snap_date: date | None = None) -> dict:
                 if not flows:
                     continue
                 flows_by_issuer.setdefault(issuer_id, []).extend(
+                    (f.when, f.amount, f.kind) for f in flows
+                )
+                flows_by_secid.setdefault(secid, []).extend(
                     (f.when, f.amount, f.kind) for f in flows
                 )
                 pairs = cashflows.to_pairs(flows, snap_date)
@@ -175,6 +212,18 @@ def run(watchlist_path: Path, snap_date: date | None = None) -> dict:
     screen_rows.sort(key=lambda r: r["g_spread_bp"], reverse=True)
     wall = build_wall(flows_by_issuer, today=snap_date)
     redemptions = redemptions_by_issuer(flows_by_issuer, today=snap_date)
+    # Per-bond wall: build_wall() takes any dict[key, flows] and buckets by
+    # month regardless of what the key means -- calling it once per secid
+    # with a single-entry dict reuses the exact same bucketing function,
+    # just scoped to one bond's own real cashflows instead of a whole
+    # issuer's. Feeds the Портфель tab's weight-scaled combined wall
+    # (dashboard/template.html), which needs real per-bond timing to be
+    # meaningful for a specific selected basket, not the issuer aggregate.
+    wall_by_secid = {
+        secid: [{"month": b.month, "principal": round(b.principal, 0),
+                 "coupon": round(b.coupon, 0)} for b in build_wall({secid: flows}, today=snap_date)]
+        for secid, flows in flows_by_secid.items()
+    }
 
     return {
         "snap_date": snap_date.isoformat(),
@@ -188,4 +237,5 @@ def run(watchlist_path: Path, snap_date: date | None = None) -> dict:
             k: [(d.isoformat(), round(a, 0)) for d, a in v]
             for k, v in redemptions.items()
         },
+        "maturity_wall_by_secid": wall_by_secid,
     }

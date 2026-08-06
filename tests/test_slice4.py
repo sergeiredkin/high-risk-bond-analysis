@@ -99,6 +99,9 @@ def test_pillars_hand_checked():
     assert abs(pil.short_term_debt_share - 1/3) < 1e-9
     # net margin = 90,000 / 3,000,000 = 0.03
     assert abs(pil.net_margin - 0.03) < 1e-9
+    # debt coverage stress = ST debt / (cash + operating_cf)
+    #   = 400,000 / (150,000 + 210,000) = 400,000 / 360,000 = 1.1111
+    assert abs(pil.debt_coverage_stress - 400000 / 360000) < 1e-9
 
 
 def test_pillar_scores_in_range():
@@ -111,6 +114,48 @@ def test_pillar_scores_in_range():
     assert pil.score_leverage == 60
     # current ratio 1.5 -> liquidity band (>=1.5 -> 80)
     assert pil.score_liquidity == 80
+    # refinancing = average of two component scores:
+    #   ST debt share 0.3333 -> structure band (<=0.35 -> 80)
+    #   debt coverage stress 1.1111 -> stress band (0.8-1.2 "monitor" -> 70)
+    #   (80 + 70) / 2 = 75
+    assert pil.score_refinancing == 75
+
+
+def test_refinancing_score_blends_structure_and_stress_components():
+    """Isolates the refinancing blend from the shared fixture above --
+    directly exercises the averaging + graceful-degradation behaviour."""
+    # comfortable stress ratio (0.5) but poor structure (ST share 0.9) ->
+    # structure band 20, stress band 100 -> average 60
+    balance = {1410: 100, 1510: 900, 1250: 1800, 1240: 0}
+    pil = P.compute_pillars(balance, {}, {})
+    assert abs(pil.short_term_debt_share - 0.9) < 1e-9
+    assert abs(pil.debt_coverage_stress - 900 / 1800) < 1e-9
+    assert pil.score_refinancing == 60  # (20 + 100) / 2
+
+    # only structure computable (no cash/operating_cf at all) -> falls back
+    # to the structure score alone, not None
+    balance_no_cash = {1410: 100, 1510: 900}
+    pil2 = P.compute_pillars(balance_no_cash, {}, {})
+    assert pil2.debt_coverage_stress is None
+    assert pil2.score_refinancing == 20  # ST share 0.9 -> structure band 20, stress unavailable
+
+
+def test_negative_resource_pool_scores_worst_not_best():
+    """A deeply negative operating cash flow that exceeds cash makes the raw
+    ST-debt / (cash+OCF) ratio NEGATIVE -- naive "lower is better" banding
+    would misread that as the safest tier. Must be forced to the worst tier
+    instead. Real case this caught: several watchlist issuers (e.g. Агро-
+    Фрегат, stress ratio -22.98) had negative operating cash flow deep
+    enough to flip the sign, and without this guard would have scored a
+    perfect 100 on the stress component."""
+    balance = {1410: 0, 1510: 500, 1250: 100, 1240: 0}
+    cf = {4100: -400}  # operating cash flow deeply negative: pool = 100 + (-400) = -300
+    pil = P.compute_pillars(balance, {}, cf)
+    assert pil.debt_coverage_stress == 500 / -300  # raw ratio IS negative -- kept, not hidden
+    # structure: ST share = 500/500 = 1.0 -> worst structure tier (20)
+    # stress: forced worst tier (15) due to negative pool
+    # average = (20 + 15) / 2 = 17.5 -> rounds to 18 (banker's rounding: round(17.5)==18 in Python 3)
+    assert pil.score_refinancing in (17, 18)  # avoid relying on round-half-to-even edge case
 
 
 def test_missing_codes_yield_none_not_zero():

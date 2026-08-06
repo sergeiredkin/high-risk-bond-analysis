@@ -96,7 +96,8 @@ def test_factlist_shape(tmp_path):
     db.upsert_bond(con, secid="S1", isin="RU000S1", issuer_id="I1",
                    short_name="Тест1", mat_date="2028-07-25", face_value=1000.0,
                    face_unit="SUR", coupon_pct=18.0, list_level=3, qualified=1,
-                   updated="2026-07-25")
+                   updated="2026-07-25", issue_size=300000, issue_size_placed=35325,
+                   placement_pct=11.78)
     # two days of spread so a delta exists
     db.insert_spread_snapshot(con, secid="S1", snap_date="2026-07-24", ytm=0.19,
                               tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=500.0,
@@ -118,6 +119,8 @@ def test_factlist_shape(tmp_path):
     b = j["bonds"][0]
     assert b["g_spread_bp"] == 600.0
     assert b["g_spread_delta_bp"] == 100.0     # 600 - 500
+    assert b["placement_pct"] == 11.78
+    assert b["placement_partial_since"] == "2026-07-25"
     # reserved placeholders present and stable for future slices
     assert j["six_pillars"] == {}
     assert j["events_since_last"] == []

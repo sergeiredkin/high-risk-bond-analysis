@@ -217,6 +217,53 @@
   .dual-slider-fill { position: absolute; top: 11px; height: 4px; background: var(--series-1); border-radius: 2px; }
   #portfolioRankTable tbody tr.bond-row { cursor: pointer; }
   #portfolioRankTable tbody tr.bond-row:hover { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
+  .pf-pick-table input[type="checkbox"] { cursor: pointer; accent-color: var(--series-1); width: 15px; height: 15px; }
+  .pf-pick-table tbody tr.pf-picked { background: color-mix(in srgb, var(--series-1) 8%, transparent); }
+  .pf-pick-table tbody tr.pf-capped td { opacity: 0.4; }
+  .pf-weight-input {
+    width: 64px; padding: 3px 6px; border-radius: 5px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); font-variant-numeric: tabular-nums; text-align: right;
+  }
+  .pf-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 8px 0 14px; }
+  .pf-toolbar button {
+    padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-primary); cursor: pointer; font-size: 12.5px; font-weight: 600;
+  }
+  .pf-toolbar button:hover { border-color: var(--series-1); }
+  .pf-weight-sum { font-size: 12.5px; color: var(--text-secondary); }
+  .pf-weight-sum b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .pf-weight-sum.pf-warn b { color: var(--warning); }
+  .pf-concentration-row { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+  .pf-concentration-row:last-child { border-bottom: none; }
+  .pf-concentration-main { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .pf-concentration-bar { flex: 1; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin: 0 8px; align-self: center; }
+  .pf-concentration-fill { height: 100%; background: var(--series-1); }
+  .pf-concentration-fill.pf-sector-warn { background: var(--warning); }
+  .pf-concentration-fill.pf-sector-critical { background: var(--critical); }
+  .pf-sector-badge { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-left: 6px; white-space: nowrap; }
+  .pf-sector-badge.pf-sector-warn { color: var(--warning); border: 1px solid var(--warning); }
+  .pf-sector-badge.pf-sector-critical { color: var(--critical); border: 1px solid var(--critical); background: color-mix(in srgb, var(--critical) 10%, transparent); }
+  .pf-sector-note { color: var(--text-muted); font-size: 11px; }
+  .pf-issuer-count { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+  .stat-tile[title] { cursor: help; }
+  .pf-cluster-summary { border-left: 3px solid var(--critical); padding: 8px 10px; margin: 8px 0 4px; font-size: 12.5px;
+    background: color-mix(in srgb, var(--critical) 8%, transparent); border-radius: 4px; }
+  .pf-cluster-summary.pf-clean { border-left-color: var(--good); background: color-mix(in srgb, var(--good) 8%, transparent); }
+  .pf-cluster-detail { color: var(--text-muted); font-size: 11.5px; margin-top: 2px; }
+  .pf-related-note {
+    width: 100%; min-height: 54px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); font-size: 12.5px; font-family: inherit; resize: vertical;
+  }
+  .pf-related-warn { border-left: 3px solid var(--critical); padding: 8px 10px; margin-top: 8px; font-size: 12.5px; background: color-mix(in srgb, var(--critical) 8%, transparent); border-radius: 4px; }
+  .pf-empty { color: var(--text-muted); font-size: 13px; padding: 10px 0; }
+  .pf-scen-table td.pf-scen-best { color: var(--good); font-weight: 600; }
+  .pf-scen-table td.pf-scen-worst { color: var(--critical); font-weight: 600; }
+  .pf-pick-table tbody tr.pf-row { cursor: pointer; }
+  .pf-pick-table tbody tr.pf-row:hover { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
+  .pf-gate-ok { color: var(--good); font-weight: 600; }
+  .pf-gate-fail { color: var(--critical); font-weight: 600; cursor: help; }
+  .pf-rationale-block { padding: 10px 14px; font-size: 12.5px; line-height: 1.6; }
+  .pf-rationale-block b { color: var(--text-primary); }
   .bond-detail-block { margin-bottom: 16px; }
   .bond-detail-block:last-child { margin-bottom: 0; }
   .bond-detail-block > b { display: block; margin-bottom: 6px; font-size: 13px; }
@@ -227,6 +274,87 @@
     background: var(--surface-1); color: var(--text-secondary); cursor: pointer; margin: 0 0 8px;
   }
   .bond-not-watchlist { color: var(--text-muted); font-size: 13px; }
+
+  /* ---- Part D+: narrative card (WUSH-adapted) ---- */
+  .narrative-trigger-row { margin: 4px 0 4px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .narrative-btn {
+    font-size: 12px; padding: 6px 14px; border-radius: 14px; border: 1px solid var(--series-1);
+    background: color-mix(in srgb, var(--series-1) 10%, transparent); color: var(--series-1);
+    cursor: pointer; font-weight: 600;
+  }
+  .narrative-btn:hover { background: color-mix(in srgb, var(--series-1) 18%, transparent); }
+  .narrative-btn:disabled { opacity: .6; cursor: default; }
+  .narrative-key-btn {
+    font-size: 11px; padding: 4px 10px; border-radius: 12px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-muted); cursor: pointer;
+  }
+  .narrative-status { font-size: 12px; color: var(--text-muted); }
+  .narrative-status.err { color: var(--critical); }
+  .narrative-cost { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .nc-wrap { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 14px; }
+  .nc-hero {
+    background: color-mix(in srgb, var(--series-1) 5%, var(--surface-1));
+    border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px;
+  }
+  .nc-hero-title { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+  .nc-hero-sub { font-size: 11.5px; color: var(--text-muted); margin-bottom: 12px; }
+  .nc-verdict-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+  .nc-verdict-card { background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .nc-verdict-card .nc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); margin-bottom: 3px; }
+  .nc-verdict-card .nc-value { font-size: 15px; font-weight: 700; }
+  .nc-why {
+    margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--warning);
+    background: color-mix(in srgb, var(--warning) 10%, transparent); font-size: 12.5px; line-height: 1.55;
+  }
+  .nc-traffic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .nc-traffic-item { display: flex; gap: 8px; align-items: flex-start; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .nc-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+  .nc-dot.green { background: var(--good); } .nc-dot.yellow { background: var(--warning); } .nc-dot.red { background: var(--critical); }
+  .nc-traffic-item .nc-t-name { font-size: 12px; font-weight: 600; }
+  .nc-traffic-item .nc-t-note { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
+  .nc-section { margin-bottom: 14px; }
+  .nc-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; }
+  .nc-flag-list { list-style: none; padding: 0; margin: 0; }
+  .nc-flag-list li { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .nc-flag-list li:last-child { border-bottom: none; }
+  .nc-flag-title { font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 2px; }
+  .nc-flag-desc { color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+  .nc-bottom-line { padding: 10px 12px; border-left: 3px solid var(--series-1); background: color-mix(in srgb, var(--series-1) 8%, transparent); font-size: 12.5px; line-height: 1.5; }
+  .nc-pathway ol { padding-left: 18px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+  .nc-conflict-box { padding: 10px 12px; border-left: 3px solid var(--serious); background: color-mix(in srgb, var(--serious) 10%, transparent); font-size: 12.5px; line-height: 1.55; margin-bottom: 8px; }
+  .nc-raw-toggle { font-size: 11px; padding: 3px 9px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary); cursor: pointer; margin-bottom: 8px; }
+  .nc-raw-md { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-secondary); background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 12px; max-height: 480px; overflow: auto; }
+
+  /* ---- Task 2: company-scan (external web research, not hybond DB) ---- */
+  .cs-panel { border: 1px solid var(--warning); border-radius: 10px; padding: 16px 18px;
+    margin-bottom: 24px; background: color-mix(in srgb, var(--warning) 6%, var(--surface-1)); }
+  .cs-panel-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+  .cs-panel-icon { font-size: 18px; line-height: 1.4; }
+  .cs-panel h3 { margin: 0; font-size: 14.5px; }
+  .cs-panel-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 6px; }
+  .cs-input { flex: 1; min-width: 240px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); font-size: 13px; }
+  .nc-external-badge { display: flex; gap: 8px; align-items: center; padding: 8px 12px; margin-bottom: 12px;
+    border-radius: 8px; border: 1px solid var(--warning); background: color-mix(in srgb, var(--warning) 16%, var(--surface-1));
+    font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+  .cs-subhead { font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+    color: var(--text-secondary); margin-top: 14px; }
+  .cs-subhead-count { font-weight: 600; color: var(--text-muted); text-transform: none; letter-spacing: 0; }
+  .cs-chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 6px; }
+  .cs-chip { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-1); font-size: 12.5px; }
+  .cs-chip.cs-chip-rescan { border-color: var(--critical); }
+  .cs-chip-name { font-weight: 600; }
+  .cs-chip-meta { color: var(--text-muted); font-size: 11.5px; }
+  .cs-chip-btn { padding: 4px 9px; border-radius: 6px; border: 1px solid var(--series-1); background: transparent;
+    color: var(--series-1); cursor: pointer; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .cs-chip-btn:hover { background: color-mix(in srgb, var(--series-1) 12%, transparent); }
+  .cs-chip-empty { color: var(--text-muted); font-size: 12.5px; padding: 4px 0; }
+  .cs-manual-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  .cs-manual-toggle-btn { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent;
+    color: var(--text-secondary); cursor: pointer; font-size: 12px; }
+  .cs-manual-toggle-btn:hover { border-color: var(--series-1); color: var(--series-1); }
+
   footer { margin-top: 50px; color: var(--text-muted); font-size: 11.5px; text-align: center; }
   .sort-arrow { opacity: .5; font-size: 9px; margin-left: 3px; }
   .flag-chip { display:inline-block; background: color-mix(in srgb, var(--critical) 12%, var(--surface-1));
@@ -281,9 +409,60 @@
   .uni-btn:hover { border-color: var(--series-1); color: var(--series-1); }
   .uni-star { color: var(--warning); }
   .uni-caveat { font-size: 11px; color: var(--text-muted); margin: 6px 0 0; }
-  #universeTable th { cursor: pointer; white-space: nowrap; }
-  #universeTable td { white-space: nowrap; font-size: 12.5px; }
+  #marketTable th { cursor: pointer; white-space: nowrap; }
+  #marketTable td { white-space: nowrap; font-size: 12.5px; }
   .uni-empty { padding: 30px; text-align: center; color: var(--text-muted); }
+
+  /* --- Рынок tab: time/view toggles, market-map (Task 3 merge) --- */
+  .time-toggle, .view-toggle { display: flex; gap: 4px; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .time-btn, .view-btn { border: none; background: transparent; color: var(--text-secondary);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12.5px; }
+  .time-btn.active, .view-btn.active { background: var(--series-1); color: #fff; }
+  /* User-defined OFZ scenario: distinct color from base/stress/bull (which
+     use the standard active-blue) even when active -- Task 5, must not be
+     confusable with a real CBR-sourced scenario at a glance. */
+  .time-btn.custom-scen { color: var(--series-2); border: 1px dashed var(--series-2); }
+  .time-btn.custom-scen.active { background: var(--series-2); color: #fff; border-style: solid; }
+  .time-note { font-size: 11.5px; color: var(--text-muted); margin: -4px 0 12px; }
+  .mm-controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
+  .mm-ctrl-group label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+  .mm-ctrl-group select { width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); font-size: 12.5px; }
+  .mm-filter-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 14px; font-size: 12.5px; }
+  .mm-filter-row label.chk { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); white-space: nowrap; }
+  .mm-signal-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .mm-signal-card { border-radius: 10px; padding: 10px 14px; border: 1px solid var(--border); }
+  .mm-signal-card .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .mm-signal-card .l { font-size: 11.5px; margin-top: 1px; }
+  .mm-signal-up { background: color-mix(in srgb, var(--good) 14%, var(--surface-1)); }
+  .mm-signal-up .n, .mm-signal-up .l { color: var(--good); }
+  .mm-signal-flat { background: color-mix(in srgb, var(--warning) 14%, var(--surface-1)); }
+  .mm-signal-flat .n, .mm-signal-flat .l { color: #a67400; }
+  .mm-signal-down { background: color-mix(in srgb, var(--critical) 12%, var(--surface-1)); }
+  .mm-signal-down .n, .mm-signal-down .l { color: var(--critical); }
+  .mm-signal-none { background: var(--surface-1); }
+  .mm-signal-none .n { color: var(--text-secondary); }
+  .mm-signal-none .l { color: var(--text-muted); }
+  .mm-chart-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; position: relative; }
+  #mmChart { width: 100%; height: 520px; display: block; cursor: crosshair; }
+  .mm-legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 11.5px; color: var(--text-secondary); }
+  .mm-legend-item { display: flex; align-items: center; gap: 5px; }
+  .mm-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .mm-stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+  .mm-stat-tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+  .mm-stat-tile .value { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .mm-stat-tile .label { color: var(--text-secondary); font-size: 11.5px; margin-top: 1px; }
+  .tooltip .muted { opacity: 0.7; font-size: 11px; }
+  .pd-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .pd-row .pd-label { width: 92px; font-size: 10.5px; opacity: 0.85; }
+  .pd-bar-track { flex: 1; height: 6px; background: rgba(255,255,255,0.18); border-radius: 4px; overflow: hidden; }
+  .pd-bar-fill { height: 100%; border-radius: 4px; display: inline-block; }
+  .pd-row .pd-val { width: 42px; text-align: right; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  .signal-badge { display: inline-block; margin-top: 8px; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; color: #fff; }
 
   /* --- CBR tab --- */
   .cbr-statebar { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center;
@@ -348,12 +527,54 @@
 
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="watchlist">Вотчлист</button>
-    <button class="tab-btn" data-tab="universe">Универсум</button>
-    <button class="tab-btn" data-tab="marketmap">Карта рынка</button>
+    <button class="tab-btn" data-tab="market">Рынок</button>
     <button class="tab-btn" data-tab="cbr">ЦБ РФ</button>
+    <button class="tab-btn" data-tab="portfolio">Портфель</button>
   </div>
 
   <div class="tab-panel active" id="tab-watchlist">
+  <section id="sec-company-scan">
+    <div class="cs-panel">
+      <div class="cs-panel-head">
+        <span class="cs-panel-icon">🔍</span>
+        <div>
+          <h3>Проверить компанию (не в hybond)</h3>
+          <p class="section-note" style="margin:2px 0 0">Для эмитента, которого ещё нет в базе hybond — живой веб-поиск (агентства, MOEX, суды) по оригинальному промпту <code>bond_screening_prompt_v3.5.1.md</code>, не по данным БД. Результат помечен отдельно от карточек, построенных на данных hybond, и не сохраняется в базу.</p>
+        </div>
+      </div>
+      <div class="cs-subhead">Кандидаты на проверку (авто, из ВДО-скрининга) <span id="csCandidatesCount" class="cs-subhead-count"></span></div>
+      <p class="section-note" style="margin:2px 0 8px">Не в вотчлисте и не в базе hybond, проходит ВДО-скрининг (спред/ликвидность), в разумном окне до погашения, и без рейтинга / с рейтингом, требующим проверки. Только выявление — клик по «Проверить» запускает живой веб-поиск вручную, никаких автоматических запросов к API.</p>
+      <div id="csCandidatesList" class="cs-chip-list"></div>
+
+      <div id="csRescanBlock" style="display:none">
+        <div class="cs-subhead">Требуют повторной проверки <span id="csRescanCount" class="cs-subhead-count"></span></div>
+        <p class="section-note" style="margin:2px 0 8px">Уже проверялись раньше, но данные hybond по эмитенту с тех пор изменились (новый рейтинг НКР/НРА/Эксперт РА, новая раскрытая информация на AZIPI) — старый результат скана мог устареть.</p>
+        <div id="csRescanList" class="cs-chip-list"></div>
+      </div>
+
+      <div class="cs-manual-row">
+        <span class="section-note" style="margin:0">Компании нет в списке выше?</span>
+        <button type="button" class="cs-manual-toggle-btn" id="csManualToggle">Указать вручную</button>
+      </div>
+      <div class="cs-panel-row" id="csManualRow" style="display:none">
+        <input type="text" id="companyScanInput" class="cs-input" placeholder="Название компании или ИНН, напр. «Альфа Дон Транс» или ИНН">
+        <button type="button" class="narrative-btn" id="companyScanBtn">Проверить компанию</button>
+        <button type="button" class="narrative-key-btn" id="companyScanKeyBtn">API-ключ Anthropic</button>
+      </div>
+      <span class="narrative-status" id="companyScanStatus"></span>
+      <div id="companyScanResult"></div>
+
+      <!-- Sohranённые проверки: results of `hybond scan-company`/
+           `scan-candidates` (src/hybond/company_scan_pipeline.py), read from
+           company_scan_result via DATA.company_scan_history -- rendered from
+           stored markdown/JSON, no API call and no key needed. Distinct from
+           the live browser scan above, which does NOT persist to the DB. -->
+      <div class="cs-subhead" style="margin-top:18px">Сохранённые проверки (из БД, hybond scan-company/scan-candidates) <span id="csHistoryCount" class="cs-subhead-count"></span></div>
+      <p class="section-note" style="margin:2px 0 8px">Результаты CLI-скана (терминал, не браузер) — карточка рисуется из уже сохранённых markdown/JSON в <code>company_scan_result</code>, без нового запроса к Anthropic. Один скан на эмитента (последний), история — <code>hybond scan-company &lt;ИНН&gt;</code> повторно или прямой запрос к БД.</p>
+      <div id="csHistoryList" class="cs-chip-list"></div>
+      <div id="csHistoryResult"></div>
+    </div>
+  </section>
   <section id="sec-notes"></section>
 
   <section id="sec-stats">
@@ -429,48 +650,101 @@
   </section>
   </div>
 
-  <div class="tab-panel" id="tab-universe">
-    <section id="sec-universe">
-      <h2>Универсум облигаций — скринер</h2>
-      <p class="section-note">Полный список рублёвых корпоративных облигаций MOEX (не только вотчлист): скрининг по ликвидности и сроку, G-спред и, где известен рейтинг эмитента, мисценка к обоснованному спреду. Собрано <code>hybond universe</code> (<code>src/hybond/universe_pipeline.py</code>).</p>
-      <div class="banner" id="uniSnapDateBanner"></div>
+  <div class="tab-panel" id="tab-market">
+    <section id="sec-market">
+      <h2>Рынок ВДО — универсум и карта</h2>
+      <p class="section-note">Полный список рублёвых корпоративных облигаций MOEX (не только вотчлист), как таблица-скринер и как scatter-карта — один и тот же отфильтрованный набор бумаг, переключаемый видом ниже. Собрано <code>hybond universe</code> (<code>src/hybond/universe_pipeline.py</code>). Раньше это были две отдельные вкладки с независимыми фильтрами (и «Карта рынка» жила в отдельном самодостаточном файле <code>market_map.html</code>) — объединены, чтобы порог рейтинга/ликвидности, диапазон срока погашения и диапазон AEY (риск) применялись одинаково в обоих представлениях.</p>
+      <div class="banner" id="marketSnapBanner"></div>
 
-      <div class="uni-filters" id="uniFilters">
+      <div class="uni-actions" style="margin-bottom:10px">
+        <div class="view-toggle" id="marketInstrumentToggle">
+          <button type="button" class="view-btn active" data-instrument="corp">Корпоративные ВДО</button>
+          <button type="button" class="view-btn" data-instrument="ofz">ОФЗ (гос. облигации)</button>
+        </div>
+      </div>
+
+      <div id="corpMarketWrap">
+      <div class="uni-actions" style="margin-bottom:10px">
+        <div class="time-toggle" id="marketTimeToggle">
+          <button type="button" class="time-btn active" data-key="universe_now">Сейчас</button>
+          <button type="button" class="time-btn" data-key="universe_week_ago">−1 нед.</button>
+          <button type="button" class="time-btn" data-key="universe_month_ago">−1 мес.</button>
+        </div>
+        <div class="view-toggle" id="marketViewToggle">
+          <button type="button" class="view-btn active" data-view="table">Таблица</button>
+          <button type="button" class="view-btn" data-view="map">Карта</button>
+        </div>
+      </div>
+      <div class="time-note" id="marketTimeNote"></div>
+
+      <!-- Shared gates: same rating floor / liquidity floor concept as the
+           Портфельный рейтинг tab's candidate mode (Part C), plus maturity
+           buckets (new) and the AEY dual-slider (Part C, same component
+           logic) -- these four apply identically to the table and the map
+           below via one shared filteredMarketBonds(), not two copies. -->
+      <div class="uni-filters" id="marketCoreFilters">
         <div class="uni-filter-group">
-          <div class="uni-filter-label"><span>YTM, %</span><span class="val" id="lblYtm"></span></div>
+          <div class="uni-filter-label">Рейтинг, не хуже (порог)</div>
+          <select id="mRatingFloor"></select>
+        </div>
+        <div class="uni-filter-group">
+          <div class="uni-filter-label"><span>Ликвидность, мин. объём торгов</span><span class="val" id="mLblLiq"></span></div>
+          <input type="range" id="mLiqFloor" min="0" max="500000" step="100" value="300">
+          <p class="uni-caveat">Условные единицы MOEX VALTODAY — те же «сырые» единицы, что и порог ликвидности <code>hybond promote</code> (<code>promotion_thresholds.min_volume</code>), не млн ₽.</p>
+        </div>
+        <div class="uni-filter-group">
+          <div class="uni-filter-label">Срок погашения</div>
+          <div class="uni-checks" id="mMaturityBuckets"></div>
+        </div>
+        <div class="uni-filter-group" style="grid-column: 1 / -1; max-width: 480px;">
+          <div class="aey-slider-labels"><span>AEY (риск), %: <b id="mAeyRangeLabel"></b></span><span class="aey-slider-count" id="mAeyCount"></span></div>
+          <div class="dual-slider">
+            <div class="dual-slider-track"></div>
+            <div class="dual-slider-fill" id="mAeyFill"></div>
+            <input type="range" id="mAeyMin" step="0.1">
+            <input type="range" id="mAeyMax" step="0.1">
+          </div>
+          <p class="uni-caveat">Только бумаги с рассчитанным AEY (риск) — это тот же расчёт, что и на вкладке «Вотчлист» (Топ-кандидаты), не отдельная модель. Бумаги без рейтинга/AEY не попадают в диапазон ни при каком положении ползунка — см. счётчик ниже.</p>
+        </div>
+      </div>
+
+      <button type="button" class="uni-btn" id="mAdvToggle">Ещё фильтры (YTM, G-спред, дюрация, мисценка, листинг, купон, точный рейтинг) ▾</button>
+      <div class="uni-filters" id="mAdvFilters" style="display:none; margin-top:10px">
+        <div class="uni-filter-group">
+          <div class="uni-filter-label"><span>YTM, %</span><span class="val" id="mLblYtm"></span></div>
           <div class="uni-range-pair">
-            <input type="range" id="fYtmMin" min="0" max="80" step="1" value="10">
-            <input type="range" id="fYtmMax" min="0" max="80" step="1" value="50">
+            <input type="range" id="mYtmMin" min="0" max="80" step="1" value="0">
+            <input type="range" id="mYtmMax" min="0" max="80" step="1" value="80">
           </div>
         </div>
         <div class="uni-filter-group">
-          <div class="uni-filter-label"><span>G-спред, бп</span><span class="val" id="lblGsp"></span></div>
+          <div class="uni-filter-label"><span>G-спред, бп</span><span class="val" id="mLblGsp"></span></div>
           <div class="uni-range-pair">
-            <input type="range" id="fGspMin" min="0" max="5000" step="50" value="100">
-            <input type="range" id="fGspMax" min="0" max="5000" step="50" value="3000">
+            <input type="range" id="mGspMin" min="0" max="5000" step="50" value="0">
+            <input type="range" id="mGspMax" min="0" max="5000" step="50" value="5000">
           </div>
         </div>
         <div class="uni-filter-group">
-          <div class="uni-filter-label"><span>Дюрация, лет</span><span class="val" id="lblDur"></span></div>
+          <div class="uni-filter-label"><span>Дюрация, лет</span><span class="val" id="mLblDur"></span></div>
           <div class="uni-range-pair">
-            <input type="range" id="fDurMin" min="0" max="10" step="0.25" value="0">
-            <input type="range" id="fDurMax" min="0" max="10" step="0.25" value="5">
+            <input type="range" id="mDurMin" min="0" max="10" step="0.25" value="0">
+            <input type="range" id="mDurMax" min="0" max="10" step="0.25" value="10">
           </div>
         </div>
         <div class="uni-filter-group">
-          <div class="uni-filter-label"><span>Мисценка, бп</span><span class="val" id="lblMis"></span></div>
+          <div class="uni-filter-label"><span>Мисценка, бп</span><span class="val" id="mLblMis"></span></div>
           <div class="uni-range-pair">
-            <input type="range" id="fMisMin" min="-500" max="5000" step="50" value="-500">
-            <input type="range" id="fMisMax" min="-500" max="5000" step="50" value="5000">
+            <input type="range" id="mMisMin" min="-500" max="5000" step="50" value="-500">
+            <input type="range" id="mMisMax" min="-500" max="5000" step="50" value="5000">
           </div>
         </div>
         <div class="uni-filter-group">
-          <div class="uni-filter-label"><span>Сделок сегодня, мин.</span><span class="val" id="lblTrades"></span></div>
-          <input type="range" id="fTrades" min="0" max="50" step="1" value="1">
+          <div class="uni-filter-label"><span>Сделок сегодня, мин.</span><span class="val" id="mLblTrades"></span></div>
+          <input type="range" id="mTrades" min="0" max="50" step="1" value="0">
         </div>
         <div class="uni-filter-group">
           <div class="uni-filter-label">Листинг</div>
-          <div class="uni-checks" id="fListing">
+          <div class="uni-checks" id="mListing">
             <label><input type="checkbox" value="1" checked> 1</label>
             <label><input type="checkbox" value="2" checked> 2</label>
             <label><input type="checkbox" value="3" checked> 3</label>
@@ -478,15 +752,15 @@
         </div>
         <div class="uni-filter-group">
           <div class="uni-filter-label">Тип купона</div>
-          <div class="uni-checks" id="fCoupon">
+          <div class="uni-checks" id="mCoupon">
             <label><input type="checkbox" value="fixed" checked> Фикс</label>
             <label><input type="checkbox" value="floater" checked> Флоатер</label>
           </div>
-          <p class="uni-caveat">Тип купона — эвристика (COUPONPERCENT в мастер-данных MOEX), не точная классификация: надёжно требует bondization по каждой бумаге, что скринер намеренно не делает.</p>
+          <p class="uni-caveat">Тип купона — эвристика (COUPONPERCENT в мастер-данных MOEX), не точная классификация.</p>
         </div>
         <div class="uni-filter-group">
-          <div class="uni-filter-label">Рейтинг</div>
-          <div class="uni-checks" id="fRating">
+          <div class="uni-filter-label">Точный рейтинг</div>
+          <div class="uni-checks" id="mRatingChecks">
             <label><input type="checkbox" value="AAA" checked> AAA</label>
             <label><input type="checkbox" value="AA" checked> AA</label>
             <label><input type="checkbox" value="A" checked> A</label>
@@ -498,26 +772,134 @@
           </div>
         </div>
         <div class="uni-filter-group">
-          <label class="uni-toggle"><input type="checkbox" id="fQualified"><span class="uni-toggle-switch"></span>Показывать для квал. инвесторов</label>
-          <label class="uni-toggle"><input type="checkbox" id="fWatchlistStar"><span class="uni-toggle-switch"></span>Отметить ★ бумаги из вотчлиста</label>
+          <label class="uni-toggle"><input type="checkbox" id="mQualified"><span class="uni-toggle-switch"></span>Показывать для квал. инвесторов</label>
+          <label class="uni-toggle"><input type="checkbox" id="mWatchlistStar" checked><span class="uni-toggle-switch"></span>Отметить ★ бумаги из вотчлиста</label>
         </div>
       </div>
 
       <div class="uni-actions">
-        <div class="uni-stats" id="uniStats"></div>
-        <button class="uni-btn" id="uniExportCsv">Экспорт CSV</button>
+        <div class="uni-stats" id="mStats"></div>
+        <div style="display:flex;gap:8px">
+          <!-- Task 6: carries the CURRENT filtered set (computeFiltered()'s
+               output, same rows the table/stats above reflect) into
+               Портфель as its pickable pool -- not a re-run of promote.py's
+               own fixed gates, see portfolioTab()'s window.__pfLoadFromMarketSelection. -->
+          <button class="uni-btn" id="mBuildPortfolioBtn" title="Передать текущую отфильтрованную выборку во вкладку Портфель">Построить портфель из этой выборки</button>
+          <button class="uni-btn" id="mExportCsv">Экспорт CSV</button>
+        </div>
       </div>
 
-      <div class="card table-scroll"><table id="universeTable"></table></div>
-    </section>
-  </div>
+      <div id="marketTableView">
+        <div class="card table-scroll"><table id="marketTable"></table></div>
+      </div>
 
-  <div class="tab-panel" id="tab-marketmap">
-    <section id="sec-marketmap">
-      <h2>Карта рынка ВДО</h2>
-      <p class="section-note">Тот же снимок универсума, что и вкладка «Универсум», но как scatter-карта: недооценка/переоценка, PD-разрыв, дюрация, ликвидность. Отдельный самодостаточный файл (<code>dashboard/market_map.html</code>, собран из <code>market_map_template.html</code> тем же <code>scripts/build_dashboard.py</code>) — встроен здесь через iframe, а не задублирован, чтобы карта работала и как отдельная страница.</p>
-      <div class="card" style="padding:0; overflow:hidden;">
-        <iframe src="market_map.html" style="width:100%; height:1400px; border:0; display:block;" title="Карта рынка ВДО"></iframe>
+      <div id="marketMapView" style="display:none">
+        <div class="mm-controls">
+          <div class="mm-ctrl-group"><label>Y</label>
+            <select id="mmSelY">
+              <option value="mispricing">Недооценка/переоценка (бп)</option>
+              <option value="ytm" selected>YTM, %</option>
+              <option value="gspread">G-спред (бп)</option>
+              <option value="pdgap">PD рынок−PD рейтинг (%)</option>
+              <option value="pdmarket">PD по цене рынка (%)</option>
+            </select>
+          </div>
+          <div class="mm-ctrl-group"><label>X</label>
+            <select id="mmSelX">
+              <option value="moddur" selected>Модифицированная дюрация</option>
+              <option value="duration">Дюрация (лет)</option>
+              <option value="maturity">Срок до погашения</option>
+              <option value="offer">Срок до оферты</option>
+            </select>
+          </div>
+          <div class="mm-ctrl-group"><label>Цвет</label>
+            <select id="mmSelColor">
+              <option value="mispricing" selected>Недооценка/переоценка</option>
+              <option value="pdgap">Разрыв PD рынок vs рейтинг</option>
+              <option value="rating">Рейтинг</option>
+              <option value="sector">Сектор</option>
+              <option value="liquidity">Ликвидность</option>
+            </select>
+          </div>
+          <div class="mm-ctrl-group"><label>Размер</label>
+            <select id="mmSelSize">
+              <option value="volume" selected>Объём торгов</option>
+              <option value="moddur">Модиф. дюрация (риск)</option>
+              <option value="equal">Равный</option>
+            </select>
+          </div>
+        </div>
+        <div class="mm-filter-row">
+          <label class="chk"><input type="checkbox" id="mmFOfz" checked> ОФЗ кривая</label>
+          <label class="chk"><input type="checkbox" id="mmFFair" checked> Справедл. спреды</label>
+          <label class="chk"><input type="checkbox" id="mmFPdIso"> PD изолинии</label>
+          <label class="chk"><input type="checkbox" id="mmFStar" checked> ★ Вотчлист</label>
+        </div>
+        <div class="mm-signal-bar" id="mmSignalBar"></div>
+        <div class="mm-chart-card">
+          <canvas id="mmChart"></canvas>
+          <div class="mm-legend-row" id="mmLegendRow"></div>
+        </div>
+        <div class="mm-stats-bar" id="mmStatsBar"></div>
+        <p class="uni-caveat">PD по цене рынка и PD по рейтингу — обе выведены из одной и той же таблицы вероятностей дефолта (Эксперт РА), поэтому PD-разрыв арифметически эквивалентен мисценке в бп, только в масштабе вероятности. ОФЗ-кривая — восстановленная по точкам (срок, безрисковая ставка), уже использованным при расчёте G-спреда каждой бумаги в этот день.</p>
+      </div>
+      </div><!-- /corpMarketWrap -->
+
+      <!-- OFZ carry/roll-down: real MOEX government-bond data (hybond ofz,
+           src/hybond/ofz_pipeline.py) + real CBR scenarios
+           (portfolio.get_rate_scenarios) -- no PD/default layer, correct
+           for sovereign risk. Methodology (coupon + body-reevaluation,
+           graduated 40/75/100% shift at 1/2/3yr) reused from a standalone
+           prototype; the prototype's own bond data was fabricated and is
+           NOT used anywhere here -- every row below is a real MOEX secid,
+           cross-checked against the live board listing. -->
+      <div id="ofzMarketWrap" style="display:none">
+        <div class="banner" id="ofzSnapBanner"></div>
+        <div class="uni-actions" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+          <div class="time-toggle" id="ofzScenarioToggle">
+            <button type="button" class="time-btn active" data-scen="base">Базовый</button>
+            <button type="button" class="time-btn" data-scen="stress">Стресс</button>
+            <button type="button" class="time-btn" data-scen="bull">Бык</button>
+            <button type="button" class="time-btn custom-scen" data-scen="custom" id="ofzCustomScenBtn" style="display:none"></button>
+          </div>
+          <div class="view-toggle" id="ofzHorizonToggle">
+            <button type="button" class="view-btn active" data-h="1">1 год</button>
+            <button type="button" class="view-btn" data-h="2">2 года</button>
+            <button type="button" class="view-btn" data-h="3">3 года</button>
+          </div>
+          <button type="button" class="uni-btn" id="ofzRefreshBtn">Обновить котировки (MOEX, сейчас)</button>
+        </div>
+        <!-- Provenance line (Task 5): the active scenario's REAL source --
+             either the CBR meeting date + forecast range it was derived
+             from (base/stress/bull, straight from the same
+             get_rate_scenarios()/cbr_meeting data the ЦБ РФ tab reads --
+             no second copy), or an explicit "заданo пользователем" note
+             for the custom scenario, so the two are never confusable. -->
+        <div id="ofzScenarioProvenance" class="uni-caveat" style="margin:0 0 10px"></div>
+
+        <div class="card" style="padding:10px 14px;margin-bottom:10px">
+          <b style="font-size:12.5px">Свой сценарий</b>
+          <span style="font-size:11px;color:var(--text-muted)"> — целевая ключевая ставка и дата; carry+roll-down считается на этот горизонт напрямую (без градуированного 40/75/100% сдвига CBR-сценариев — вся дельта применяется сразу на указанную дату).</span>
+          <div style="display:flex;gap:10px;align-items:flex-end;margin-top:8px;flex-wrap:wrap">
+            <div>
+              <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:3px">Целевая ставка, %</label>
+              <input type="number" id="ofzCustomRateInput" step="0.1" placeholder="напр. 10.0"
+                     style="width:110px;padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12.5px">
+            </div>
+            <div>
+              <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:3px">Целевая дата</label>
+              <input type="date" id="ofzCustomDateInput"
+                     style="padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12.5px">
+            </div>
+            <button type="button" class="uni-btn" id="ofzCustomScenApplyBtn">Применить свой сценарий</button>
+          </div>
+          <div class="narrative-status" id="ofzCustomScenStatus" style="margin-top:6px"></div>
+        </div>
+
+        <span class="narrative-status" id="ofzRefreshStatus"></span>
+        <div class="uni-stats" id="ofzStats" style="margin:8px 0"></div>
+        <div class="card table-scroll"><table id="ofzTable"></table></div>
+        <p class="uni-caveat">Carry = купонный доход за период. Body reeval = переоценка тела облигации по формуле дюрации/выпуклости при заданном сдвиге доходности. Сдвиг применяется ГРАДУИРОВАННО: 40% на горизонте 1 год, 75% на 2 года, 100% на 3 года (доходность не переоценивается мгновенно) — доля от «итогового» сдвига сценария (те же base/stress/bull дельты, что и в AEY-слое вотчлиста, portfolio.get_rate_scenarios). Свой сценарий — исключение: вся дельта применяется на указанную пользователем дату, без градуации. Для ОФЗ-ПК (флоатер) и ОФЗ-ИН (линкер) точная выпуклость не считается (нет полностью известного будущего купона) — используется доходность/дюрация MOEX как прокси, без члена выпуклости. Бумаги с погашением менее чем через 1 год исключены из проекции (см. src/hybond/ofz_pipeline.py).</p>
       </div>
     </section>
   </div>
@@ -545,6 +927,72 @@
     </section>
   </div>
 
+  <div class="tab-panel" id="tab-portfolio">
+    <section id="sec-portfolio">
+      <h2>Портфель</h2>
+      <p class="section-note">Ручное построение портфеля из списка наблюдения (текущие ~<span id="pfPoolCount">?</span> выпусков). Отметьте бумаги — по умолчанию равный вес (100% / N), вес каждой позиции можно скорректировать вручную. Не автоматическая оптимизация: выбор бумаг и вес — решение пользователя, инструмент только считает агрегаты для уже выбранной корзины.</p>
+      <div class="banner">
+        <b>Явные допущения этой версии.</b> Ожидаемая доходность по сценариям — те же AEY-цифры (база/стресс/бык), что и в «Портфельном рейтинге», взвешенные по доле позиции. Ожидаемое число дефолтов — сумма годовых PD по рейтингу (наивное допущение независимости, БЕЗ корреляции дефолтов между эмитентами — в кризис дефолты кластеризуются, это не учтено). Комиссии, налоги и ребалансировка не моделируются. Лимит на эмитента — макс. 2 выпуска, применяется здесь на уровне уже выбранного портфеля, а не только на этапе отбора кандидатов.
+        «Топ-20 из отфильтрованного пула» сначала применяет фильтр рейтинга (не хуже <span id="pfRatingFloorLabel">?</span>) и фильтр ликвидности (объём ≥ <span id="pfMinVolumeLabel">?</span>) — те же пороги, что и `hybond promote` — <b>пересчитанные по текущему рейтингу</b>, а не сохранённые с момента добавления в вотчлист, и только потом ранжирует по AEY (риск-скорр.). Бумаги вне фильтра остаются в таблице ниже (можно выбрать вручную), но помечены столбцом «Фильтр» и не попадают в кнопку «Топ-20». Столбцы «Премия к ОФЗ» — AEY бумаги минус аннуализированная (÷ на горизонт) carry+roll-down доходность ближайшей по дюрации ОФЗ при базовом сценарии ЦБ; при расхождении дюрации &gt;2 лет сравнение не показывается («—», нет сопоставимой ОФЗ) — грубое приближение, не точный спред одного горизонта.
+      </div>
+
+      <h3 style="margin-top:18px">1. Выбор бумаг</h3>
+      <!-- Pool source banner (Task 6): shows whether the pickable table below
+           is the default watchlist AEY pool, or a set carried over from the
+           Рынок tab's filters via "Построить портфель из этой выборки" --
+           and lets the user switch back. Rating/liquidity gating (below)
+           applies identically to either source, see portfolioTab()'s
+           gateAndCapForSelection(). -->
+      <div id="pfPoolSourceBanner" class="uni-caveat" style="margin-bottom:8px"></div>
+      <div class="pf-toolbar">
+        <button type="button" id="pfSelectTop20">Топ-20 из отфильтрованного пула</button>
+        <button type="button" id="pfResetToWatchlist" style="display:none">Сбросить к списку наблюдения</button>
+        <button type="button" id="pfClearAll">Очистить выбор</button>
+        <button type="button" id="pfEqualWeight">Равный вес (сброс)</button>
+        <span class="pf-weight-sum" id="pfWeightSum"></span>
+      </div>
+      <div class="card table-scroll"><table class="pf-pick-table" id="pfPickTable"></table></div>
+
+      <h3 style="margin-top:22px">2. Связанные стороны (ручная пометка)</h3>
+      <p class="section-note">Группы эмитентов, которые вы считаете связанными сторонами (общий бенефициар, существенные внутригрупповые операции и т.п.) — по одной группе на строку, ИНН через запятую. Не автоматическое определение — см. заметку в памяти о паре Л-Старт/Идель Нефтемаш. Если в портфеле оказалось 2+ эмитента из одной группы, ниже появится предупреждение, даже если лимит на эмитента формально соблюдён.</p>
+      <textarea class="pf-related-note" id="pfRelatedGroups"></textarea>
+      <div id="pfRelatedWarnBox"></div>
+
+      <h3 style="margin-top:22px">3. Агрегаты портфеля</h3>
+      <div class="stat-row" id="pfStatRow"></div>
+
+      <p class="section-note" style="margin-top:16px">Кластеры взаимосвязанных секторов (общий макро-фактор риска) — по одному на строку, «Название: сектор1, сектор2, ...». Теги секторов — те же, что уже хранятся в БД по эмитенту. Ручной конфиг, не автоматическое определение корреляций — при добавлении новых секторов в вотчлист может понадобиться правка.</p>
+      <textarea class="pf-related-note" id="pfSectorClusters"></textarea>
+      <div id="pfSectorSummary"></div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:18px; margin-top:14px" id="pfConcGrid">
+        <div class="card">
+          <b>Концентрация по эмитентам</b>
+          <div id="pfConcIssuer" style="margin-top:8px"></div>
+        </div>
+        <div class="card">
+          <b>Концентрация по секторам</b>
+          <div id="pfConcSector" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <h3 style="margin-top:22px">Ожидаемая доходность по сценариям ЦБ</h3>
+      <div class="banner" id="pfScenBanner"></div>
+      <div class="card table-scroll"><table class="pf-scen-table" id="pfScenTable"></table></div>
+
+      <!-- Portfolio-level coupon/maturity-wall (Task): same chart logic as
+           the watchlist's "Календарь погашений" (renderWallSvg, shared
+           function), rebuilt from each SELECTED position's own REAL
+           per-bond cashflow schedule (pipeline.py's maturity_wall_by_secid,
+           not an approximation), each weight-scaled by its portfolio %
+           before summing into monthly buckets. -->
+      <h3 style="margin-top:22px">4. Календарь выплат портфеля</h3>
+      <p class="section-note">Купонные и амортизационные/погасительные выплаты выбранных позиций, по месяцам, следующие 24 месяца — реальный график денежных потоков (не аппроксимация), каждая бумага взята с её фактическим весом в портфеле. Единицы — «доля веса портфеля × выплата на 1000 номинала» (условные, не рубли реального объёма). Показывает форму и кластеризацию нагрузки: где по времени концентрируется риск рефинансирования и приток купонов у ИМЕННО ЭТОЙ корзины, не у всего вотчлиста.</p>
+      <div class="banner" id="pfWallBanner" style="display:none"></div>
+      <div class="card"><div id="pfWallChart"></div></div>
+    </section>
+  </div>
+
   <footer>
     hybond dashboard — сгенерировано <span id="genTime"></span>. Собрано из data/dashboard_data.json (scripts/export_dashboard_data.py).
   </footer>
@@ -553,8 +1001,12 @@
 <div class="tooltip" id="tooltip"></div>
 
 <script id="dashboard-data" type="application/json">/*__DASHBOARD_DATA__*/</script>
+<script id="narrative-prompt" type="application/json">/*__NARRATIVE_PROMPT__*/</script>
+<script id="company-scan-prompt" type="application/json">/*__COMPANY_SCAN_PROMPT__*/</script>
 <script>
 const DATA = JSON.parse(document.getElementById('dashboard-data').textContent);
+const NARRATIVE_PROMPT = JSON.parse(document.getElementById('narrative-prompt').textContent);
+const COMPANY_SCAN_PROMPT = JSON.parse(document.getElementById('company-scan-prompt').textContent);
 const tooltip = document.getElementById('tooltip');
 
 function showTip(evt, html) {
@@ -565,6 +1017,520 @@ function showTip(evt, html) {
   tooltip.style.top = Math.min(y, window.innerHeight - 100) + 'px';
 }
 function hideTip() { tooltip.style.opacity = 0; }
+
+// ---------- shared filter/gate logic (Task 3: Universe+MarketMap merge) ----
+// These pure predicates are the reusable core of "rating floor / liquidity
+// floor / AEY range" -- both the Портфельный рейтинг tab's candidate mode
+// (Part C, buildCandidatePool below) and the merged Рынок tab call these
+// same functions rather than each carrying its own copy of the gating
+// rules. Only DOM wiring (which slider/dropdown ids feed them) differs per
+// tab, which is unavoidable since they live in different sections.
+const RATING_ORDER = DATA.rating_order || [];
+const AEY_SLIDER_EPS = 0.05; // see Part C: rounded slider bounds vs raw values
+
+function ratingRankIdx(rating) {
+  return rating == null ? -1 : RATING_ORDER.indexOf(rating);
+}
+function passesRatingFloor(rating, floorRating) {
+  const floorIdx = RATING_ORDER.indexOf(floorRating);
+  const idx = ratingRankIdx(rating);
+  return idx !== -1 && floorIdx !== -1 && idx <= floorIdx;
+}
+function passesLiquidityFloor(volume, minVolume) {
+  return volume != null && volume >= (minVolume ?? 0);
+}
+function filterByAeyRange(pool, lo, hi) {
+  return pool.filter(b => b.aey_base_risk_adj_pct != null &&
+    b.aey_base_risk_adj_pct >= lo - AEY_SLIDER_EPS && b.aey_base_risk_adj_pct <= hi + AEY_SLIDER_EPS);
+}
+// Last critical/high item per issuer, pooled from event + market_note --
+// same feed and severity filter Task 4 built for the notification panel,
+// just reduced to "most recent" per issuer instead of a full list. Shared
+// by renderPortfolioRank's bond-detail panel AND the Портфель tab's
+// per-position rationale line -- one function, not two copies that could
+// drift on which severities/fields count.
+function lastCriticalHigh(iss) {
+  const pool = [...(iss.events || []), ...(iss.market_notes || [])]
+    .filter(e => (e.severity === 'critical' || e.severity === 'high') && e.occurred);
+  if (!pool.length) return null;
+  pool.sort((a, b) => b.occurred.localeCompare(a.occurred));
+  return pool[0];
+}
+// Maturity buckets: calendar year of mat_date, capped at a "2030+" bucket so
+// the checkbox list doesn't grow unbounded as the universe includes bonds
+// maturing many years out.
+const MATURITY_BUCKET_LAST_YEAR = 2030;
+function maturityBucketOf(matDate) {
+  if (!matDate) return null;
+  const y = parseInt(matDate.slice(0, 4), 10);
+  if (!isFinite(y)) return null;
+  return y >= MATURITY_BUCKET_LAST_YEAR ? `${MATURITY_BUCKET_LAST_YEAR}+` : String(y);
+}
+function passesMaturityBuckets(matDate, selectedBuckets) {
+  const b = maturityBucketOf(matDate);
+  return b != null && selectedBuckets.has(b);
+}
+
+// ---------- narrative-card shared plumbing (Task for VS Code — Part C/D:
+// WUSH prompt integration; Task 2: company-scan workflow). Hoisted to
+// top-level scope so both the per-bond DB-sourced trigger (Портфельный
+// рейтинг tab, generateNarrative) and the new company-scan trigger
+// (generateCompanyScan, for issuers not yet in hybond) share one copy of
+// the API-key handling, the Anthropic call, and the WUSH-style card
+// renderer -- neither feature reimplements this plumbing separately. ----
+
+// SECURITY ASSUMPTION -- single-user, local-only deployment.
+// The Anthropic API key below is stored in this browser's localStorage
+// (plaintext, unencrypted) and every narrative-generation call goes
+// straight from this page's JS to api.anthropic.com -- no backend, no
+// proxy, no server-side secret. That is only safe because this dashboard
+// is a self-contained HTML file (see build_dashboard.py's own docstring:
+// "no server, no CDN") opened locally by one person on their own machine.
+// localStorage is per-origin and readable by any script running on that
+// origin, and browser devtools/extensions on a shared machine can read it
+// trivially.
+//
+// If this dashboard is EVER hosted (even privately), shared with other
+// people, or opened on a shared/untrusted device, this key-handling
+// approach is no longer safe and must NOT be carried over as-is: move key
+// storage/API calls behind a small server-side proxy that holds the key
+// (env var / secrets manager) and never exposes it to the client, rather
+// than trusting per-browser localStorage. This applies equally to the
+// company-scan path below -- same key, same assumption.
+const NARRATIVE_KEY_STORAGE = 'hybond_anthropic_api_key';
+function getApiKey() { return localStorage.getItem(NARRATIVE_KEY_STORAGE) || ''; }
+function promptApiKey() {
+  const val = prompt('Anthropic API key — хранится только в этом браузере (localStorage), никуда не отправляется кроме api.anthropic.com:', getApiKey());
+  if (val !== null) {
+    if (val.trim()) localStorage.setItem(NARRATIVE_KEY_STORAGE, val.trim());
+    else localStorage.removeItem(NARRATIVE_KEY_STORAGE);
+  }
+  return getApiKey();
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+}
+
+// Shared Anthropic call: both narrative features hit the same endpoint with
+// the same headers/error handling. `tools` is undefined for the DB-sourced
+// path and set to the hosted web_search tool for the company-scan path --
+// that tool executes server-side within this same single request (no
+// client-side tool-result loop needed), so the "one fetch, one response"
+// shape stays identical either way.
+async function callAnthropicMessages({ system, userText, tools, maxTokens }) {
+  const key = getApiKey();
+  if (!key) throw new Error('NO_KEY');
+  const body = {
+    model: 'claude-sonnet-5',
+    max_tokens: maxTokens || 4096,
+    system,
+    messages: [{ role: 'user', content: userText }],
+  };
+  if (tools) body.tools = tools;
+  const t0 = performance.now();
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify(body),
+  });
+  const elapsedMs = Math.round(performance.now() - t0);
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error('HTTP ' + resp.status + ': ' + errText.slice(0, 300));
+  }
+  const json = await resp.json();
+  // With web_search tools enabled, content also carries server_tool_use /
+  // web_search_tool_result blocks -- only 'text' blocks are the actual
+  // report, so those are filtered out here rather than at each call site.
+  const text = (json.content || []).filter(b => b.type === 'text').map(b => b.text || '').join('');
+  return { text, usage: json.usage || {}, elapsedMs, raw: json };
+}
+
+// Both trigger paths ask the model to close with one fenced ```json block
+// (see NC_RENDER_ADDENDUM below) -- this parses that block out of whichever
+// prompt produced it.
+function parseNarrativeResponse(text) {
+  const m = text.match(/```json\s*([\s\S]*?)```/);
+  let cardJson = null;
+  if (m) { try { cardJson = JSON.parse(m[1]); } catch (e) { /* fall back to raw markdown only */ } }
+  const mdOnly = m ? text.slice(0, m.index).trim() : text.trim();
+  return { cardJson, markdown: mdOnly };
+}
+
+// Output-formatting addendum only (dashboard rendering needs a structured
+// block to draw the WUSH-style card deterministically) -- it does not
+// touch the analytical framework of either source prompt (PROMPT.md or
+// bond_screening_prompt_v3.5.1.md), which are passed unedited as the
+// system prompt at each call site. Generic enough to work for both: it
+// doesn't reference "hybond DB" or "web sources" itself.
+const NC_RENDER_ADDENDUM = `## Rendering Addendum (dashboard integration only — not part of the analytical framework)
+
+After the full markdown report in the Step 16 format above, on a new line append exactly one fenced \`\`\`json code block (nothing after it) with this structure, for card rendering only. Every value must be consistent with the markdown report above -- restate facts already established there, do not introduce new ones. Use null / empty arrays for anything not applicable.
+
+{
+  "issuer_name": string, "date": "YYYY-MM-DD", "track": "Large" | "Small",
+  "issuer_quality": "Strong" | "Adequate" | "Weak" | "Distressed", "why_rating": string,
+  "bond_suitability": "Buy" | "Speculative" | "Watchlist" | "Avoid",
+  "confidence": "High" | "Medium" | "Low", "data_coverage_pct": number,
+  "traffic_lights": [{"name": string, "color": "green"|"yellow"|"red", "note": string}],
+  "strengths": [{"title": string, "desc": string}],
+  "risks": [{"title": string, "desc": string}],
+  "bottom_line": string,
+  "default_pathway": {"primary_risk": string, "pathway": [string], "mitigants": [string], "probability": string},
+  "monitoring": [string],
+  "data_conflicts": [string],
+  "missing_data": [string]
+}`;
+
+function toggleNcRaw(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+}
+
+function ncDotClass(color) { return color === 'green' ? 'green' : color === 'red' ? 'red' : 'yellow'; }
+
+// idPrefix: unique DOM-id fragment for this card's raw-markdown toggle
+// (secid for the per-bond path, a scan-session id for company-scan).
+// badgeHtml: optional banner prepended above the hero -- used by the
+// company-scan path to visually mark the card as external-source/
+// unverified so it's never confused with the DB-sourced version.
+function renderNarrativeCardHtml(idPrefix, c, md, badgeHtml) {
+  const rawId = 'nc-raw-' + idPrefix;
+  const rawBlock = `<button type="button" class="nc-raw-toggle" data-raw-id="${rawId}">Полный markdown-отчёт (Step 16)</button>
+    <div class="nc-raw-md" id="${rawId}" style="display:none">${escapeHtml(md)}</div>`;
+
+  if (!c) {
+    return `${badgeHtml || ''}<div class="narrative-status err">Модель не вернула структурированный JSON-блок для карточки — показан только markdown-отчёт.</div>${rawBlock}`;
+  }
+
+  const conflicts = c.data_conflicts || [];
+  const conflictsHtml = conflicts.length
+    ? `<div class="nc-section"><div class="nc-section-title">Расхождения источников</div>` +
+      conflicts.map(x => `<div class="nc-conflict-box">${escapeHtml(x)}</div>`).join('') + `</div>`
+    : '';
+
+  const traffic = (c.traffic_lights || []).map(t => `
+    <div class="nc-traffic-item">
+      <div class="nc-dot ${ncDotClass(t.color)}"></div>
+      <div><div class="nc-t-name">${escapeHtml(t.name)}</div><div class="nc-t-note">${escapeHtml(t.note)}</div></div>
+    </div>`).join('');
+
+  const strengths = (c.strengths || []).map(s =>
+    `<li><span class="nc-flag-title">🟢 ${escapeHtml(s.title)}</span><span class="nc-flag-desc">${escapeHtml(s.desc)}</span></li>`).join('');
+  const risks = (c.risks || []).map(r =>
+    `<li><span class="nc-flag-title">🔴 ${escapeHtml(r.title)}</span><span class="nc-flag-desc">${escapeHtml(r.desc)}</span></li>`).join('');
+
+  const dp = c.default_pathway || {};
+  const pathwayHtml = (dp.pathway || []).map(p => `<li>${escapeHtml(p)}</li>`).join('');
+  const mitigantsHtml = (dp.mitigants || []).map(m =>
+    `<li><span class="nc-flag-desc">✓ ${escapeHtml(m)}</span></li>`).join('');
+
+  const monitoringHtml = (c.monitoring || []).map((m, i) =>
+    `<li><span class="nc-flag-title">${i + 1}. ${escapeHtml(m)}</span></li>`).join('');
+  const missingHtml = (c.missing_data || []).map(m =>
+    `<li><span class="nc-flag-desc">${escapeHtml(m)}</span></li>`).join('');
+
+  return `${badgeHtml || ''}<div class="nc-hero">
+      <div class="nc-hero-title">${escapeHtml(c.issuer_name || '')}</div>
+      <div class="nc-hero-sub">Bond Screening — WUSH V3.5.1 · ${escapeHtml(c.date || '')} · Track: ${escapeHtml(c.track || '—')}</div>
+      <div class="nc-verdict-grid">
+        <div class="nc-verdict-card"><div class="nc-label">Качество эмитента</div><div class="nc-value">${escapeHtml(c.issuer_quality || '—')}</div></div>
+        <div class="nc-verdict-card"><div class="nc-label">Пригодность бумаги</div><div class="nc-value">${escapeHtml(c.bond_suitability || '—')}</div></div>
+        <div class="nc-verdict-card"><div class="nc-label">Уверенность</div><div class="nc-value">${escapeHtml(c.confidence || '—')}</div></div>
+        <div class="nc-verdict-card"><div class="nc-label">Покрытие данными</div><div class="nc-value">${c.data_coverage_pct != null ? c.data_coverage_pct + '%' : '—'}</div></div>
+      </div>
+      ${c.why_rating ? `<div class="nc-why"><b>Почему такая оценка:</b> ${escapeHtml(c.why_rating)}</div>` : ''}
+    </div>
+
+    <div class="nc-section"><div class="nc-section-title">Индикаторы риска</div><div class="nc-traffic-grid">${traffic}</div></div>
+
+    ${conflictsHtml}
+
+    <div class="nc-section"><div class="nc-section-title">Сильные стороны</div><ul class="nc-flag-list">${strengths}</ul></div>
+    <div class="nc-section"><div class="nc-section-title">Риски</div><ul class="nc-flag-list">${risks}</ul></div>
+    ${c.bottom_line ? `<div class="nc-bottom-line"><b>Итог:</b> ${escapeHtml(c.bottom_line)}</div>` : ''}
+
+    <div class="nc-section nc-pathway">
+      <div class="nc-section-title">Сценарий дефолта</div>
+      ${dp.primary_risk ? `<div class="nc-conflict-box" style="border-left-color:var(--critical)"><b>Основной риск:</b> ${escapeHtml(dp.primary_risk)}</div>` : ''}
+      ${pathwayHtml ? `<ol>${pathwayHtml}</ol>` : ''}
+      ${mitigantsHtml ? `<div class="nc-section-title" style="margin-top:8px">Смягчающие факторы</div><ul class="nc-flag-list">${mitigantsHtml}</ul>` : ''}
+      ${dp.probability ? `<div style="font-size:12.5px;margin-top:8px"><b>Вероятность:</b> ${escapeHtml(dp.probability)}</div>` : ''}
+    </div>
+
+    <div class="nc-section"><div class="nc-section-title">Мониторинг (6–12 мес.)</div><ul class="nc-flag-list">${monitoringHtml}</ul></div>
+    ${missingHtml ? `<div class="nc-section"><div class="nc-section-title">Недостающие данные</div><ul class="nc-flag-list">${missingHtml}</ul></div>` : ''}
+
+    ${rawBlock}`;
+}
+
+// ---------- Task 2: company-scan (issuer not yet in hybond) ----------
+// COMPANY_SCAN_PROMPT is bond_screening_prompt_v3.5.1.md, embedded UNEDITED
+// (see build_dashboard.py) -- the original web-research prompt, distinct
+// from PROMPT.md's hybond-DB-sourced variant. There is no DB data to
+// assemble for an unonboarded issuer, so the only input is the name/INN the
+// user types; the model does its own live research (agency sites, MOEX,
+// court registries) per that prompt's own data-gathering instructions via
+// Anthropic's hosted web_search tool. Reuses callAnthropicMessages/
+// getApiKey/promptApiKey/renderNarrativeCardHtml/parseNarrativeResponse --
+// same plumbing as generateNarrative, not a second copy of it.
+let companyScanCounter = 0;
+
+async function generateCompanyScan() {
+  const input = document.getElementById('companyScanInput');
+  const statusEl = document.getElementById('companyScanStatus');
+  const resultEl = document.getElementById('companyScanResult');
+  const btn = document.getElementById('companyScanBtn');
+  const query = (input.value || '').trim();
+  if (!query) {
+    statusEl.className = 'narrative-status err';
+    statusEl.textContent = 'Введите название компании или ИНН.';
+    return;
+  }
+
+  if (!getApiKey() && !promptApiKey()) {
+    statusEl.className = 'narrative-status err';
+    statusEl.textContent = 'Нужен API-ключ Anthropic.';
+    return;
+  }
+
+  companyScanCounter += 1;
+  const scanId = 'scan' + companyScanCounter;
+  btn.disabled = true;
+  statusEl.className = 'narrative-status';
+  statusEl.textContent = 'Веб-поиск и анализ... (обычно 30–90 сек — модель выполняет несколько поисковых запросов, дольше, чем DB-версия)';
+  resultEl.innerHTML = '';
+  try {
+    const { text, usage, elapsedMs } = await callAnthropicMessages({
+      system: [
+        { type: 'text', text: COMPANY_SCAN_PROMPT, cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: NC_RENDER_ADDENDUM, cache_control: { type: 'ephemeral' } },
+      ],
+      userText: `Company / bond issuer to screen: ${query}\n\nThis issuer is not in hybond's database -- research it from scratch using free public web sources per every rule in the prompt above (track selection, financial health, refinancing profile, risk checks, bond terms, liquidity, event risk, default pathway, "Why This Bond?", data coverage, decision logic, cross-check). Produce the full Step 16 output, then the rendering-addendum JSON block.`,
+      // Anthropic's hosted web_search tool: executed server-side within this
+      // same request (no client-side tool-result loop to implement) -- the
+      // response already contains the model's search-informed answer.
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
+      maxTokens: 6000,
+    });
+    const { cardJson, markdown } = parseNarrativeResponse(text);
+    const badge = `<div class="nc-external-badge">⚠ Предварительная проверка (внешние источники) — живой веб-поиск, не данные hybond. Не путать с карточками из вотчлиста.</div>`;
+    resultEl.innerHTML = renderNarrativeCardHtml(scanId, cardJson, markdown, badge);
+
+    const inTok = (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
+    const outTok = usage.output_tokens || 0;
+    const searches = (usage.server_tool_use && usage.server_tool_use.web_search_requests) || null;
+    statusEl.className = 'narrative-status';
+    statusEl.textContent = `Готово за ${(elapsedMs / 1000).toFixed(1)}с.`;
+    const costEl = document.createElement('div');
+    costEl.className = 'narrative-cost';
+    costEl.textContent = `Токены: ~${inTok} вход (из них ${usage.cache_read_input_tokens || 0} из кэша) / ${outTok} выход` +
+      (searches != null ? ` · веб-поисков: ${searches}` : '') +
+      ` · модель claude-sonnet-5 · ${(elapsedMs / 1000).toFixed(1)}с. Каждый веб-поиск оплачивается отдельно сверх токенов (см. тарифы Anthropic) — эта версия обычно дороже DB-версии из-за поисковых запросов и большего контекста.`;
+    resultEl.prepend(costEl);
+    csRecordScan(query, csResolveInn(query)); // Part B: snapshot hybond's current rating/filing state for this issuer, if the query resolves to a known INN
+  } catch (err) {
+    statusEl.className = 'narrative-status err';
+    statusEl.textContent = err.message === 'NO_KEY' ? 'Нужен API-ключ Anthropic.' : 'Ошибка: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('companyScanBtn').addEventListener('click', generateCompanyScan);
+document.getElementById('companyScanKeyBtn').addEventListener('click', promptApiKey);
+document.getElementById('companyScanInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') generateCompanyScan();
+});
+document.getElementById('companyScanResult').addEventListener('click', (e) => {
+  const rawBtn = e.target.closest('.nc-raw-toggle');
+  if (rawBtn) toggleNcRaw(rawBtn.dataset.rawId);
+});
+
+// ---------- Part A/B: auto-flagged scan candidates + rescan tracking ----
+// Candidate criteria (all client-side, over data already embedded for the
+// Рынок tab -- no new export cost beyond DATA.known_issuers, added
+// specifically for the "not in watchlist.json/issuer table" exclusion,
+// which needs the FULL issuer table, not just the 37-issuer watchlist
+// subset DATA.issuers already carries -- the issuer table also holds
+// held-back candidates like Альфа Дон Транс/ЛКХ/ПЛАЗА-Телеком/СМАК that
+// were investigated and explicitly NOT promoted; those must not resurface
+// here as if they were new):
+//   1. emitent_inn not in DATA.known_issuers (not watchlist, not issuer table)
+//   2. vdo_scope (already: g_spread > 500bp AND volume >= VDO_MIN_VOLUME)
+//   3. volume >= DATA.promotion_thresholds.min_volume (explicit reuse, not
+//      a second hand-picked constant, even though it's the same number
+//      vdo_scope's own gate already enforces today)
+//   4. reasonable maturity window: tenor_yrs between CS_MIN/MAX_TENOR_YRS
+//   5. no rating, OR a rating flagged needs_verification -- the latter is
+//      presently unreachable for genuine new candidates (a bond only gets a
+//      rating row once it's already in the issuer table, which criterion 1
+//      excludes), kept for forward-compatibility if that ever changes.
+// Auto-IDENTIFY only: clicking a candidate chip fills the input and still
+// requires the existing manual "Проверить компанию" click to actually
+// spend an API call -- no auto-triggered scan.
+const CS_MIN_TENOR_YRS = 0.5;
+const CS_MAX_TENOR_YRS = 10;
+const CS_SCAN_HISTORY_KEY = 'hybond_company_scan_history_v1';
+
+function csLoadHistory() {
+  try { return JSON.parse(localStorage.getItem(CS_SCAN_HISTORY_KEY) || '{}'); }
+  catch { return {}; }
+}
+function csSaveHistory(hist) { localStorage.setItem(CS_SCAN_HISTORY_KEY, JSON.stringify(hist)); }
+
+// Called after a successful scan (from generateCompanyScan) -- records a
+// snapshot of whatever hybond currently knows about this issuer (if the
+// query resolves to a known INN), so a later page load can detect drift.
+// Free-text queries that aren't a recognisable INN and don't match a known
+// issuer can't be tracked this way (no reliable way to re-identify them
+// without fuzzy name matching, deliberately not attempted here) -- they
+// simply never appear in the rescan list, not silently mismatched.
+function csRecordScan(query, inn) {
+  if (!inn) return;
+  const meta = (DATA.known_issuers || {})[inn];
+  const hist = csLoadHistory();
+  hist[inn] = {
+    query, scanned_at: new Date().toISOString(),
+    rating_snapshot: meta ? meta.rating : null,
+    rated_on_snapshot: meta ? meta.rated_on : null,
+    filing_count_snapshot: meta ? meta.filing_count : 0,
+    filing_latest_snapshot: meta ? meta.filing_latest_published : null,
+  };
+  csSaveHistory(hist);
+}
+
+function csResolveInn(query) {
+  const trimmed = (query || '').trim();
+  if (/^\d{10,12}$/.test(trimmed)) return trimmed; // heuristic: bare digit string = INN
+  return null;
+}
+
+(function renderCompanyScanCandidates() {
+  const known = DATA.known_issuers || {};
+  const th = DATA.promotion_thresholds || {};
+  const minVolume = th.min_volume ?? 0;
+  const bonds = (DATA.universe_now && DATA.universe_now.bonds) || [];
+
+  // one row per ISSUER (not per bond) -- multiple bond series from the same
+  // unonboarded issuer would otherwise duplicate the same candidate chip.
+  const byIssuer = new Map();
+  bonds.forEach(b => {
+    const inn = b.emitent_inn;
+    if (!inn || known[inn]) return; // already watchlisted or already investigated
+    if (!b.vdo_scope) return;
+    if (b.volume == null || b.volume < minVolume) return;
+    if (b.tenor_yrs == null || b.tenor_yrs < CS_MIN_TENOR_YRS || b.tenor_yrs > CS_MAX_TENOR_YRS) return;
+    const ratingOk = !b.rating; // no rating -- "needs_verification" case is unreachable here, see comment above
+    if (!ratingOk) return;
+    const cur = byIssuer.get(inn);
+    if (!cur || (b.g_spread_bp ?? -Infinity) > (cur.g_spread_bp ?? -Infinity)) {
+      byIssuer.set(inn, { inn, name: b.emitent_title || inn, secid: b.secid,
+        g_spread_bp: b.g_spread_bp, ytm_pct: b.ytm_pct, tenor_yrs: b.tenor_yrs });
+    }
+  });
+  const CS_CANDIDATES_DISPLAY_CAP = 25; // UI cap only, not a filter criterion -- avoids a 100+ chip wall
+  const allCandidates = Array.from(byIssuer.values())
+    .sort((a, b) => (b.g_spread_bp ?? -Infinity) - (a.g_spread_bp ?? -Infinity));
+  const candidates = allCandidates.slice(0, CS_CANDIDATES_DISPLAY_CAP);
+
+  document.getElementById('csCandidatesCount').textContent = allCandidates.length ? `(показаны ${candidates.length} из ${allCandidates.length}, по спреду)` : '';
+  const listEl = document.getElementById('csCandidatesList');
+  listEl.innerHTML = candidates.length
+    ? candidates.map(c => `<div class="cs-chip" data-inn="${c.inn}" data-name="${escapeHtml(c.name)}">
+        <div><div class="cs-chip-name">${escapeHtml(c.name)}</div>
+        <div class="cs-chip-meta">спред ${c.g_spread_bp != null ? Math.round(c.g_spread_bp) + 'бп' : '—'} · YTM ${c.ytm_pct != null ? c.ytm_pct.toFixed(1) + '%' : '—'} · до погашения ${c.tenor_yrs.toFixed(1)}г · без рейтинга</div></div>
+        <button type="button" class="cs-chip-btn" data-inn="${c.inn}" data-name="${escapeHtml(c.name)}">Проверить →</button>
+      </div>`).join('')
+    : `<div class="cs-chip-empty">Нет новых кандидатов, прошедших ВДО-скрининг и не отслеживаемых hybond.</div>`;
+
+  // ---- Part B: rescan-needed, from localStorage scan history ----------
+  const hist = csLoadHistory();
+  const rescan = [];
+  Object.entries(hist).forEach(([inn, rec]) => {
+    const meta = known[inn];
+    if (!meta) return; // scanned issuer never made it into hybond's own tables -- nothing to compare against
+    const reasons = [];
+    if (meta.rating !== rec.rating_snapshot || meta.rated_on !== rec.rated_on_snapshot) {
+      reasons.push(meta.rating ? `новый рейтинг ${meta.rating} (${meta.rated_on || '?'})` : 'рейтинг снят/изменился');
+    }
+    if ((meta.filing_count || 0) > (rec.filing_count_snapshot || 0)) {
+      reasons.push(`новые раскрытия AZIPI (${rec.filing_count_snapshot || 0} → ${meta.filing_count})`);
+    }
+    if (reasons.length) rescan.push({ inn, name: meta.name || rec.query, reasons, scanned_at: rec.scanned_at });
+  });
+  rescan.sort((a, b) => (a.scanned_at || '').localeCompare(b.scanned_at || ''));
+
+  const rescanBlock = document.getElementById('csRescanBlock');
+  if (rescan.length) {
+    rescanBlock.style.display = '';
+    document.getElementById('csRescanCount').textContent = `(${rescan.length})`;
+    document.getElementById('csRescanList').innerHTML = rescan.map(r => `
+      <div class="cs-chip cs-chip-rescan" data-inn="${r.inn}" data-name="${escapeHtml(r.name)}">
+        <div><div class="cs-chip-name">${escapeHtml(r.name)}</div>
+        <div class="cs-chip-meta">⚠ ${r.reasons.join('; ')} · скан от ${r.scanned_at ? r.scanned_at.slice(0, 10) : '?'}</div></div>
+        <button type="button" class="cs-chip-btn" data-inn="${r.inn}" data-name="${escapeHtml(r.name)}">Проверить снова →</button>
+      </div>`).join('');
+  } else {
+    rescanBlock.style.display = 'none';
+  }
+
+  function fillAndFocus(inn, name) {
+    document.getElementById('companyScanInput').value = inn || name;
+    document.getElementById('csManualRow').style.display = '';
+    document.getElementById('companyScanInput').focus();
+  }
+  listEl.querySelectorAll('.cs-chip-btn').forEach(btn => {
+    btn.addEventListener('click', () => fillAndFocus(btn.dataset.inn, btn.dataset.name));
+  });
+  document.getElementById('csRescanList').addEventListener('click', (e) => {
+    const btn = e.target.closest('.cs-chip-btn');
+    if (btn) fillAndFocus(btn.dataset.inn, btn.dataset.name);
+  });
+})();
+
+// ---- Task: render a PAST scan straight from the DB (company_scan_result,
+// via DATA.company_scan_history) -- no API call, no key needed. Reuses
+// renderNarrativeCardHtml() unchanged (same function the live browser-scan
+// path uses), just fed stored markdown/JSON instead of a fresh response. ----
+(function renderCompanyScanHistory() {
+  const history = DATA.company_scan_history || [];
+  const countEl = document.getElementById('csHistoryCount');
+  const listEl = document.getElementById('csHistoryList');
+  const resultEl = document.getElementById('csHistoryResult');
+  countEl.textContent = history.length ? `(${history.length})` : '';
+  if (!history.length) {
+    listEl.innerHTML = `<div class="cs-chip-empty">Пока нет сохранённых CLI-сканов — запустите hybond scan-company &lt;ИНН&gt; или scan-candidates.</div>`;
+    return;
+  }
+  listEl.innerHTML = history.map(h => `
+    <div class="cs-chip" data-id="${h.id}">
+      <div><div class="cs-chip-name">${escapeHtml(h.issuer_name)}</div>
+      <div class="cs-chip-meta">${escapeHtml(h.issuer_quality || '—')} / ${escapeHtml(h.bond_suitability || '—')} · покрытие ${h.data_coverage_pct != null ? h.data_coverage_pct + '%' : '—'} · скан от ${h.scanned_at ? h.scanned_at.slice(0, 10) : '?'}</div></div>
+      <button type="button" class="cs-chip-btn" data-id="${h.id}">Показать →</button>
+    </div>`).join('');
+
+  listEl.querySelectorAll('.cs-chip-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const h = history.find(x => String(x.id) === btn.dataset.id);
+      if (!h) return;
+      const badge = `<div class="nc-external-badge">⚠ Сохранённая проверка (${escapeHtml(h.scanned_at || '')}) — из БД, CLI-скан, не браузер. Может быть устаревшей, см. блок «Требуют повторной проверки» выше.</div>`;
+      resultEl.innerHTML = renderNarrativeCardHtml('csh' + h.id, h.card, h.raw_markdown || '', badge);
+      resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  });
+})();
+
+document.getElementById('csManualToggle').addEventListener('click', () => {
+  const row = document.getElementById('csManualRow');
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+});
 
 // ---------- theme toggle ----------
 const themeBtn = document.getElementById('themeToggle');
@@ -624,6 +1590,22 @@ function thesisBadge(status) {
   if (!status) return '<span class="badge" style="color:var(--text-muted)"><span class="dot" style="background:var(--text-muted)"></span>—</span>';
   const c = THESIS_COLOR[status] || 'var(--text-muted)';
   return `<span class="badge" style="color:${c}"><span class="dot" style="background:${c}"></span>${status}</span>`;
+}
+
+// Registered-vs-placed volume (Task 3 follow-up): a bond still under 100%
+// placed is meaningfully different context (thinner initial liquidity,
+// ongoing book-building) -- see MoexIssueSizePlaced in export_dashboard_data.py.
+// b.placement_pct is null for fully-placed/pre-existing bonds (matches the
+// vast majority of the watchlist) -- shown as '—', not a false "100%", since
+// hybond genuinely doesn't distinguish "fully placed" from "unknown" here.
+function placementCellHtml(b) {
+  if (b.placement_pct == null) return '—';
+  if (b.placement_pct >= 99.5) return '—'; // fully placed, nothing to flag
+  const pth = DATA.placement_thresholds || {};
+  const stalled = b.is_placement_stalled
+    ? ` <span class="source-badge secondary" title="Ниже ${pth.stall_threshold_pct ?? 50}% размещено ${pth.stall_weeks ?? 4}+ недель">⚠ застряло</span>`
+    : '';
+  return `${b.placement_pct.toFixed(1)}% размещено${stalled}`;
 }
 
 // score->color: >=80 green, 60-79 yellow, 40-59 orange, <40 red
@@ -786,18 +1768,7 @@ function pillarPanelHtml(iss) {
   // drift from what the CLI itself would report.
   const YTM_MAX_PCT = 80; // watchlist-mode-only distress sanity bound (portfolio.rank_candidates(ytm_max=0.80))
   const PER_ISSUER_CAP = 2; // watchlist mode's own cap (candidate mode uses DATA.promotion_thresholds.per_issuer_cap instead)
-
-  // Last critical/high item per issuer, pooled from event + market_note --
-  // same feed and severity filter Task 4 built for the notification panel,
-  // just reduced to "most recent" per issuer instead of a full list.
-  // Watchlist-mode only -- universe-wide bonds have no per-issuer event feed.
-  function lastCriticalHigh(iss) {
-    const pool = [...(iss.events || []), ...(iss.market_notes || [])]
-      .filter(e => (e.severity === 'critical' || e.severity === 'high') && e.occurred);
-    if (!pool.length) return null;
-    pool.sort((a, b) => b.occurred.localeCompare(a.occurred));
-    return pool[0];
-  }
+  // lastCriticalHigh() is now top-level (shared with the Портфель tab) -- see its definition above.
 
   function buildWatchlistRows() {
     let allRows = [];
@@ -864,20 +1835,13 @@ function pillarPanelHtml(iss) {
   // 25-32 that used to fit under the old fixed cutoff.
   function buildCandidatePool() {
     const th = DATA.promotion_thresholds || {};
-    const ratingOrder = DATA.rating_order || [];
-    const floorIdx = ratingOrder.indexOf(th.rating_floor);
     const bonds = (DATA.universe_now && DATA.universe_now.bonds) || [];
 
     const scoped = bonds.filter(b => b.vdo_scope);
 
-    const passedRating = scoped.filter(b => {
-      if (b.rating == null) return false;
-      const idx = ratingOrder.indexOf(b.rating);
-      return idx !== -1 && floorIdx !== -1 && idx <= floorIdx;
-    });
+    const passedRating = scoped.filter(b => passesRatingFloor(b.rating, th.rating_floor));
 
-    const passedLiquidity = passedRating.filter(
-      b => b.volume != null && b.volume >= (th.min_volume ?? 0));
+    const passedLiquidity = passedRating.filter(b => passesLiquidityFloor(b.volume, th.min_volume));
 
     const rankable = passedLiquidity.filter(b => b.aey_base_risk_adj_pct != null);
     rankable.sort((a, b) => b.aey_base_risk_adj_pct - a.aey_base_risk_adj_pct);
@@ -958,6 +1922,17 @@ function pillarPanelHtml(iss) {
       ${rd ? `<div style="color:var(--text-muted);font-size:12px;margin-top:2px">${rd.agency || '?'} · ${rd.action || ''} ${rd.rated_on || ''} · прогноз: ${rd.outlook || '—'}</div>` : ''}
     </div>`;
 
+    if (b.placement_pct != null && b.placement_pct < 99.5) {
+      const pth = DATA.placement_thresholds || {};
+      const stalledNote = b.is_placement_stalled
+        ? `<div style="color:var(--critical);font-size:12px;margin-top:2px">⚠ Ниже ${pth.stall_threshold_pct ?? 50}% размещено ${pth.stall_weeks ?? 4}+ недель без прогресса — возможный сигнал слабого спроса инвесторов.</div>`
+        : `<div style="color:var(--text-muted);font-size:12px;margin-top:2px">С ${b.placement_partial_since || '?'} — идёт размещение, ещё не полностью выкуплен выпуск.</div>`;
+      html += `<div class="bond-detail-block"><b>Размещение</b>
+        ${b.placement_pct.toFixed(1)}% от заявленного объёма
+        ${stalledNote}
+      </div>`;
+    }
+
     const dec = b.aey_risk_decomposition;
     html += `<div class="bond-detail-block"><b>Разбивка риска (Part A)</b>`;
     html += dec
@@ -989,7 +1964,100 @@ function pillarPanelHtml(iss) {
 
     html += `<div class="bond-detail-block">${pillarPanelHtml(iss)}</div>`;
     html += renderBondEventsHtml(iss, secid);
+
+    // On-demand narrative card (skills/bond-narrative-card/PROMPT.md is the
+    // reasoning engine; this JS only assembles ISSUER_DATA and renders the
+    // model's response -- see that file's header note). Watchlist-only,
+    // same scope as the rest of this panel: the WUSH prompt needs rating,
+    // pillars, events and the Part A/B outputs above, none of which exist
+    // for candidate-mode-only bonds.
+    html += `<div class="bond-detail-block">
+      <div class="narrative-trigger-row">
+        <button type="button" class="narrative-btn" data-secid="${secid}">Сгенерировать полный анализ (LLM)</button>
+        <button type="button" class="narrative-key-btn">API-ключ Anthropic</button>
+        <span class="narrative-status" id="narrative-status-${secid}"></span>
+      </div>
+      <div id="narrative-card-${secid}"></div>
+    </div>`;
     return html;
+  }
+
+  // --- Narrative card (Task for VS Code — Part C/D follow-up: WUSH prompt
+  // integration; Task 2: company-scan reuses the shared plumbing near the
+  // top of this file). skills/bond-narrative-card/PROMPT.md remains the
+  // sole reasoning engine; everything below assembles DB data for it and
+  // renders its response -- no analytical logic is reimplemented here. ---
+
+  function issuerDataForNarrative(secid) {
+    const rec = bondLookup.get(secid);
+    if (!rec) return null;
+    const { bond: b, issuer: iss } = rec;
+    return {
+      issuer: { issuer_id: iss.issuer_id, name: iss.name, sector: iss.sector },
+      rating_detail: iss.rating_detail || null,
+      ratings_all: iss.ratings_all || [],
+      data_conflicts: iss.data_conflicts || [],
+      six_pillars: iss.six_pillars || {},
+      six_pillars_delta: iss.six_pillars_delta || {},
+      events_full: (iss.events_full || []).slice(0, 60),
+      bond: {
+        secid: b.secid, short_name: b.short_name, mat_date: b.mat_date,
+        ytm_pct: b.ytm_pct, mispricing_bp: b.mispricing_bp,
+        aey_base_pct: b.aey_base_pct, aey_stress_pct: b.aey_stress_pct, aey_bull_pct: b.aey_bull_pct,
+        aey_base_risk_adj_pct: b.aey_base_risk_adj_pct,
+        aey_risk_decomposition: b.aey_risk_decomposition || null,
+        expected_return: b.expected_return || {},
+      },
+      redemptions_by_issuer: (DATA.redemptions_by_issuer || {})[iss.issuer_id] || [],
+      snap_date: iss.snap_date,
+    };
+  }
+
+  async function generateNarrative(secid) {
+    const data = issuerDataForNarrative(secid);
+    const statusEl = document.getElementById('narrative-status-' + secid);
+    const cardEl = document.getElementById('narrative-card-' + secid);
+    const btn = document.querySelector('.narrative-btn[data-secid="' + secid + '"]');
+    if (!data || !statusEl || !cardEl) return;
+
+    if (!getApiKey() && !promptApiKey()) {
+      statusEl.className = 'narrative-status err';
+      statusEl.textContent = 'Нужен API-ключ Anthropic.';
+      return;
+    }
+
+    btn.disabled = true;
+    statusEl.className = 'narrative-status';
+    statusEl.textContent = 'Генерация... (обычно 15–60 сек для отчёта такого объёма)';
+    cardEl.innerHTML = '';
+    try {
+      // PROMPT.md is large but static across every generation -- cached
+      // (ephemeral, ~5min TTL) so repeat generations in one session only
+      // pay full input price once; the render addendum is static too.
+      const { text, usage, elapsedMs } = await callAnthropicMessages({
+        system: [
+          { type: 'text', text: NARRATIVE_PROMPT, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: NC_RENDER_ADDENDUM, cache_control: { type: 'ephemeral' } },
+        ],
+        userText: 'ISSUER_DATA (hybond database export, JSON):\n\n' + JSON.stringify(data, null, 2) +
+          '\n\nProduce the Step 16 output for this bond, following every rule in the prompt above, then the rendering-addendum JSON block.',
+      });
+      const { cardJson, markdown } = parseNarrativeResponse(text);
+      cardEl.innerHTML = renderNarrativeCardHtml(secid, cardJson, markdown);
+      const inTok = (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
+      const outTok = usage.output_tokens || 0;
+      statusEl.className = 'narrative-status';
+      statusEl.textContent = `Готово за ${(elapsedMs / 1000).toFixed(1)}с.`;
+      const costEl = document.createElement('div');
+      costEl.className = 'narrative-cost';
+      costEl.textContent = `Токены: ~${inTok} вход (из них ${usage.cache_read_input_tokens || 0} из кэша) / ${outTok} выход · модель claude-sonnet-5 · ${(elapsedMs / 1000).toFixed(1)}с. Стоимость не встроена в код намеренно (тарифы меняются) — умножьте на актуальную цену модели.`;
+      cardEl.prepend(costEl);
+    } catch (err) {
+      statusEl.className = 'narrative-status err';
+      statusEl.textContent = err.message === 'NO_KEY' ? 'Нужен API-ключ Anthropic.' : 'Ошибка: ' + err.message;
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   let sortKey = 'aey_base_risk_adj_pct', sortDir = -1;
@@ -1097,13 +2165,21 @@ function pillarPanelHtml(iss) {
   // stopPropagation keeps the click from also bubbling to the row handler,
   // which would immediately close the panel this button just updated.
   document.getElementById('portfolioRankTable').addEventListener('click', (e) => {
-    const btn = e.target.closest('.bond-events-toggle');
-    if (!btn) return;
-    e.stopPropagation();
-    const secid = btn.dataset.secid;
-    bondEventsMode.set(secid, (bondEventsMode.get(secid) || 'critical') === 'critical' ? 'all' : 'critical');
-    const detail = document.getElementById('bond-detail-' + secid);
-    if (detail) detail.innerHTML = renderBondDetail(secid);
+    const evtBtn = e.target.closest('.bond-events-toggle');
+    if (evtBtn) {
+      e.stopPropagation();
+      const secid = evtBtn.dataset.secid;
+      bondEventsMode.set(secid, (bondEventsMode.get(secid) || 'critical') === 'critical' ? 'all' : 'critical');
+      const detail = document.getElementById('bond-detail-' + secid);
+      if (detail) detail.innerHTML = renderBondDetail(secid);
+      return;
+    }
+    const keyBtn = e.target.closest('.narrative-key-btn');
+    if (keyBtn) { e.stopPropagation(); promptApiKey(); return; }
+    const ncBtn = e.target.closest('.narrative-btn');
+    if (ncBtn) { e.stopPropagation(); generateNarrative(ncBtn.dataset.secid); return; }
+    const rawBtn = e.target.closest('.nc-raw-toggle');
+    if (rawBtn) { e.stopPropagation(); toggleNcRaw(rawBtn.dataset.rawId); return; }
   });
 
   const toggle = document.getElementById('candidateModeToggle');
@@ -1136,11 +2212,10 @@ function pillarPanelHtml(iss) {
     const lo = parseFloat(sliderMin.value), hi = parseFloat(sliderMax.value);
     // Bounds are rounded to 1dp (floor/ceil) when the slider is set up, so a
     // raw value like 111.38 can sit just inside a displayed bound of 111.4
-    // -- a small epsilon keeps a handle parked exactly at min/max from
-    // excluding the bond that defined that boundary in the first place.
-    const EPS = 0.05;
-    rows = candidatePool.filter(r => r.aey_base_risk_adj_pct != null &&
-      r.aey_base_risk_adj_pct >= lo - EPS && r.aey_base_risk_adj_pct <= hi + EPS);
+    // -- filterByAeyRange's epsilon (shared with the Рынок tab's own AEY
+    // slider) keeps a handle parked exactly at min/max from excluding the
+    // bond that defined that boundary in the first place.
+    rows = filterByAeyRange(candidatePool, lo, hi);
     sliderRangeLabel.textContent = `${lo.toFixed(1)}% – ${hi.toFixed(1)}%`;
     sliderCount.textContent = `${rows.length} из ${candidatePool.length} облигаций в диапазоне`;
     updateSliderFillVisual();
@@ -1191,13 +2266,25 @@ function pillarPanelHtml(iss) {
 })();
 
 // ================= Maturity wall grouped bar chart =================
-(function renderWall() {
-  const rows = DATA.maturity_wall;
+// Shared coupon/principal-by-month bar chart -- used by the watchlist-wide
+// maturity wall below AND the Портфель tab's weight-scaled combined wall
+// (portfolioTab(), "reusing the existing per-issuer chart logic" per that
+// task). `rows` is [{month:'YYYY-MM', coupon, principal, ...}], sorted
+// ascending, one entry per month bucket present. `tooltipFn(row)` returns
+// the hover HTML -- the two callers show different units (raw ₽/1000 face
+// summed across the watchlist vs. weight-scaled portfolio units), so the
+// tooltip text is left to the caller rather than hardcoded here.
+function renderWallSvg(containerId, rows, tooltipFn) {
+  const el = document.getElementById(containerId);
+  if (!rows.length) {
+    el.innerHTML = '<div class="uni-empty">Нет данных для графика.</div>';
+    return;
+  }
   const W = 1080, padL = 50, padR = 20, padT = 10, padB = 40;
   const barGroupW = (W - padL - padR) / rows.length;
   const barW = Math.min(18, barGroupW / 3);
   const H = 260;
-  const maxV = Math.max(...rows.map(r => Math.max(r.coupon, r.principal)), 1);
+  const maxV = Math.max(...rows.map(r => Math.max(r.coupon, r.principal)), 1e-9);
   const scaleY = v => (v / maxV) * (H - padT - padB);
 
   let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Maturity wall">`;
@@ -1206,7 +2293,7 @@ function pillarPanelHtml(iss) {
     const v = (maxV / ticks) * t;
     const y = H - padB - scaleY(v);
     svg += `<line class="grid-line" x1="${padL}" x2="${W-padR}" y1="${y}" y2="${y}"></line>`;
-    svg += `<text x="${padL-8}" y="${y+3}" text-anchor="end">${Math.round(v)}</text>`;
+    svg += `<text x="${padL-8}" y="${y+3}" text-anchor="end">${v < 10 ? v.toFixed(1) : Math.round(v)}</text>`;
   }
   rows.forEach((r, i) => {
     const gx = padL + i * barGroupW + barGroupW/2;
@@ -1217,17 +2304,20 @@ function pillarPanelHtml(iss) {
   });
   svg += `<line class="baseline" x1="${padL}" x2="${W-padR}" y1="${H-padB}" y2="${H-padB}"></line>`;
   svg += `</svg>`;
-  const el = document.getElementById('wallChart');
   el.innerHTML = `<div class="legend">
       <span class="legend-item"><span class="swatch" style="background:var(--series-1)"></span>Купоны</span>
       <span class="legend-item"><span class="swatch" style="background:var(--series-2)"></span>Амортизация/погашение</span>
     </div>` + svg;
   el.querySelectorAll('rect.bar').forEach(bar => {
     const r = rows[+bar.dataset.i];
-    bar.addEventListener('mousemove', e => showTip(e,
-      `<b>${r.month}</b>Купоны: ${Math.round(r.coupon)}<br>Погашение: ${Math.round(r.principal)}<br>Эмитентов: ${r.n_issuers}`));
+    bar.addEventListener('mousemove', e => showTip(e, tooltipFn(r)));
     bar.addEventListener('mouseleave', hideTip);
   });
+}
+
+(function renderWall() {
+  renderWallSvg('wallChart', DATA.maturity_wall, r =>
+    `<b>${r.month}</b>Купоны: ${Math.round(r.coupon)}<br>Погашение: ${Math.round(r.principal)}<br>Эмитентов: ${r.n_issuers}`);
 })();
 
 // ================= Six-pillar grouped bar (per issuer) =================
@@ -1402,7 +2492,7 @@ function renderIssuerDetail(iss) {
   if (iss.bonds && iss.bonds.length) {
     html += `<div style="margin-top:10px"><b>Облигации</b><table style="margin-top:6px"><thead><tr>
       <th>SECID</th><th>Погашение</th><th>Купон, %</th><th>G-спред</th><th>YTM</th>
-      <th>Мисценка</th><th>AEY (риск)</th></tr></thead><tbody>` +
+      <th>Мисценка</th><th>AEY (риск)</th><th>Размещение</th></tr></thead><tbody>` +
       iss.bonds.map(b => {
         const est = b.yield_source === 'moex';
         const gcell = b.g_spread_bp!=null
@@ -1411,8 +2501,9 @@ function renderIssuerDetail(iss) {
         const misCell = b.mispricing_bp!=null
           ? `${b.mispricing_bp>0?'+':''}${Math.round(b.mispricing_bp)}` : '—';
         const aeyCell = b.aey_base_risk_adj_pct!=null ? `${b.aey_base_risk_adj_pct.toFixed(1)}%` : '—';
+        const placeCell = placementCellHtml(b);
         return `<tr><td>${b.short_name||b.secid}</td><td>${b.mat_date||'—'}</td><td>${b.coupon_pct??'—'}</td>` +
-          `<td>${gcell}</td><td>${b.ytm_pct??'—'}</td><td>${misCell}</td><td>${aeyCell}</td></tr>`;
+          `<td>${gcell}</td><td>${b.ytm_pct??'—'}</td><td>${misCell}</td><td>${aeyCell}</td><td>${placeCell}</td></tr>`;
       }).join('') +
       `</tbody></table>` +
       (iss.bonds.some(b => b.yield_source === 'moex')
@@ -1505,20 +2596,21 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     // which is 0 while their tab-panel is display:none -- redraw once the
     // panel actually becomes visible, not just at page load.
     if (btn.dataset.tab === 'cbr' && window.__cbrRedraw) window.__cbrRedraw();
+    if (btn.dataset.tab === 'market' && window.__marketMapRedraw) window.__marketMapRedraw();
   });
 });
 
-// ================= Universe screener =================
-(function universeScreener() {
-  const UNI = DATA.universe || { snap_date: null, bonds: [] };
-  const bonds = UNI.bonds || [];
-  const banner = document.getElementById('uniSnapDateBanner');
-  banner.innerHTML = UNI.snap_date
-    ? `<b>Снимок на ${UNI.snap_date}.</b> ${bonds.length} облигаций с рассчитанным G-спредом (MOEX-доходность как прокси YTM — см. universe_pipeline.py). Мисценка доступна только для эмитентов с текущим рейтингом в таблице <code>rating</code>.`
+// ================= Market tab (Task 3: Universe + Market Map merged) =====
+(function marketTab() {
+  const bucket = (key) => DATA[key] || { snap_date: null, bonds: [], stale_days: null, no_history: true };
+  const allBucketBonds = bucket('universe_now').bonds || [];
+  const banner = document.getElementById('marketSnapBanner');
+  banner.innerHTML = allBucketBonds.length
+    ? `<b>Снимок на ${bucket('universe_now').snap_date}.</b> ${allBucketBonds.length} облигаций с рассчитанным G-спредом (MOEX-доходность как прокси YTM — см. universe_pipeline.py). Мисценка и AEY доступны только для эмитентов с текущим рейтингом в таблице <code>rating</code>.`
     : `<b>Нет данных.</b> Запустите <code>hybond universe</code> и пересоберите дашборд.`;
-  if (!bonds.length) {
-    document.getElementById('universeTable').innerHTML = '';
-    document.getElementById('uniStats').innerHTML = '';
+  if (!allBucketBonds.length) {
+    document.getElementById('marketTable').innerHTML = '';
+    document.getElementById('mStats').innerHTML = '';
     return;
   }
 
@@ -1543,41 +2635,110 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     return 'var(--critical)';
   }
 
-  const ids = ['fYtmMin','fYtmMax','fGspMin','fGspMax','fDurMin','fDurMax',
-               'fMisMin','fMisMax','fTrades'];
-  const el = {}; ids.forEach(id => el[id] = document.getElementById(id));
+  // ---- time bucket (shared between table + map) ----
+  let timeKey = 'universe_now';
 
-  let sortKey = 'g_spread_bp', sortDir = -1;
+  // ---- shared core gates: rating floor / liquidity floor / maturity
+  // buckets / AEY range -- reuse the same predicates as the Портфельный
+  // рейтинг tab's candidate mode (passesRatingFloor/passesLiquidityFloor/
+  // filterByAeyRange, defined once near the top of this file). ----
+  const th = DATA.promotion_thresholds || {};
+  const ratingFloorSel = document.getElementById('mRatingFloor');
+  RATING_ORDER.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r; opt.textContent = r;
+    if (r === th.rating_floor) opt.selected = true;
+    ratingFloorSel.appendChild(opt);
+  });
+  // "Нет порога" -- include unrated/all-rated bonds too, for users who want
+  // to see the full universe before narrowing.
+  const noFloorOpt = document.createElement('option');
+  noFloorOpt.value = ''; noFloorOpt.textContent = 'Без порога (все)';
+  ratingFloorSel.insertBefore(noFloorOpt, ratingFloorSel.firstChild);
+
+  const liqFloorEl = document.getElementById('mLiqFloor');
+  liqFloorEl.value = th.min_volume ?? 300;
+
+  // Maturity buckets: derived from the currently-loaded universe_now bonds
+  // (Task 3 -- new control, no prior equivalent in either tab).
+  const maturityBucketsWrap = document.getElementById('mMaturityBuckets');
+  const bucketSortVal = bk => bk === `${MATURITY_BUCKET_LAST_YEAR}+` ? Infinity : parseInt(bk, 10);
+  const bucketsPresent = [...new Set(allBucketBonds.map(b => maturityBucketOf(b.mat_date)).filter(Boolean))]
+    .sort((a, b) => bucketSortVal(a) - bucketSortVal(b));
+  maturityBucketsWrap.innerHTML = bucketsPresent.map(bk =>
+    `<label><input type="checkbox" value="${bk}" checked> ${bk}</label>`).join('');
+
+  const aeySliderMin = document.getElementById('mAeyMin');
+  const aeySliderMax = document.getElementById('mAeyMax');
+  const aeyFill = document.getElementById('mAeyFill');
+  const aeyRangeLabel = document.getElementById('mAeyRangeLabel');
+  const aeyCountLabel = document.getElementById('mAeyCount');
+  {
+    const aeyVals = allBucketBonds.map(b => b.aey_base_risk_adj_pct).filter(v => v != null);
+    const lo = aeyVals.length ? Math.floor(Math.min(...aeyVals) * 10) / 10 : 0;
+    const hi = aeyVals.length ? Math.ceil(Math.max(...aeyVals) * 10) / 10 : 100;
+    [aeySliderMin, aeySliderMax].forEach(s => { s.min = lo; s.max = hi; });
+    aeySliderMin.value = lo; aeySliderMax.value = hi;
+  }
+  function updateAeyFillVisual() {
+    const lo = parseFloat(aeySliderMin.min), hi = parseFloat(aeySliderMin.max);
+    const span = (hi - lo) || 1;
+    const loPct = ((parseFloat(aeySliderMin.value) - lo) / span) * 100;
+    const hiPct = ((parseFloat(aeySliderMax.value) - lo) / span) * 100;
+    aeyFill.style.left = loPct + '%';
+    aeyFill.style.width = Math.max(hiPct - loPct, 0) + '%';
+  }
+
+  // ---- advanced filters (existing Universe-tab filters, unchanged logic,
+  // just relocated under a collapsible panel) ----
+  const advIds = ['mYtmMin','mYtmMax','mGspMin','mGspMax','mDurMin','mDurMax','mMisMin','mMisMax','mTrades'];
+  const el = {}; advIds.forEach(id => el[id] = document.getElementById(id));
 
   function checkedValues(containerId) {
     return Array.from(document.querySelectorAll(`#${containerId} input:checked`)).map(i => i.value);
   }
 
-  function applyFilters() {
-    // keep min<=max on paired sliders
-    if (+el.fYtmMin.value > +el.fYtmMax.value) el.fYtmMax.value = el.fYtmMin.value;
-    if (+el.fGspMin.value > +el.fGspMax.value) el.fGspMax.value = el.fGspMin.value;
-    if (+el.fDurMin.value > +el.fDurMax.value) el.fDurMax.value = el.fDurMin.value;
-    if (+el.fMisMin.value > +el.fMisMax.value) el.fMisMax.value = el.fMisMin.value;
+  let sortKey = 'g_spread_bp', sortDir = -1;
+  let lastRows = [];
 
-    document.getElementById('lblYtm').textContent = `${el.fYtmMin.value}–${el.fYtmMax.value}%`;
-    document.getElementById('lblGsp').textContent = `${el.fGspMin.value}–${el.fGspMax.value}бп`;
-    document.getElementById('lblDur').textContent = `${el.fDurMin.value}–${el.fDurMax.value}л`;
-    document.getElementById('lblMis').textContent = `${el.fMisMin.value}–${el.fMisMax.value}бп`;
-    document.getElementById('lblTrades').textContent = `≥${el.fTrades.value}`;
+  // The one shared filter pipeline: fixed gates (rating floor, liquidity
+  // floor, maturity buckets, AEY range) AND'd with the advanced panel's
+  // existing range/checkbox filters. Both the table and the map call this
+  // -- no separate copy of the rules in the map's own code.
+  function computeFiltered() {
+    if (+el.mYtmMin.value > +el.mYtmMax.value) el.mYtmMax.value = el.mYtmMin.value;
+    if (+el.mGspMin.value > +el.mGspMax.value) el.mGspMax.value = el.mGspMin.value;
+    if (+el.mDurMin.value > +el.mDurMax.value) el.mDurMax.value = el.mDurMin.value;
+    if (+el.mMisMin.value > +el.mMisMax.value) el.mMisMax.value = el.mMisMin.value;
 
-    const ytmMin = +el.fYtmMin.value, ytmMax = +el.fYtmMax.value;
-    const gspMin = +el.fGspMin.value, gspMax = +el.fGspMax.value;
-    const durMin = +el.fDurMin.value, durMax = +el.fDurMax.value;
-    const misMin = +el.fMisMin.value, misMax = +el.fMisMax.value;
-    const minTrades = +el.fTrades.value;
-    const listingOk = checkedValues('fListing').map(Number);
-    const couponOk = checkedValues('fCoupon');
-    const ratingOk = new Set(checkedValues('fRating'));
-    const showQualified = document.getElementById('fQualified').checked;
+    document.getElementById('mLblYtm').textContent = `${el.mYtmMin.value}–${el.mYtmMax.value}%`;
+    document.getElementById('mLblGsp').textContent = `${el.mGspMin.value}–${el.mGspMax.value}бп`;
+    document.getElementById('mLblDur').textContent = `${el.mDurMin.value}–${el.mDurMax.value}л`;
+    document.getElementById('mLblMis').textContent = `${el.mMisMin.value}–${el.mMisMax.value}бп`;
+    document.getElementById('mLblTrades').textContent = `≥${el.mTrades.value}`;
+    document.getElementById('mLblLiq').textContent = liqFloorEl.value;
+
+    const ytmMin = +el.mYtmMin.value, ytmMax = +el.mYtmMax.value;
+    const gspMin = +el.mGspMin.value, gspMax = +el.mGspMax.value;
+    const durMin = +el.mDurMin.value, durMax = +el.mDurMax.value;
+    const misMin = +el.mMisMin.value, misMax = +el.mMisMax.value;
+    const minTrades = +el.mTrades.value;
+    const listingOk = checkedValues('mListing').map(Number);
+    const couponOk = checkedValues('mCoupon');
+    const ratingOk = new Set(checkedValues('mRatingChecks'));
+    const showQualified = document.getElementById('mQualified').checked;
     const misFilterActive = misMin > -500 || misMax < 5000;
+    const ratingFloor = ratingFloorSel.value;
+    const liqFloor = +liqFloorEl.value;
+    const selectedBuckets = new Set(checkedValues('mMaturityBuckets'));
+    const aeyLo = parseFloat(aeySliderMin.value), aeyHi = parseFloat(aeySliderMax.value);
 
-    const rows = bonds.filter(b => {
+    const bonds = bucket(timeKey).bonds || [];
+
+    let rows = bonds.filter(b => {
+      if (ratingFloor && !passesRatingFloor(b.rating, ratingFloor)) return false;
+      if (!passesLiquidityFloor(b.volume, liqFloor)) return false;
+      if (!passesMaturityBuckets(b.mat_date, selectedBuckets)) return false;
       if (b.ytm_pct == null || b.ytm_pct < ytmMin || b.ytm_pct > ytmMax) return false;
       if (b.g_spread_bp == null || b.g_spread_bp < gspMin || b.g_spread_bp > gspMax) return false;
       const dur = b.duration_yrs ?? 0;
@@ -1594,16 +2755,22 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
       return true;
     });
 
-    renderStats(rows);
-    renderTableRows(rows);
+    rows = filterByAeyRange(rows, aeyLo, aeyHi);
+
+    aeyRangeLabel.textContent = `${aeyLo.toFixed(1)}% – ${aeyHi.toFixed(1)}%`;
+    aeyCountLabel.textContent = `${rows.length} из ${bonds.length} облигаций в диапазоне`;
+    updateAeyFillVisual();
+
+    return rows;
   }
 
   function renderStats(rows) {
+    const total = (bucket(timeKey).bonds || []).length;
     const avgG = rows.length ? Math.round(rows.reduce((s, r) => s + r.g_spread_bp, 0) / rows.length) : 0;
     const ytms = rows.map(r => r.ytm_pct).filter(v => v != null).sort((a, b) => a - b);
     const medYtm = ytms.length ? ytms[Math.floor(ytms.length / 2)] : 0;
-    document.getElementById('uniStats').innerHTML =
-      `<span>Показано <b>${rows.length}</b> из ${bonds.length} облигаций</span>` +
+    document.getElementById('mStats').innerHTML =
+      `<span>Показано <b>${rows.length}</b> из ${total} облигаций</span>` +
       `<span>Средний G-спред: <b>${avgG}</b> бп</span>` +
       `<span>Медиана YTM: <b>${medYtm.toFixed(1)}</b>%</span>`;
   }
@@ -1611,12 +2778,10 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   const cols = [
     ['emitent_title', 'Эмитент'], ['secid', 'SECID'], ['ytm_pct', 'YTM%'],
     ['g_spread_bp', 'G-спред'], ['implied_fair_spread_bp', 'Справ.спред'],
-    ['mispricing_bp', 'Мисценка'], ['duration_yrs', 'Дюрация'],
+    ['mispricing_bp', 'Мисценка'], ['aey_base_risk_adj_pct', 'AEY (риск)'], ['duration_yrs', 'Дюрация'],
     ['mat_date', 'Погашение'], ['offer_date', 'Оферта'], ['volume', 'Объём(млн₽)'],
     ['num_trades', 'Сделок'], ['rating', 'Рейтинг'], ['list_level', 'Уровень'], ['star', '★'],
   ];
-
-  let lastRows = [];
 
   function renderTableRows(rows) {
     lastRows = rows;
@@ -1627,7 +2792,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
       if (typeof av === 'string') return sortDir * String(av).localeCompare(String(bv));
       return sortDir * (av - bv);
     });
-    const showStar = document.getElementById('fWatchlistStar').checked;
+    const showStar = document.getElementById('mWatchlistStar').checked;
 
     const MAX_RENDER = 400; // keep the DOM light; stats above already reflect the full filtered set
     const shown = sorted.slice(0, MAX_RENDER);
@@ -1646,6 +2811,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         ? `<span style="color:${misColor(b.mispricing_bp)}">${b.mispricing_bp>0?'+':''}${Math.round(b.mispricing_bp)}</span>`
         : '<span style="color:var(--text-muted)">н/д</span>';
       const fairCell = b.implied_fair_spread_bp != null ? Math.round(b.implied_fair_spread_bp) : '—';
+      const aeyCell = b.aey_base_risk_adj_pct != null ? b.aey_base_risk_adj_pct.toFixed(1) : '—';
       const volM = b.volume != null ? (b.volume / 1e6).toFixed(1) : '—';
       html += `<tr>
         <td>${(b.short_name || b.emitent_title || '—')}</td>
@@ -1654,6 +2820,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         <td>${gCell}</td>
         <td>${fairCell}</td>
         <td>${misCell}</td>
+        <td>${aeyCell}</td>
         <td>${b.duration_yrs!=null?b.duration_yrs.toFixed(2):'—'}</td>
         <td>${b.mat_date||'—'}</td>
         <td>${b.offer_date||'—'}</td>
@@ -1665,7 +2832,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
       </tr>`;
     });
     html += '</tbody>';
-    const table = document.getElementById('universeTable');
+    const table = document.getElementById('marketTable');
     table.innerHTML = html;
     table.querySelectorAll('th').forEach(th => th.addEventListener('click', () => {
       const k = th.dataset.k;
@@ -1676,8 +2843,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
   function exportCsv() {
     const header = ['emitent_title','secid','ytm_pct','g_spread_bp','implied_fair_spread_bp',
-                     'mispricing_bp','duration_yrs','mat_date','offer_date','volume',
-                     'num_trades','rating','list_level','in_watchlist'];
+                     'mispricing_bp','aey_base_risk_adj_pct','duration_yrs','mat_date','offer_date',
+                     'volume','num_trades','rating','list_level','in_watchlist'];
     const csvRows = [header.join(',')];
     lastRows.forEach(b => {
       csvRows.push(header.map(k => {
@@ -1691,19 +2858,813 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `universe_screen_${UNI.snap_date || 'export'}.csv`;
+    a.download = `market_screen_${bucket(timeKey).snap_date || 'export'}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  document.getElementById('uniFilters').addEventListener('input', applyFilters);
-  document.getElementById('uniFilters').addEventListener('change', applyFilters);
-  document.getElementById('fQualified').addEventListener('change', applyFilters);
-  document.getElementById('fWatchlistStar').addEventListener('change', () => renderTableRows(lastRows));
-  document.getElementById('uniExportCsv').addEventListener('click', exportCsv);
+  // ================= market-map (scatter) view =====================
+  // Ported from the former standalone market_map_template.html -- display
+  // logic (axes/color/size/overlay toggles) is map-only, but the bond set
+  // it draws comes from the exact same computeFiltered() the table uses.
+  const RECOVERY = 0.35;
 
-  applyFilters();
+  function ratingRank(r) {
+    if (!r) return null;
+    const i = RATING_ORDER.indexOf(r);
+    return i === -1 ? null : i / (RATING_ORDER.length - 1); // 0=best, 1=worst
+  }
+  function ratingColor(r) {
+    const rank = ratingRank(r);
+    if (rank === null) return '#9a9890';
+    const g = Math.round(190 * (1 - rank) + 40 * rank);
+    const rr = Math.round(40 * (1 - rank) + 200 * rank);
+    return `rgb(${rr},${g},70)`;
+  }
+  const SECTOR_PALETTE = ['#2a78d6','#eb6834','#1baf7a','#eda100','#9b59d0','#d0507a','#4fb0c6','#8a8f00','#c96f9e','#5a8f3c'];
+  function sectorColor(s) {
+    if (!s) return '#9a9890';
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return SECTOR_PALETTE[h % SECTOR_PALETTE.length];
+  }
+  function liquidityColor(numTrades) {
+    const t = Math.max(0, Math.min(1, Math.log10((numTrades||0) + 1) / 3));
+    const rr = Math.round(160 * (1 - t) + 40 * t);
+    const g = Math.round(160 * (1 - t) + 120 * t);
+    const b = Math.round(160 * (1 - t) + 220 * t);
+    return `rgb(${rr},${g},${b})`;
+  }
+  function mmMisColor(v) {
+    if (v === null || v === undefined) return '#9a9890';
+    if (v > 300) return '#0ca30c';
+    if (v >= -300) return '#c98a00';
+    return '#d03b3b';
+  }
+  function pdGapColor(v) {
+    if (v === null || v === undefined) return '#9a9890';
+    return mmMisColor(v * 10000);
+  }
+  const mmState = { y: 'ytm', x: 'moddur', color: 'mispricing', size: 'volume', fOfz: true, fFair: true, fPdIso: false, fStar: true };
+  function colorFor(b) {
+    switch (mmState.color) {
+      case 'mispricing': return mmMisColor(b.mispricing_bp);
+      case 'pdgap': return pdGapColor(b.pd_gap);
+      case 'rating': return ratingColor(b.rating);
+      case 'sector': return sectorColor(b.sector);
+      case 'liquidity': return liquidityColor(b.num_trades);
+      default: return '#2a78d6';
+    }
+  }
+  function tenorToOffer(b, snapDate) {
+    if (!b.offer_date || !snapDate) return null;
+    const off = new Date(b.offer_date), sd = new Date(snapDate);
+    const days = (off - sd) / 86400000;
+    return days > 0 ? days / 365 : null;
+  }
+  const Y_DEFS = {
+    mispricing: { label: 'Недооценка/переоценка, бп', get: b => b.mispricing_bp },
+    ytm: { label: 'YTM, %', get: b => b.ytm_pct },
+    gspread: { label: 'G-спред, бп', get: b => b.g_spread_bp },
+    pdgap: { label: 'PD рынок−PD рейтинг, %', get: b => b.pd_gap !== null && b.pd_gap !== undefined ? b.pd_gap * 100 : null },
+    pdmarket: { label: 'PD по цене рынка, %', get: b => b.pd_market !== null && b.pd_market !== undefined ? b.pd_market * 100 : null },
+  };
+  const X_DEFS = {
+    moddur: { label: 'Модифицированная дюрация, лет', get: b => b.mod_dur },
+    duration: { label: 'Дюрация, лет', get: b => b.duration_yrs },
+    maturity: { label: 'Срок до погашения, лет', get: b => b.tenor_yrs },
+    offer: { label: 'Срок до оферты, лет', get: (b, snapDate) => tenorToOffer(b, snapDate) },
+  };
+  function sizeFor(b) {
+    if (mmState.size === 'equal') return 4.5;
+    if (mmState.size === 'moddur') { const d = b.mod_dur || 0; return 3 + Math.min(9, d * 1.8); }
+    const v = Math.sqrt(Math.max(0, b.volume || 0));
+    return 3 + Math.min(11, v / 250);
+  }
+  function mmFilteredBonds() {
+    const snapDate = bucket(timeKey).snap_date;
+    const yDef = Y_DEFS[mmState.y], xDef = X_DEFS[mmState.x];
+    return computeFiltered()
+      .map(b => ({ b, xv: xDef.get(b, snapDate), yv: yDef.get(b) }))
+      .filter(p => p.xv !== null && p.xv !== undefined && p.yv !== null && p.yv !== undefined
+                   && isFinite(p.xv) && isFinite(p.yv));
+  }
+  function interpRf(tenor) {
+    const pts = DATA.rf_curve;
+    if (!pts || !pts.length) return null;
+    if (tenor <= pts[0].tenor_yrs) return pts[0].rf_pct;
+    if (tenor >= pts[pts.length - 1].tenor_yrs) return pts[pts.length - 1].rf_pct;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], c = pts[i + 1];
+      if (tenor >= a.tenor_yrs && tenor <= c.tenor_yrs) {
+        const t = (tenor - a.tenor_yrs) / (c.tenor_yrs - a.tenor_yrs);
+        return a.rf_pct + t * (c.rf_pct - a.rf_pct);
+      }
+    }
+    return null;
+  }
+
+  const mmCanvas = document.getElementById('mmChart');
+  const mmCtx = mmCanvas.getContext('2d');
+  const mmTooltip = document.getElementById('tooltip'); // reuse the dashboard's own tooltip element
+  let mmPlotPoints = [];
+
+  function mmPad() { return { l: 56, r: 18, t: 18, b: 42 }; }
+  function mmResizeCanvas() {
+    const rect = mmCanvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    mmCanvas.width = Math.round(rect.width * dpr);
+    mmCanvas.height = Math.round(520 * dpr);
+    mmCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function mmNiceRange(vals) {
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.08;
+    return [lo - pad, hi + pad];
+  }
+
+  function drawMap() {
+    mmResizeCanvas();
+    const rect = mmCanvas.getBoundingClientRect();
+    const W = rect.width, H = 520;
+    mmCtx.clearRect(0, 0, W, H);
+    const P = mmPad();
+    const plotW = W - P.l - P.r, plotH = H - P.t - P.b;
+
+    const pts = mmFilteredBonds();
+    mmPlotPoints = [];
+    const styles = getComputedStyle(document.documentElement);
+    const gridColor = styles.getPropertyValue('--grid').trim() || '#e1e0d9';
+    const textColor = styles.getPropertyValue('--text-secondary').trim() || '#52514e';
+
+    if (!pts.length) {
+      mmCtx.fillStyle = textColor;
+      mmCtx.font = '13px system-ui';
+      mmCtx.fillText('Нет бумаг, удовлетворяющих фильтрам.', P.l, P.t + 20);
+      updateSignalBar([]); updateMmStats([]); updateLegend();
+      return;
+    }
+
+    const xVals = pts.map(p => p.xv), yVals = pts.map(p => p.yv);
+    const [xLo, xHi] = mmNiceRange(xVals);
+    const [yLo, yHi] = mmNiceRange(yVals);
+    const sx = v => P.l + (v - xLo) / (xHi - xLo) * plotW;
+    const sy = v => P.t + plotH - (v - yLo) / (yHi - yLo) * plotH;
+
+    mmCtx.strokeStyle = gridColor; mmCtx.fillStyle = textColor;
+    mmCtx.font = '10.5px system-ui'; mmCtx.lineWidth = 1;
+    const NX = 6, NY = 6;
+    for (let i = 0; i <= NX; i++) {
+      const v = xLo + (xHi - xLo) * i / NX;
+      const px = sx(v);
+      mmCtx.beginPath(); mmCtx.moveTo(px, P.t); mmCtx.lineTo(px, P.t + plotH); mmCtx.stroke();
+      mmCtx.fillText(v.toFixed(1), px - 10, P.t + plotH + 16);
+    }
+    for (let i = 0; i <= NY; i++) {
+      const v = yLo + (yHi - yLo) * i / NY;
+      const py = sy(v);
+      mmCtx.beginPath(); mmCtx.moveTo(P.l, py); mmCtx.lineTo(P.l + plotW, py); mmCtx.stroke();
+      mmCtx.fillText(v.toFixed(0), 4, py + 3);
+    }
+    mmCtx.save();
+    mmCtx.translate(14, P.t + plotH / 2); mmCtx.rotate(-Math.PI / 2);
+    mmCtx.fillText(Y_DEFS[mmState.y].label, -40, 0);
+    mmCtx.restore();
+    mmCtx.fillText(X_DEFS[mmState.x].label, P.l + plotW / 2 - 60, H - 6);
+
+    if (mmState.y === 'mispricing') {
+      mmCtx.fillStyle = 'rgba(12,163,12,0.06)';
+      mmCtx.fillRect(P.l, P.t, plotW, sy(0) - P.t);
+      mmCtx.fillStyle = 'rgba(208,59,59,0.06)';
+      mmCtx.fillRect(P.l, sy(0), plotW, P.t + plotH - sy(0));
+      mmCtx.fillStyle = '#0ca30c'; mmCtx.font = 'bold 11px system-ui';
+      mmCtx.fillText('↗ Недооценка', P.l + 6, P.t + 14);
+      mmCtx.fillStyle = '#d03b3b';
+      mmCtx.fillText('↘ Переоценка', P.l + 6, P.t + plotH - 6);
+    }
+
+    const xIsMaturityLike = mmState.x === 'moddur' || mmState.x === 'duration' || mmState.x === 'maturity';
+
+    if (mmState.fOfz && mmState.y === 'ytm' && xIsMaturityLike && DATA.rf_curve && DATA.rf_curve.length) {
+      mmCtx.save(); mmCtx.strokeStyle = '#2a78d6'; mmCtx.setLineDash([5, 4]); mmCtx.lineWidth = 1.6;
+      mmCtx.beginPath();
+      let first = true;
+      for (let xv = xLo; xv <= xHi; xv += (xHi - xLo) / 60) {
+        const rf = interpRf(xv);
+        if (rf === null) continue;
+        const px = sx(xv), py = sy(rf);
+        if (first) { mmCtx.moveTo(px, py); first = false; } else mmCtx.lineTo(px, py);
+      }
+      mmCtx.stroke(); mmCtx.restore();
+      mmCtx.fillStyle = '#2a78d6'; mmCtx.font = '10.5px system-ui';
+      mmCtx.fillText('ОФЗ (безрисковая)', P.l + plotW - 110, P.t + 12);
+    }
+
+    if (mmState.fFair && mmState.y === 'ytm' && xIsMaturityLike && DATA.fair_value_bp_by_tier) {
+      const tierColors = { AA: '#1baf7a', A: '#2a78d6', BBB: '#eda100', BB: '#eb6834' };
+      Object.entries(DATA.fair_value_bp_by_tier).forEach(([tier, fairBp]) => {
+        mmCtx.save(); mmCtx.strokeStyle = tierColors[tier] || '#9a9890';
+        mmCtx.setLineDash([2, 3]); mmCtx.lineWidth = 1.2;
+        mmCtx.beginPath(); let first = true;
+        for (let xv = xLo; xv <= xHi; xv += (xHi - xLo) / 60) {
+          const rf = interpRf(xv);
+          if (rf === null) continue;
+          const fairYtm = rf + fairBp / 100;
+          const px = sx(xv), py = sy(fairYtm);
+          if (first) { mmCtx.moveTo(px, py); first = false; } else mmCtx.lineTo(px, py);
+        }
+        mmCtx.stroke(); mmCtx.restore();
+      });
+    }
+
+    if (mmState.fPdIso && mmState.y === 'ytm' && mmState.x === 'moddur') {
+      [0.05, 0.10, 0.20, 0.40].forEach(pd => {
+        mmCtx.save(); mmCtx.strokeStyle = '#9a5fd0'; mmCtx.setLineDash([1, 4]); mmCtx.lineWidth = 1;
+        mmCtx.beginPath(); let first = true;
+        for (let xv = xLo; xv <= xHi; xv += (xHi - xLo) / 60) {
+          const rf = interpRf(xv);
+          if (rf === null) continue;
+          const ytm = rf + (pd / (1 - RECOVERY)) * 100;
+          const px = sx(xv), py = sy(ytm);
+          if (py < P.t || py > P.t + plotH) continue;
+          if (first) { mmCtx.moveTo(px, py); first = false; } else mmCtx.lineTo(px, py);
+        }
+        mmCtx.stroke(); mmCtx.restore();
+        mmCtx.fillStyle = '#9a5fd0'; mmCtx.font = '9.5px system-ui';
+        mmCtx.fillText(`PD ${Math.round(pd * 100)}%`, P.l + plotW - 42, sy(interpRf(xHi) + (pd / (1 - RECOVERY)) * 100));
+      });
+    }
+
+    pts.forEach(({ b, xv, yv }) => {
+      const px = sx(xv), py = sy(yv);
+      if (px < P.l || px > P.l + plotW || py < P.t || py > P.t + plotH) return;
+      const r = sizeFor(b);
+      const col = colorFor(b);
+
+      if (b.mispricing_bp !== null && b.mispricing_bp > 1000) {
+        mmCtx.save(); mmCtx.shadowColor = '#0ca30c'; mmCtx.shadowBlur = 10;
+        mmCtx.beginPath(); mmCtx.arc(px, py, r, 0, 7); mmCtx.strokeStyle = '#0ca30c'; mmCtx.lineWidth = 1.5; mmCtx.stroke();
+        mmCtx.restore();
+      }
+      if (b.pd_gap !== null && b.pd_gap > 0.10) {
+        mmCtx.save(); mmCtx.shadowColor = '#d03b3b'; mmCtx.shadowBlur = 10;
+        mmCtx.beginPath(); mmCtx.arc(px, py, r + 2, 0, 7); mmCtx.strokeStyle = '#d03b3b'; mmCtx.lineWidth = 1.5; mmCtx.stroke();
+        mmCtx.restore();
+      }
+
+      mmCtx.beginPath(); mmCtx.arc(px, py, r, 0, 7);
+      mmCtx.fillStyle = col; mmCtx.globalAlpha = 0.85; mmCtx.fill(); mmCtx.globalAlpha = 1;
+      mmCtx.strokeStyle = 'rgba(0,0,0,0.25)'; mmCtx.lineWidth = 0.6; mmCtx.stroke();
+
+      if (mmState.fStar && b.in_watchlist) {
+        mmCtx.fillStyle = '#111'; mmCtx.font = 'bold 10px system-ui';
+        mmCtx.strokeStyle = '#fff'; mmCtx.lineWidth = 2;
+        mmCtx.strokeText('★', px + r + 1, py - r);
+        mmCtx.fillText('★', px + r + 1, py - r);
+      }
+
+      mmPlotPoints.push({ sx: px, sy: py, b });
+    });
+
+    updateSignalBar(pts.map(p => p.b));
+    updateMmStats(pts.map(p => p.b));
+    updateLegend();
+  }
+
+  function updateSignalBar(bonds) {
+    const noSignal = bonds.filter(b => !b.rating || b.signal_excluded);
+    const signaled = bonds.filter(b => b.rating && !b.signal_excluded);
+    const up = signaled.filter(b => b.mispricing_bp !== null && b.mispricing_bp > 300).length;
+    const flat = signaled.filter(b => b.mispricing_bp !== null && b.mispricing_bp >= -300 && b.mispricing_bp <= 300).length;
+    const down = signaled.filter(b => b.mispricing_bp !== null && b.mispricing_bp < -300).length;
+    document.getElementById('mmSignalBar').innerHTML = `
+      <div class="mm-signal-card mm-signal-up"><div class="n">${up}</div><div class="l">↗ Недооценка</div></div>
+      <div class="mm-signal-card mm-signal-flat"><div class="n">${flat}</div><div class="l">→ Справедливо</div></div>
+      <div class="mm-signal-card mm-signal-down"><div class="n">${down}</div><div class="l">↘ Переоценка</div></div>
+      <div class="mm-signal-card mm-signal-none"><div class="n">${noSignal.length}</div><div class="l">— Нет рейтинга/сигнала</div></div>
+    `;
+  }
+  function median(arr) {
+    if (!arr.length) return null;
+    const s = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  }
+  function updateMmStats(bonds) {
+    const ytms = bonds.map(b => b.ytm_pct).filter(v => v !== null && v !== undefined);
+    const pdms = bonds.map(b => b.pd_market).filter(v => v !== null && v !== undefined);
+    const wl = bonds.filter(b => b.in_watchlist).length;
+    document.getElementById('mmStatsBar').innerHTML = `
+      <div class="mm-stat-tile"><div class="value">${bonds.length}</div><div class="label">Показано</div></div>
+      <div class="mm-stat-tile"><div class="value">${ytms.length ? median(ytms).toFixed(1) + '%' : '—'}</div><div class="label">Медиана YTM</div></div>
+      <div class="mm-stat-tile"><div class="value">${pdms.length ? (median(pdms) * 100).toFixed(1) + '%' : '—'}</div><div class="label">Медиана PD (рынок)</div></div>
+      <div class="mm-stat-tile"><div class="value">${wl}</div><div class="label">В вотчлисте</div></div>
+    `;
+  }
+  function updateLegend() {
+    const legendEl = document.getElementById('mmLegendRow');
+    let items = [];
+    if (mmState.color === 'mispricing') {
+      items = [['#0ca30c','> +300бп недооценка'], ['#c98a00','±300бп справедливо'], ['#d03b3b','< -300бп переоценка'], ['#9a9890','нет рейтинга']];
+    } else if (mmState.color === 'pdgap') {
+      items = [['#0ca30c','рынок пессимистичнее рейтинга'], ['#c98a00','близко к рейтингу'], ['#d03b3b','рынок оптимистичнее рейтинга'], ['#9a9890','нет рейтинга']];
+    } else if (mmState.color === 'rating') {
+      items = [['rgb(40,190,70)','AAA/AA'], ['rgb(120,160,70)','A'], ['rgb(190,130,70)','BBB'], ['rgb(200,70,70)','BB и ниже']];
+    } else if (mmState.color === 'sector') {
+      const sectors = [...new Set((bucket(timeKey).bonds || []).map(b => b.sector).filter(Boolean))].slice(0, 8);
+      items = sectors.map(s => [sectorColor(s), s]);
+    } else if (mmState.color === 'liquidity') {
+      items = [['rgb(160,160,160)','мало сделок'], ['rgb(40,120,220)','активно торгуется']];
+    }
+    legendEl.innerHTML = items.map(([c, l]) =>
+      `<div class="mm-legend-item"><span class="mm-swatch" style="background:${c}"></span>${l}</div>`).join('')
+      + `<div class="mm-legend-item"><span style="color:#0ca30c">◎</span> зелёное кольцо: мисценка &gt; 1000бп</div>`
+      + `<div class="mm-legend-item"><span style="color:#d03b3b">◎</span> красное кольцо: PD-разрыв &gt; 10%</div>`;
+  }
+
+  mmCanvas.addEventListener('mousemove', (e) => {
+    const rect = mmCanvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    let best = null, bestD = 12;
+    mmPlotPoints.forEach(p => {
+      const d = Math.hypot(p.sx - mx, p.sy - my);
+      if (d < bestD) { bestD = d; best = p; }
+    });
+    if (!best) { hideTip(); return; }
+    const b = best.b;
+    const pdR = b.pd_rating !== null && b.pd_rating !== undefined ? b.pd_rating * 100 : null;
+    const pdM = b.pd_market !== null && b.pd_market !== undefined ? b.pd_market * 100 : null;
+    const gapPct = (pdR !== null && pdM !== null) ? pdM - pdR : null;
+    const maxBar = Math.max(pdR || 0, pdM || 0, 1);
+    const badgeColor = b.signal_excluded ? '#9a9890' : mmMisColor(b.mispricing_bp);
+    const badgeText = b.signal_excluded
+      ? `⚠ сигнал недоступен: ${b.yield_source === 'commodity_linked' ? 'товарная/структурная бумага' : 'тонкий срез у погашения'}`
+      : b.mispricing_bp === null ? 'нет рейтинга — сигнал недоступен'
+      : b.mispricing_bp > 300 ? 'недооценка' : b.mispricing_bp >= -300 ? 'справедливо оценена' : 'переоценка';
+    showTip(e, `
+      <b>${b.short_name || b.emitent_title || b.secid}</b>
+      <span class="muted">${b.sector || '—'} · ${b.rating || 'без рейтинга'}</span>
+      <div style="margin-top:6px">YTM: ${b.ytm_pct != null ? b.ytm_pct.toFixed(1) + '%' : '—'} &nbsp; G-спред: ${b.g_spread_bp != null ? Math.round(b.g_spread_bp) + 'бп' : '—'}</div>
+      <div>Недооценка: ${b.signal_excluded ? 'н/д (сигнал исключён)' : b.mispricing_bp != null ? (b.mispricing_bp > 0 ? '+' : '') + Math.round(b.mispricing_bp) + 'бп' : 'н/д'}</div>
+      <div>Мод. дюрация: ${b.mod_dur != null ? b.mod_dur.toFixed(2) + ' лет' : '—'}</div>
+      ${pdR !== null || pdM !== null ? `
+      <div class="pd-row"><span class="pd-label">PD (рейтинг)</span>
+        <span class="pd-bar-track"><span class="pd-bar-fill" style="width:${pdR!=null?Math.min(100,pdR/maxBar*100):0}%;background:#2a78d6"></span></span>
+        <span class="pd-val">${pdR!=null?pdR.toFixed(1)+'%':'—'}</span></div>
+      <div class="pd-row"><span class="pd-label">PD (рынок)</span>
+        <span class="pd-bar-track"><span class="pd-bar-fill" style="width:${pdM!=null?Math.min(100,pdM/maxBar*100):0}%;background:#d03b3b"></span></span>
+        <span class="pd-val">${pdM!=null?pdM.toFixed(1)+'%':'—'}</span></div>
+      <div class="pd-row"><span class="pd-label">Разрыв</span>
+        <span class="pd-bar-track"><span class="pd-bar-fill" style="width:${gapPct!=null?Math.min(100,Math.abs(gapPct)/maxBar*100):0}%;background:${gapPct>0?'#0ca30c':'#d03b3b'}"></span></span>
+        <span class="pd-val">${gapPct!=null?(gapPct>0?'+':'')+gapPct.toFixed(1)+'%':'—'}</span></div>` : ''}
+      <div class="signal-badge" style="background:${badgeColor}">${badgeText}</div>
+    `);
+  });
+  mmCanvas.addEventListener('mouseleave', hideTip);
+
+  document.getElementById('mmSelY').addEventListener('change', e => { mmState.y = e.target.value; drawMap(); });
+  document.getElementById('mmSelX').addEventListener('change', e => { mmState.x = e.target.value; drawMap(); });
+  document.getElementById('mmSelColor').addEventListener('change', e => { mmState.color = e.target.value; drawMap(); });
+  document.getElementById('mmSelSize').addEventListener('change', e => { mmState.size = e.target.value; drawMap(); });
+  document.getElementById('mmFOfz').addEventListener('change', e => { mmState.fOfz = e.target.checked; drawMap(); });
+  document.getElementById('mmFFair').addEventListener('change', e => { mmState.fFair = e.target.checked; drawMap(); });
+  document.getElementById('mmFPdIso').addEventListener('change', e => { mmState.fPdIso = e.target.checked; drawMap(); });
+  document.getElementById('mmFStar').addEventListener('change', e => { mmState.fStar = e.target.checked; drawMap(); });
+  window.addEventListener('resize', () => { if (activeView === 'map') drawMap(); });
+
+  // ================= view + time toggles, shared filter wiring =========
+  let activeView = 'table';
+  function renderActive() {
+    const rows = computeFiltered();
+    renderStats(rows);
+    if (activeView === 'table') {
+      renderTableRows(rows);
+    } else {
+      drawMap();
+    }
+  }
+
+  document.getElementById('marketViewToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('.view-btn');
+    if (!btn) return;
+    activeView = btn.dataset.view;
+    document.querySelectorAll('#marketViewToggle .view-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.getElementById('marketTableView').style.display = activeView === 'table' ? '' : 'none';
+    document.getElementById('marketMapView').style.display = activeView === 'map' ? '' : 'none';
+    renderActive();
+  });
+
+  function renderTimeNote() {
+    const buck = bucket(timeKey);
+    const note = document.getElementById('marketTimeNote');
+    if (!buck.snap_date) { note.textContent = 'Нет данных.'; return; }
+    note.textContent = buck.no_history
+      ? `Недостаточно накопленной истории для этого периода — показан последний доступный снимок (${buck.snap_date}).`
+      : `Снимок на ${buck.snap_date}.`;
+  }
+  document.getElementById('marketTimeToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('.time-btn');
+    if (!btn) return;
+    timeKey = btn.dataset.key;
+    document.querySelectorAll('#marketTimeToggle .time-btn').forEach(b => b.classList.toggle('active', b === btn));
+    renderTimeNote();
+    renderActive();
+  });
+
+  document.getElementById('mAdvToggle').addEventListener('click', () => {
+    const panel = document.getElementById('mAdvFilters');
+    const nowHidden = panel.style.display !== 'none';
+    panel.style.display = nowHidden ? 'none' : '';
+  });
+
+  document.getElementById('marketCoreFilters').addEventListener('input', renderActive);
+  document.getElementById('marketCoreFilters').addEventListener('change', renderActive);
+  document.getElementById('mAdvFilters').addEventListener('input', renderActive);
+  document.getElementById('mAdvFilters').addEventListener('change', renderActive);
+  document.getElementById('mWatchlistStar').addEventListener('change', () => renderTableRows(lastRows));
+  document.getElementById('mExportCsv').addEventListener('click', exportCsv);
+
+  // ---- Task 6: send the current filtered view to Портфель ---------------
+  // lastRows is the FULL filtered set computeFiltered()/renderTableRows()
+  // just produced (not the MAX_RENDER=400-row DOM slice) -- exactly what
+  // the stat bar's "Показано N из 1159" already reflects. Hands off a plain
+  // secid list; portfolioTab() re-derives everything else (AEY, rating,
+  // gates) from DATA.universe_now itself rather than trusting a serialized
+  // row shape from a different tab, so the two tabs can't drift out of sync
+  // on field names.
+  document.getElementById('mBuildPortfolioBtn').addEventListener('click', () => {
+    const secids = lastRows.map(r => r.secid);
+    if (!secids.length) {
+      alert('Текущая выборка пуста — нечего передавать в Портфель.');
+      return;
+    }
+    const portfolioBtn = document.querySelector('.tab-btn[data-tab="portfolio"]');
+    if (portfolioBtn) portfolioBtn.click();
+    if (window.__pfLoadFromMarketSelection) window.__pfLoadFromMarketSelection(secids);
+  });
+  aeySliderMin.addEventListener('input', () => {
+    if (parseFloat(aeySliderMin.value) > parseFloat(aeySliderMax.value)) aeySliderMax.value = aeySliderMin.value;
+    renderActive();
+  });
+  aeySliderMax.addEventListener('input', () => {
+    if (parseFloat(aeySliderMax.value) < parseFloat(aeySliderMin.value)) aeySliderMin.value = aeySliderMax.value;
+    renderActive();
+  });
+
+  window.__marketMapRedraw = () => { if (activeView === 'map') drawMap(); };
+
+  renderTimeNote();
+  renderActive();
 })();
+
+document.getElementById('marketInstrumentToggle').addEventListener('click', (e) => {
+  const btn = e.target.closest('.view-btn');
+  if (!btn) return;
+  document.querySelectorAll('#marketInstrumentToggle .view-btn').forEach(b => b.classList.toggle('active', b === btn));
+  const isOfz = btn.dataset.instrument === 'ofz';
+  document.getElementById('corpMarketWrap').style.display = isOfz ? 'none' : '';
+  document.getElementById('ofzMarketWrap').style.display = isOfz ? '' : 'none';
+});
+
+// ================= OFZ carry/roll-down (real MOEX data + real CBR
+// scenarios; see src/hybond/ofz_pipeline.py + compute/ofz_carry.py). No
+// PD/default layer -- sovereign risk. =================
+(function ofzTab() {
+  const OFZ = DATA.ofz || { snap_date: null, bonds: [], rate_scenarios: {}, graduated_shift: {} };
+  const banner = document.getElementById('ofzSnapBanner');
+  const table = document.getElementById('ofzTable');
+  const statsEl = document.getElementById('ofzStats');
+  if (!OFZ.snap_date || !OFZ.bonds.length) {
+    banner.innerHTML = `<b>Нет данных.</b> Запустите <code>hybond ofz</code> и пересоберите дашборд.`;
+    table.innerHTML = '';
+    return;
+  }
+
+  const scen = OFZ.rate_scenarios || {};
+  const fallbackTag = OFZ.is_fallback
+    ? ` <span class="source-badge secondary" title="Нет завершённого анализа заседания ЦБ — используются консервативные дефолтные дельты">⚠ fallback</span>` : '';
+  banner.innerHTML = `<b>Снимок на ${OFZ.snap_date}.</b> ${OFZ.bonds.length} бумаг ОФЗ (ПД/ПК/ИН/АД), реальные данные MOEX (доски TQOB/SPOB). ` +
+    `Сценарии ЦБ (заседание ${scen.source_meeting || '—'}): база ${((scen.base||0)*100).toFixed(2)}%, стресс ${((scen.stress||0)*100).toFixed(2)}%, бык ${((scen.bull||0)*100).toFixed(2)}%${fallbackTag}.`;
+
+  let state = { scen: 'base', horizon: 1, sortKey: 'tenor_yrs', sortDir: 1, custom: null };
+  let bonds = OFZ.bonds; // replaced wholesale by a real refresh, never mutated in place piecemeal
+
+  // Mirrors compute/ofz_carry.py's project_horizon() exactly -- keep the
+  // two in sync if the formula changes. Needed client-side only because
+  // the refresh button (below) re-fetches live MOEX quotes directly in the
+  // browser and must recompute carry/roll-down from them without a round
+  // trip through the Python pipeline.
+  const GRADUATED_SHIFT = { 1: 0.40, 2: 0.75, 3: 1.00 };
+  function couponReturnPct(annualCouponPct, dirtyPricePct, years) {
+    return (annualCouponPct / dirtyPricePct) * years * 100.0;
+  }
+  function bodyReevalPct(modDur, convexity, deltaY) {
+    const cvx = convexity || 0;
+    return (-modDur * deltaY + 0.5 * cvx * deltaY * deltaY) * 100.0;
+  }
+  function projectHorizon(b, scenKey, horizonYears) {
+    const totalDeltaY = scen[scenKey];
+    if (totalDeltaY == null || b.mod_dur == null || b.coupon_pct == null) return null;
+    if ((b.tenor_yrs || 0) < 1.0) return null; // see ofz_pipeline.MIN_TENOR_FOR_PROJECTION_YEARS
+    const shiftFrac = GRADUATED_SHIFT[horizonYears];
+    const deltaYH = totalDeltaY * shiftFrac;
+    const coupon = couponReturnPct(b.coupon_pct, b.dirty_price_pct, horizonYears);
+    const body = bodyReevalPct(b.mod_dur, b.convexity, deltaYH);
+    return { horizon_years: horizonYears, shift_frac: shiftFrac, delta_y_applied: deltaYH,
+             coupon_return_pct: coupon, body_reeval_pct: body, total_return_pct: coupon + body };
+  }
+  // Mirrors compute/ofz_carry.py's project_custom_scenario() exactly: full
+  // delta_y applied at the user's own horizon, no GRADUATED_SHIFT lookup
+  // (see that function's docstring for why). state.custom is set by the
+  // "Применить свой сценарий" handler below; ignores the horizonYears
+  // argument entirely (the custom horizon is fixed by the user's target
+  // date, not the 1/2/3yr toggle) -- callers pass it only so this has the
+  // same signature as projectHorizon.
+  function projectCustom(b) {
+    const c = state.custom;
+    if (!c || b.mod_dur == null || b.coupon_pct == null) return null;
+    if ((b.tenor_yrs || 0) < c.horizonYears) return null; // matures before the target date
+    const coupon = couponReturnPct(b.coupon_pct, b.dirty_price_pct, c.horizonYears);
+    const body = bodyReevalPct(b.mod_dur, b.convexity, c.deltaY);
+    return { horizon_years: c.horizonYears, delta_y_applied: c.deltaY,
+             coupon_return_pct: coupon, body_reeval_pct: body, total_return_pct: coupon + body };
+  }
+  // Prefer the server-precomputed projection (matches ofz_carry.py exactly,
+  // including its near-maturity exclusion) when present; only recompute
+  // client-side for bonds refreshed live (flagged via b._live below --
+  // NOT via carry_rolldown==null, which already means something else:
+  // "the pipeline genuinely excluded this bond" (near-maturity/no coupon).
+  // Conflating the two would silently resurrect a projection for a bond
+  // the pipeline deliberately dropped, e.g. the near-maturity YTM-artifact
+  // bonds documented in ofz_pipeline.carry_rolldown_for_snapshot).
+  function projectionFor(b, scenKey, horizonYears) {
+    if (scenKey === 'custom') return projectCustom(b); // always client-side -- no server precompute possible for an arbitrary user date
+    if (b._live) return projectHorizon(b, scenKey, horizonYears);
+    if (b.carry_rolldown && b.carry_rolldown[scenKey]) {
+      const hit = b.carry_rolldown[scenKey].find(h => h.horizon_years === horizonYears);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  function typeBadgeColor(t) {
+    return t === 'ПД' ? 'var(--good)' : t === 'АД' ? 'var(--series-1)' : t === 'ПК' ? 'var(--warning)' : 'var(--serious)';
+  }
+
+  function renderStats() {
+    const withProjection = bonds.filter(b => projectionFor(b, state.scen, state.horizon) != null);
+    const totals = withProjection.map(b => projectionFor(b, state.scen, state.horizon).total_return_pct);
+    const avg = totals.length ? (totals.reduce((s, v) => s + v, 0) / totals.length) : null;
+    const horizonLabel = state.scen === 'custom' && state.custom
+      ? `${state.custom.horizonYears.toFixed(2)}г до ${state.custom.dateStr}` : `${state.horizon}г`;
+    statsEl.innerHTML =
+      `<span>Всего бумаг: <b>${bonds.length}</b></span>` +
+      `<span>С проекцией на этом горизонте: <b>${withProjection.length}</b></span>` +
+      `<span>Средняя итоговая доходность (${horizonLabel}, ${state.scen}): <b>${avg != null ? avg.toFixed(1) + '%' : '—'}</b></span>`;
+  }
+
+  // ---- Provenance line (Task 5) ----------------------------------------
+  // Base/Stress/Bull: read straight from OFZ.rate_scenarios, which is the
+  // SAME dict export_dashboard_data.py's ofz_bundle() built from a single
+  // portfolio.get_rate_scenarios(con) call also used by cbr_export() for
+  // the ЦБ РФ tab (see that function's docstring) -- no second copy here,
+  // so a new CBR meeting updates both tabs' numbers together automatically
+  // the next time the dashboard is rebuilt from a fresh `hybond ofz`/`cbr`
+  // run. Custom: explicitly labelled "задано пользователем", distinct
+  // wording and color so it can never read as CBR-sourced.
+  function fmtDateRu(iso) {
+    if (!iso) return '—';
+    const [y, m, d] = iso.split('-');
+    return `${d}.${m}.${y}`;
+  }
+  const SCEN_PROVENANCE_LABEL = { base: 'Базовый', stress: 'Стресс', bull: 'Бык' };
+  const SCEN_REFERENCE_FIELD = { base: 'cbr_2027', stress: 'cbr_2026', bull: 'cbr_2029' };
+  const SCEN_REFERENCE_LABEL = { base: 'средняя ставка 2027', stress: 'верхняя граница 2026', bull: 'средняя ставка 2029' };
+  function renderProvenance() {
+    const el = document.getElementById('ofzScenarioProvenance');
+    if (state.scen === 'custom' && state.custom) {
+      el.innerHTML = `<b style="color:var(--series-2)">Свой сценарий (задано пользователем):</b> ` +
+        `целевая КС ${state.custom.rate.toFixed(2)}% к ${fmtDateRu(state.custom.dateStr)} ` +
+        `(текущая КС ${scen.current_rate != null ? scen.current_rate.toFixed(2) + '%' : '—'}, дельта ${(state.custom.deltaY * 100).toFixed(2)}пп) ` +
+        `— это НЕ прогноз ЦБ РФ, источник — введённое здесь значение.`;
+      return;
+    }
+    if (OFZ.is_fallback) {
+      el.innerHTML = `<b>${SCEN_PROVENANCE_LABEL[state.scen] || state.scen}:</b> нет завершённого анализа заседания ЦБ — используется консервативная дефолтная дельта, не привязанная к конкретному заседанию.`;
+      return;
+    }
+    const refField = SCEN_REFERENCE_FIELD[state.scen];
+    const refVal = scen[refField];
+    el.innerHTML = `<b>${SCEN_PROVENANCE_LABEL[state.scen] || state.scen}:</b> ЦБ РФ, заседание ${fmtDateRu(scen.source_meeting)}, ` +
+      `${SCEN_REFERENCE_LABEL[state.scen]} = ${refVal || '—'}%` +
+      ` <a href="#" id="ofzGoToCbrLink" style="margin-left:6px">→ смотреть в ЦБ РФ</a>`;
+    const link = document.getElementById('ofzGoToCbrLink');
+    if (link) {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const cbrBtn = document.querySelector('.tab-btn[data-tab="cbr"]');
+        if (cbrBtn) cbrBtn.click();
+        if (window.__cbrJumpToMeeting) window.__cbrJumpToMeeting(scen.source_meeting);
+      });
+    }
+  }
+
+  const cols = [
+    ['short_name', 'Бумага'], ['secid', 'SECID'], ['instrument_type', 'Тип'],
+    ['mat_date', 'Погашение'], ['tenor_yrs', 'Срок, лет'], ['coupon_pct', 'Купон%'],
+    ['dirty_price_pct', 'Цена%'], ['ytm_pct', 'YTM%'], ['mod_dur', 'Мод.дюр'],
+    ['convexity', 'Выпукл.'], ['carry', 'Carry%'], ['body', 'Body reeval%'], ['total', 'Итого%'],
+  ];
+
+  function render() {
+    const sorted = bonds.slice().sort((a, b) => {
+      let av, bv;
+      if (['carry', 'body', 'total'].includes(state.sortKey)) {
+        const pa = projectionFor(a, state.scen, state.horizon), pb = projectionFor(b, state.scen, state.horizon);
+        const key = state.sortKey === 'carry' ? 'coupon_return_pct' : state.sortKey === 'body' ? 'body_reeval_pct' : 'total_return_pct';
+        av = pa ? pa[key] : null; bv = pb ? pb[key] : null;
+      } else {
+        av = a[state.sortKey]; bv = b[state.sortKey];
+      }
+      if (av == null) av = state.sortDir > 0 ? Infinity : -Infinity;
+      if (bv == null) bv = state.sortDir > 0 ? Infinity : -Infinity;
+      if (typeof av === 'string') return state.sortDir * String(av).localeCompare(String(bv));
+      return state.sortDir * (av - bv);
+    });
+
+    let html = `<thead><tr>${cols.map(([k, l]) =>
+      `<th data-k="${k}">${l}${state.sortKey === k ? `<span class="sort-arrow">${state.sortDir > 0 ? '▲' : '▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
+    sorted.forEach(b => {
+      const proj = projectionFor(b, state.scen, state.horizon);
+      const projCell = (v) => v != null ? `${v > 0 ? '+' : ''}${v.toFixed(1)}` : '<span style="color:var(--text-muted)" title="Погашение менее чем через год, либо нет купона/дюрации — проекция недоступна">—</span>';
+      html += `<tr>
+        <td>${b.short_name || b.secid}</td>
+        <td>${b.secid}</td>
+        <td><span style="color:${typeBadgeColor(b.instrument_type)};font-weight:600">${b.instrument_type}</span></td>
+        <td>${b.mat_date || '—'}</td>
+        <td>${b.tenor_yrs != null ? b.tenor_yrs.toFixed(2) : '—'}</td>
+        <td>${b.coupon_pct != null ? b.coupon_pct.toFixed(2) : '—'}</td>
+        <td>${b.dirty_price_pct != null ? b.dirty_price_pct.toFixed(2) : '—'}</td>
+        <td>${b.ytm_pct != null ? b.ytm_pct.toFixed(1) : '—'}</td>
+        <td>${b.mod_dur != null ? b.mod_dur.toFixed(2) : '—'}</td>
+        <td>${b.convexity != null ? b.convexity.toFixed(1) : '<span style="color:var(--text-muted)" title="Флоатер/линкер — точная выпуклость не считается, MOEX-прокси без члена выпуклости">н/д</span>'}</td>
+        <td>${projCell(proj && proj.coupon_return_pct)}</td>
+        <td>${projCell(proj && proj.body_reeval_pct)}</td>
+        <td><b>${projCell(proj && proj.total_return_pct)}</b></td>
+      </tr>`;
+    });
+    html += '</tbody>';
+    table.innerHTML = html;
+    table.querySelectorAll('th').forEach(th => th.addEventListener('click', () => {
+      const k = th.dataset.k;
+      if (k === state.sortKey) state.sortDir *= -1; else { state.sortKey = k; state.sortDir = -1; }
+      render();
+    }));
+    renderStats();
+    renderProvenance();
+  }
+
+  function setHorizonToggleEnabled(enabled) {
+    // The custom scenario's horizon is fixed by the user's target date, not
+    // the 1/2/3yr picker -- disable it while custom is active so it can't
+    // look like it still controls anything.
+    document.querySelectorAll('#ofzHorizonToggle .view-btn').forEach(b => {
+      b.disabled = !enabled;
+      b.style.opacity = enabled ? '' : '0.4';
+      b.style.cursor = enabled ? '' : 'not-allowed';
+    });
+  }
+
+  document.getElementById('ofzScenarioToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('.time-btn');
+    if (!btn || btn.style.display === 'none') return;
+    state.scen = btn.dataset.scen;
+    document.querySelectorAll('#ofzScenarioToggle .time-btn').forEach(b => b.classList.toggle('active', b === btn));
+    setHorizonToggleEnabled(state.scen !== 'custom');
+    render();
+  });
+  document.getElementById('ofzHorizonToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('.view-btn');
+    if (!btn || btn.disabled) return;
+    state.horizon = +btn.dataset.h;
+    document.querySelectorAll('#ofzHorizonToggle .view-btn').forEach(b => b.classList.toggle('active', b === btn));
+    render();
+  });
+
+  // ---- Custom scenario input (Task 5) -----------------------------------
+  const customBtn = document.getElementById('ofzCustomScenBtn');
+  const customApplyBtn = document.getElementById('ofzCustomScenApplyBtn');
+  const customRateInput = document.getElementById('ofzCustomRateInput');
+  const customDateInput = document.getElementById('ofzCustomDateInput');
+  const customStatus = document.getElementById('ofzCustomScenStatus');
+
+  customApplyBtn.addEventListener('click', () => {
+    customStatus.className = 'narrative-status';
+    const rate = parseFloat(customRateInput.value);
+    const dateStr = customDateInput.value;
+    if (!Number.isFinite(rate)) {
+      customStatus.className = 'narrative-status err';
+      customStatus.textContent = 'Введите целевую ставку.';
+      return;
+    }
+    if (!dateStr) {
+      customStatus.className = 'narrative-status err';
+      customStatus.textContent = 'Введите целевую дату.';
+      return;
+    }
+    if (scen.current_rate == null) {
+      customStatus.className = 'narrative-status err';
+      customStatus.textContent = 'Текущая ключевая ставка недоступна (нет данных ЦБ) — свой сценарий нельзя рассчитать.';
+      return;
+    }
+    const today = new Date();
+    const target = new Date(dateStr + 'T00:00:00');
+    const horizonYears = (target - today) / (365.25 * 86400000);
+    if (!(horizonYears > 0)) {
+      customStatus.className = 'narrative-status err';
+      customStatus.textContent = 'Целевая дата должна быть в будущем.';
+      return;
+    }
+    state.custom = {
+      rate, dateStr, horizonYears,
+      deltaY: (rate - scen.current_rate) / 100.0,
+    };
+    customBtn.textContent = `Свой: ${rate.toFixed(1)}% к ${dateStr}`;
+    customBtn.style.display = '';
+    customBtn.dataset.scen = 'custom';
+    state.scen = 'custom';
+    document.querySelectorAll('#ofzScenarioToggle .time-btn').forEach(b => b.classList.toggle('active', b === customBtn));
+    setHorizonToggleEnabled(false);
+    customStatus.textContent = `Применено: дельта ${(state.custom.deltaY * 100).toFixed(2)}пп на горизонте ${horizonYears.toFixed(2)} лет.`;
+    render();
+  });
+
+  // Real (non-stub) client-side refresh: MOEX ISS actually sets
+  // Access-Control-Allow-Origin (echoes the request Origin), confirmed
+  // empirically -- so a direct browser fetch works here, unlike most of
+  // this dashboard's data which is baked in at build time. This refreshes
+  // LIVE price/yield levels only (LAST/YIELD/DURATION/volume) for the
+  // already-known OFZ secid set; it does not re-run instrument
+  // classification or re-fetch bondization (that stays `hybond ofz`'s
+  // job) -- carry/roll-down is recomputed client-side (projectHorizon
+  // above) from the fresh price/yield using the LAST-KNOWN mod_dur/
+  // convexity for computed-yield bonds (those don't change between price
+  // ticks) and the fresh MOEX-reported yield/duration for proxy bonds.
+  const refreshBtn = document.getElementById('ofzRefreshBtn');
+  const refreshStatus = document.getElementById('ofzRefreshStatus');
+  refreshBtn.addEventListener('click', async () => {
+    refreshBtn.disabled = true;
+    refreshStatus.className = 'narrative-status';
+    refreshStatus.textContent = 'Запрос к MOEX ISS...';
+    try {
+      const cols = 'SECID,LAST,YIELD,DURATION,VALTODAY,NUMTRADES';
+      const resp = await fetch(
+        `https://iss.moex.com/iss/engines/stock/markets/bonds/securities.json?iss.meta=off&iss.only=marketdata&marketdata.columns=${cols}`);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const json = await resp.json();
+      const mdCols = json.marketdata.columns;
+      const bySecid = {};
+      json.marketdata.data.forEach(row => {
+        const rec = {}; mdCols.forEach((c, i) => rec[c] = row[i]);
+        bySecid[rec.SECID] = rec;
+      });
+      let updated = 0;
+      bonds = bonds.map(b => {
+        const q = bySecid[b.secid];
+        if (!q || q.LAST == null) return b;
+        updated++;
+        const nb = Object.assign({}, b);
+        nb.last_pct = q.LAST;
+        nb.dirty_price_pct = q.LAST; // same clean~=dirty approximation as the pipeline
+        nb.volume = q.VALTODAY != null ? q.VALTODAY : b.volume;
+        nb.num_trades = q.NUMTRADES != null ? q.NUMTRADES : b.num_trades;
+        if (b.yield_source === 'moex' && q.YIELD != null) {
+          nb.ytm_pct = q.YIELD;
+          if (q.DURATION) nb.mod_dur = q.DURATION / 365.0;
+        }
+        // computed-yield (ПД/АД) bonds keep their real mod_dur/convexity
+        // (unchanged by a price tick) but their YTM is now stale relative
+        // to the fresh price -- flagged via yield_source, not silently
+        // left inconsistent. ytm_pct display keeps the last computed
+        // value; carry/roll-down still uses the always-current dirty price.
+        nb._live = true; // signal projectionFor() to recompute client-side from fresh data
+        return nb;
+      });
+      refreshStatus.className = 'narrative-status';
+      refreshStatus.textContent = `Обновлено: ${updated} из ${bonds.length} бумаг, ${new Date().toLocaleTimeString('ru-RU')}.`;
+      render();
+    } catch (err) {
+      refreshStatus.className = 'narrative-status err';
+      refreshStatus.textContent = 'Ошибка обновления: ' + err.message;
+    } finally {
+      refreshBtn.disabled = false;
+    }
+  });
+
+  render();
+})();
+
 
 (function cbrTab() {
   const CBR = DATA.cbr || {};
@@ -1992,6 +3953,768 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   drawChart();
   window.addEventListener('resize', drawChart);
   window.__cbrRedraw = drawChart;
+
+  // Cross-tab jump target for the OFZ tab's "→ смотреть в ЦБ РФ" link
+  // (Task 5): selects the source meeting's timeline node and opens its
+  // detail card, same as clicking it directly, so "where did this scenario
+  // number come from" lands on the exact meeting rather than just the tab.
+  window.__cbrJumpToMeeting = function (dateStr) {
+    if (!dateStr) return;
+    const m = meetings.find(mm => mm.date === dateStr);
+    if (!m) return;
+    activeDate = dateStr;
+    renderTimeline();
+    showDetailCard(m);
+    document.getElementById('cbrDetailCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+})();
+
+// ================= Portfolio construction tab =====================
+// First, honest version: equal-weight default over a user-picked subset of
+// the watchlist (DATA.issuers[].bonds -- the only pool that carries
+// aey_risk_decomposition/p_default_pct per bond; DATA.universe_now.bonds
+// does not, see renderBondDetail's "not in watchlist" branch above). No
+// correlation modelling, no tax/transaction costs, no rebalancing logic --
+// explicitly out of scope for this pass per the task, and labelled as such
+// in the banner rather than silently assumed.
+(function portfolioTab() {
+  const PF_PER_ISSUER_CAP = 2; // same cap as portfolio.apply_issuer_cap / the ranking table, enforced here at basket level
+  const DEFAULT_RELATED_GROUPS = '7703550709, 0261012138  # Л-Старт / Идель Нефтемаш — раскрытые связанные стороны, существенные внутригрупповые операции';
+  const DEFAULT_TOP_N = 20;
+
+  // Sector concentration thresholds -- industry rule-of-thumb, not derived
+  // from this portfolio's own data: a single sector above ~15-20% of a
+  // credit portfolio is commonly flagged as concentrated. Two tiers rather
+  // than one cutoff so the badge/bar colour tracks severity, not just a
+  // binary pass/fail.
+  const SECTOR_WARN_PCT = 15;
+  const SECTOR_CRITICAL_PCT = 20;
+  // Combined-cluster threshold: raw per-sector bars can each individually
+  // sit under the single-sector cutoff while still sharing one macro driver
+  // (funding costs, property cycle, ...) -- this is the gap clusters exist
+  // to catch. One shared threshold across all clusters, not configurable
+  // per-cluster in the UI (only cluster MEMBERSHIP is, via the textarea
+  // below) -- keeps the config small, per the task's explicit ask.
+  const SECTOR_CLUSTER_WARN_PCT = 30;
+
+  // Short, factual one-liners per sector tag -- same tags already stored in
+  // `issuer.sector` (see watchlist.json / export_dashboard_data.py), not a
+  // new taxonomy. Sectors with no entry here just show no note, not an
+  // error -- this list is expected to need additions as new sectors appear.
+  const SECTOR_NOTES = {
+    leasing: 'чувствителен к стоимости фондирования и рефинансированию',
+    industrial: 'чувствителен к промышленному циклу и капзатратам',
+    general_industrial: 'чувствителен к промышленному циклу и капзатратам',
+    real_estate: 'чувствителен к ставкам по ипотеке и стоимости стройфинансирования',
+    commercial_real_estate: 'чувствителен к ставкам по ипотеке и стоимости стройфинансирования',
+    construction_materials: 'циклический спрос, завязан на стройку и девелопмент',
+    microfinance: 'регуляторно чувствителен (ЦБ), высокая стоимость риска',
+    pawnshop_resale: 'зависит от цен на драгметаллы и потребительского кредитования',
+    debt_collection: 'зависит от объёма просрочки в банковском/МФО секторе',
+    trading: 'чувствителен к оборотному капиталу и марже',
+    fuel_retail: 'зависит от акцизов и регулирования топливного рынка',
+    gold_mining: 'зависит от цены золота и капзатрат на добычу',
+    metals: 'циклический, зависит от цен на сырьё',
+    forestry_paper: 'циклический экспортный сектор, зависит от курса и пошлин',
+    logistics: 'чувствителен к объёмам перевозок и топливным издержкам',
+    agriculture: 'сезонный, зависит от урожая и цен на сельхозпродукцию',
+    holding_diversified: 'диверсифицированный холдинг — риск зависит от состава портфеля',
+    technology: 'зависит от доступа к финансированию роста',
+    mobility_tech: 'капиталоёмкий, зависит от парка техники и загрузки',
+  };
+
+  const DEFAULT_SECTOR_CLUSTERS =
+    'Корпоративный кредит/фондирование: leasing, industrial, general_industrial\n' +
+    'Недвижимость/стройматериалы: real_estate, commercial_real_estate, construction_materials\n' +
+    'Потребительское кредитование: microfinance, pawnshop_resale, debt_collection';
+
+  // Same rating-floor/liquidity-floor gates promote.py applies (see
+  // DATA.promotion_thresholds -- sourced directly from promote.py's own
+  // defaults, same single-source-of-truth pattern the Рынок tab's
+  // candidate-mode filter already uses). "Re-checked live" here just means
+  // these gates read iss.rating / b.volume as exported in THIS dashboard
+  // build (always the current DB state) rather than any cached value from
+  // whenever the issuer was originally promoted to the watchlist -- an
+  // issuer whose rating has since been withdrawn or degraded below the
+  // floor no longer clears it, even though it's still on the watchlist.
+  const RATING_FLOOR = (DATA.promotion_thresholds || {}).rating_floor;
+  const MIN_VOLUME = (DATA.promotion_thresholds || {}).min_volume ?? 0;
+  document.getElementById('pfRatingFloorLabel').textContent = RATING_FLOOR || '?';
+  document.getElementById('pfMinVolumeLabel').textContent = MIN_VOLUME;
+
+  // ---- OFZ comparison: closest-duration OFZ bond's carry+roll-down -------
+  // (ofz_pipeline.py / compute/ofz_carry.py output, already embedded as
+  // DATA.ofz.bonds[].carry_rolldown -- reused as-is, no re-derivation).
+  // Duration match is a straight abs(mod_dur diff) nearest-neighbour; beyond
+  // OFZ_DURATION_MATCH_MAX_DIFF_YEARS the "closest available" OFZ still
+  // isn't a fair comparison (e.g. a 0.3yr high-yield note against the
+  // nearest OFZ at 4yr duration), so the comparison is skipped rather than
+  // shown misleadingly.
+  const OFZ_DURATION_MATCH_MAX_DIFF_YEARS = 2.0;
+  const ofzCandidates = ((DATA.ofz && DATA.ofz.bonds) || [])
+    .filter(o => o.mod_dur != null && o.carry_rolldown && o.carry_rolldown.base);
+
+  function closestOfz(modDur) {
+    if (modDur == null || !ofzCandidates.length) return null;
+    let best = null, bestDiff = Infinity;
+    for (const o of ofzCandidates) {
+      const diff = Math.abs(o.mod_dur - modDur);
+      if (diff < bestDiff) { bestDiff = diff; best = o; }
+    }
+    if (!best || bestDiff > OFZ_DURATION_MATCH_MAX_DIFF_YEARS) return null;
+    return { ofz: best, diff_yrs: bestDiff };
+  }
+
+  // "Премия к ОФЗ": corporate AEY (base scenario, already an annualised
+  // yield-equivalent) minus the OFZ's own annualised carry+roll-down return
+  // at the SAME horizon under the SAME (base) scenario. carry_rolldown's
+  // total_return_pct is a CUMULATIVE return over horizon_years, not
+  // annualised -- dividing by horizon_years to make it comparable to AEY is
+  // an approximation (ignores compounding), clearly flagged in the banner
+  // above, not presented as an exact spread.
+  function ofzPremiumPp(bondAeyBasePct, match, horizonYears) {
+    if (bondAeyBasePct == null || !match) return null;
+    const proj = match.ofz.carry_rolldown.base.find(h => h.horizon_years === horizonYears);
+    if (!proj) return null;
+    return bondAeyBasePct - (proj.total_return_pct / horizonYears);
+  }
+
+  // ---- candidate pool: every watchlist bond with an AEY figure ----------
+  // `pool` is reassignable (Task 6): the default is the watchlist AEY pool
+  // built here, but window.__pfLoadFromMarketSelection (below) can replace
+  // it wholesale with a set carried over from the Рынок tab's filters. The
+  // "Топ-20 из отфильтрованного пула" button and the rating/liquidity gate
+  // it's built on are unchanged code -- they just operate on whatever
+  // `pool` currently holds, so the same safety net applies to either source
+  // without a second copy of the gating logic.
+  function buildPoolFromWatchlist() {
+    const rows = [];
+    DATA.issuers.forEach(iss => {
+      const lastEvt = lastCriticalHigh(iss);
+      (iss.bonds || []).forEach(b => {
+        if (b.aey_base_risk_adj_pct === null || b.aey_base_risk_adj_pct === undefined) return;
+        const dec = b.aey_risk_decomposition;
+        const passesRating = passesRatingFloor(iss.rating, RATING_FLOOR);
+        const passesLiquidity = passesLiquidityFloor(b.volume, MIN_VOLUME);
+        const ofzMatch = closestOfz(b.mod_dur);
+        rows.push({
+          issuer_id: iss.issuer_id, issuer: iss.name, sector: iss.sector || '—', rating: iss.rating,
+          rating_detail: iss.rating_detail, last_event: lastEvt,
+          secid: b.secid, short_name: b.short_name || b.secid, mat_date: b.mat_date,
+          ytm_pct: b.ytm_pct, aey_base_pct: b.aey_base_pct, aey_stress_pct: b.aey_stress_pct,
+          aey_bull_pct: b.aey_bull_pct, aey_base_risk_adj_pct: b.aey_base_risk_adj_pct,
+          p_default_pct: dec ? dec.p_default_pct : null,
+          volume: b.volume, mod_dur: b.mod_dur,
+          passes_rating: passesRating, passes_liquidity: passesLiquidity,
+          ofz_match: ofzMatch,
+          ofz_premium_1y_pp: ofzPremiumPp(b.aey_base_pct, ofzMatch, 1),
+          ofz_premium_2y_pp: ofzPremiumPp(b.aey_base_pct, ofzMatch, 2),
+          maturity_wall: b.maturity_wall || [],
+          from_market_selection: false,
+        });
+      });
+    });
+    rows.sort((a, b) => (b.aey_base_risk_adj_pct ?? -Infinity) - (a.aey_base_risk_adj_pct ?? -Infinity));
+    return rows;
+  }
+
+  // ---- Task 6: same row shape, sourced from DATA.universe_now instead of
+  // DATA.issuers -- lets a Рынок-tab selection include bonds that aren't on
+  // the watchlist at all. universe bonds carry rating/volume/AEY/mod_dur
+  // (see export_dashboard_data.py's _bonds_for_snap_date) but not
+  // rating_detail/last_event (those are watchlist-only enrichments) --
+  // rendered as "no data" rather than "no events", see renderRationaleDetail.
+  const universeBySecid = new Map(((DATA.universe_now && DATA.universe_now.bonds) || []).map(b => [b.secid, b]));
+  function rowFromUniverseBond(b) {
+    if (b.aey_base_risk_adj_pct === null || b.aey_base_risk_adj_pct === undefined) return null;
+    const dec = b.aey_risk_decomposition;
+    const passesRating = passesRatingFloor(b.rating, RATING_FLOOR);
+    const passesLiquidity = passesLiquidityFloor(b.volume, MIN_VOLUME);
+    const ofzMatch = closestOfz(b.mod_dur);
+    return {
+      issuer_id: b.emitent_inn, issuer: b.emitent_title || b.emitent_inn, sector: b.sector || '—', rating: b.rating,
+      rating_detail: null, last_event: null,
+      secid: b.secid, short_name: b.short_name || b.secid, mat_date: b.mat_date,
+      ytm_pct: b.ytm_pct, aey_base_pct: b.aey_base_pct, aey_stress_pct: b.aey_stress_pct,
+      aey_bull_pct: b.aey_bull_pct, aey_base_risk_adj_pct: b.aey_base_risk_adj_pct,
+      p_default_pct: dec ? dec.p_default_pct : null,
+      volume: b.volume, mod_dur: b.mod_dur,
+      passes_rating: passesRating, passes_liquidity: passesLiquidity,
+      ofz_match: ofzMatch,
+      ofz_premium_1y_pp: ofzPremiumPp(b.aey_base_pct, ofzMatch, 1),
+      ofz_premium_2y_pp: ofzPremiumPp(b.aey_base_pct, ofzMatch, 2),
+      // Рынок-sourced bonds: universe_snapshot export doesn't carry a real
+      // per-bond cashflow schedule (only the watchlist's factlist path does,
+      // via pipeline.py's maturity_wall_by_secid) -- empty, not fabricated.
+      maturity_wall: [],
+      from_market_selection: true,
+    };
+  }
+
+  let pool = buildPoolFromWatchlist();
+  let poolSource = { type: 'watchlist' };
+  let poolBySecid, gatedRankedPool, gatedRankBySecid, defaultTop20Secids;
+
+  // Gated + capped ranking (promote.py-style: rating floor -> liquidity
+  // floor -> AEY(risk-adj) rank -> issuer cap) -- this is the pool "Топ-20
+  // из отфильтрованного пула" draws from, AND the reference ranking the
+  // per-position rationale line quotes ("место N в топ-20"), independent of
+  // whatever the user has actually selected right now. Also reused wholesale
+  // (not just its top 20) by window.__pfLoadFromMarketSelection as the
+  // rating/liquidity/cap safety net for auto-checking an incoming
+  // Рынок-tab selection -- same function, no second gate implementation.
+  function gateAndCapPool(rows) {
+    const gated = rows.filter(r => r.passes_rating && r.passes_liquidity)
+      .slice().sort((a, b) => (b.aey_base_risk_adj_pct ?? -Infinity) - (a.aey_base_risk_adj_pct ?? -Infinity));
+    const counts = {};
+    const ranked = [];
+    for (const r of gated) {
+      const n = counts[r.issuer_id] || 0;
+      if (n >= PF_PER_ISSUER_CAP) continue;
+      counts[r.issuer_id] = n + 1;
+      ranked.push(r);
+    }
+    return ranked;
+  }
+
+  function rebuildDerivedPoolState() {
+    document.getElementById('pfPoolCount').textContent = pool.length;
+    poolBySecid = new Map(pool.map(r => [r.secid, r]));
+    gatedRankedPool = gateAndCapPool(pool);
+    gatedRankBySecid = new Map(gatedRankedPool.map((r, i) => [r.secid, i + 1]));
+    defaultTop20Secids = new Set(gatedRankedPool.slice(0, DEFAULT_TOP_N).map(r => r.secid));
+  }
+  rebuildDerivedPoolState();
+
+  function renderPoolSourceBanner() {
+    const el = document.getElementById('pfPoolSourceBanner');
+    const resetBtn = document.getElementById('pfResetToWatchlist');
+    if (poolSource.type === 'market') {
+      const missing = poolSource.requested - poolSource.included;
+      el.innerHTML = `<b style="color:var(--series-2)">Пул из вкладки «Рынок»:</b> ${poolSource.included} из ${poolSource.requested} бумаг выборки` +
+        (missing > 0 ? ` (${missing} без рассчитанного AEY, не включены)` : '') +
+        ` — рейтинг/ликвидность пересчитаны и отмечены столбцом «Фильтр» так же, как для списка наблюдения.`;
+      resetBtn.style.display = '';
+    } else {
+      el.innerHTML = `Пул: список наблюдения (${pool.length} выпусков с рассчитанным AEY).`;
+      resetBtn.style.display = 'none';
+    }
+  }
+
+  if (!pool.length) {
+    document.getElementById('pfPickTable').outerHTML = '<p class="pf-empty">Нет бумаг с рассчитанным AEY в списке наблюдения — портфель строить не из чего.</p>';
+    return;
+  }
+
+  function rationaleSentence(r) {
+    if (!r.passes_rating || !r.passes_liquidity) {
+      const reasons = [];
+      if (!r.passes_rating) reasons.push(r.rating ? `рейтинг ${r.rating} ниже фильтра ${RATING_FLOOR}` : 'нет текущего рейтинга');
+      if (!r.passes_liquidity) reasons.push('объём торгов ниже порога ликвидности');
+      return `Не проходит фильтр по умолчанию (${reasons.join('; ')}) — в портфеле только благодаря ручному выбору, не входит в «Топ-20 из отфильтрованного пула».`;
+    }
+    const rank = gatedRankBySecid.get(r.secid);
+    if (rank && rank <= DEFAULT_TOP_N) {
+      return `Прошёл фильтр рейтинга/ликвидности, доходность (AEY, риск-скорр.) — место ${rank} в топ-${DEFAULT_TOP_N} отфильтрованного пула.`;
+    }
+    return `Прошёл фильтр рейтинга/ликвидности, но по доходности вне топ-${DEFAULT_TOP_N} отфильтрованного пула (место ${rank ?? '—'}) — в портфеле по ручному выбору.`;
+  }
+
+  const selected = new Map(); // secid -> weight (%), in-memory for this session only
+  const expandedSecids = new Set(); // rows with the rationale detail open, preserved across re-renders
+  const textarea = document.getElementById('pfRelatedGroups');
+  textarea.value = DEFAULT_RELATED_GROUPS;
+  const clusterTextarea = document.getElementById('pfSectorClusters');
+  clusterTextarea.value = DEFAULT_SECTOR_CLUSTERS;
+
+  function parseSectorClusters() {
+    return clusterTextarea.value.split('\n')
+      .map(line => line.split('#')[0].trim())
+      .filter(Boolean)
+      .map(line => {
+        const idx = line.indexOf(':');
+        if (idx === -1) return null;
+        const name = line.slice(0, idx).trim();
+        const sectors = line.slice(idx + 1).split(',').map(s => s.trim()).filter(Boolean);
+        return name && sectors.length ? { name, sectors } : null;
+      })
+      .filter(Boolean);
+  }
+
+  function selectedIssuerCounts() {
+    const counts = {};
+    selected.forEach((_, secid) => {
+      const r = poolBySecid.get(secid);
+      if (!r) return;
+      counts[r.issuer_id] = (counts[r.issuer_id] || 0) + 1;
+    });
+    return counts;
+  }
+
+  function setEqualWeights() {
+    const n = selected.size;
+    if (!n) return;
+    const w = Math.round((100 / n) * 100) / 100;
+    selected.forEach((_, secid) => selected.set(secid, w));
+  }
+
+  function toggle(secid, on) {
+    if (on) {
+      const r = poolBySecid.get(secid);
+      const counts = selectedIssuerCounts();
+      if (r && (counts[r.issuer_id] || 0) >= PF_PER_ISSUER_CAP) return; // cap: silently refuse, checkbox re-render reflects disabled state
+      selected.set(secid, 0); // weight assigned by setEqualWeights() right after
+      setEqualWeights();
+    } else {
+      selected.delete(secid);
+      setEqualWeights();
+    }
+  }
+
+  function parseRelatedGroups() {
+    return textarea.value.split('\n')
+      .map(line => line.split('#')[0].trim()) // '#'-prefixed trailing text is a comment, same convention as the default seed line
+      .filter(Boolean)
+      .map(line => line.split(',').map(s => s.trim()).filter(Boolean))
+      .filter(group => group.length >= 2);
+  }
+
+  function ofzPremiumCell(pp, match, horizonYears) {
+    if (pp == null || !match) return '<td title="Нет сопоставимой по дюрации ОФЗ (расхождение &gt;2 лет либо нет данных)">—</td>';
+    const title = `Ближайшая ОФЗ: ${match.ofz.short_name} (dur ${match.ofz.mod_dur.toFixed(2)}г, расхождение ${match.diff_yrs.toFixed(2)}г)`;
+    return `<td title="${title}">${pp >= 0 ? '+' : ''}${pp.toFixed(1)}</td>`;
+  }
+
+  function filterCell(r) {
+    if (r.passes_rating && r.passes_liquidity) return '<td class="pf-gate-ok">✓</td>';
+    const reasons = [];
+    if (!r.passes_rating) reasons.push('рейтинг');
+    if (!r.passes_liquidity) reasons.push('ликвидность');
+    return `<td class="pf-gate-fail" title="Не проходит: ${reasons.join(', ')}">✗ ${reasons.join('+')}</td>`;
+  }
+
+  function renderRationaleDetail(r) {
+    const rd = r.rating_detail;
+    let staleBadge = '';
+    if (rd && rd.is_stale === true) staleBadge = ' <span class="source-badge secondary" title="Рейтинговое действие старше 12 месяцев">⚠ устарел</span>';
+    else if (rd && rd.is_stale === false) staleBadge = ' <span style="color:var(--good)">✓ свежий</span>';
+    const evt = r.last_event;
+    const evtHtml = evt
+      ? `${evt.occurred} · ${evt.category} (<span style="color:${SEV_COLOR[evt.severity] || 'var(--text-muted)'}">${evt.severity}</span>) — ${evt.summary}`
+      : r.from_market_selection
+        ? 'история событий недоступна (бумага добавлена из вкладки «Рынок», не из списка наблюдения)'
+        : 'нет high/critical событий в истории эмитента';
+    return `<div class="pf-rationale-block">
+      <div><b>Обоснование:</b> ${rationaleSentence(r)}</div>
+      <div style="margin-top:6px"><b>Рейтинг:</b> ${r.rating || '—'}${staleBadge} · <b>Сектор:</b> ${r.sector}</div>
+      <div style="margin-top:4px"><b>Последнее high/critical событие:</b> ${evtHtml}</div>
+    </div>`;
+  }
+
+  function renderPickTable() {
+    const counts = selectedIssuerCounts();
+    const table = document.getElementById('pfPickTable');
+    table.innerHTML = `<thead><tr>
+        <th></th><th>Эмитент</th><th>Выпуск</th><th>Сектор</th><th>Рейтинг</th>
+        <th>YTM %</th><th>AEY база %</th><th>AEY (риск) %</th><th>PD 1г %</th>
+        <th>Премия к ОФЗ 1г, пп</th><th>Премия к ОФЗ 2г, пп</th><th>Фильтр</th><th>Вес %</th>
+      </tr></thead><tbody>` +
+      pool.map(r => {
+        const isOn = selected.has(r.secid);
+        const atCap = !isOn && (counts[r.issuer_id] || 0) >= PF_PER_ISSUER_CAP;
+        const expanded = expandedSecids.has(r.secid);
+        return `<tr class="pf-row ${isOn ? 'pf-picked' : ''} ${atCap ? 'pf-capped' : ''}" data-secid="${r.secid}">
+          <td><input type="checkbox" class="pf-check" data-secid="${r.secid}" ${isOn ? 'checked' : ''} ${atCap ? 'disabled title="Лимит 2 выпуска на эмитента уже достигнут"' : ''}></td>
+          <td>${r.issuer}</td>
+          <td>${r.short_name}</td>
+          <td>${r.sector}</td>
+          <td>${r.rating || '—'}</td>
+          <td>${r.ytm_pct != null ? r.ytm_pct.toFixed(1) : '—'}</td>
+          <td>${r.aey_base_pct != null ? r.aey_base_pct.toFixed(1) : '—'}</td>
+          <td>${r.aey_base_risk_adj_pct != null ? r.aey_base_risk_adj_pct.toFixed(1) : '—'}</td>
+          <td>${r.p_default_pct != null ? r.p_default_pct.toFixed(1) : '—'}</td>
+          ${ofzPremiumCell(r.ofz_premium_1y_pp, r.ofz_match, 1)}
+          ${ofzPremiumCell(r.ofz_premium_2y_pp, r.ofz_match, 2)}
+          ${filterCell(r)}
+          <td><input type="number" class="pf-weight-input" data-secid="${r.secid}" step="0.1" min="0" max="100"
+                value="${isOn ? selected.get(r.secid).toFixed(1) : ''}" ${isOn ? '' : 'disabled'}></td>
+        </tr>
+        <tr class="detail-row" data-secid="${r.secid}" style="${expanded ? '' : 'display:none'}">
+          <td colspan="13"><div class="detail-inner">${renderRationaleDetail(r)}</div></td>
+        </tr>`;
+      }).join('') + `</tbody>`;
+
+    table.querySelectorAll('tr.pf-row').forEach(tr => {
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('.pf-check, .pf-weight-input')) return; // don't toggle rationale when interacting with the checkbox/weight input
+        const secid = tr.dataset.secid;
+        const detailRow = table.querySelector(`tr.detail-row[data-secid="${CSS.escape(secid)}"]`);
+        if (expandedSecids.has(secid)) { expandedSecids.delete(secid); detailRow.style.display = 'none'; }
+        else { expandedSecids.add(secid); detailRow.style.display = ''; }
+      });
+    });
+    table.querySelectorAll('.pf-check').forEach(cb => {
+      cb.addEventListener('change', () => { toggle(cb.dataset.secid, cb.checked); renderAll(); });
+    });
+    table.querySelectorAll('.pf-weight-input').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const v = parseFloat(inp.value);
+        selected.set(inp.dataset.secid, isFinite(v) ? v : 0);
+        renderStatsOnly(); // weight edits don't change the pick table itself, just the aggregates
+      });
+    });
+  }
+
+  function renderWeightSum() {
+    let sum = 0;
+    selected.forEach(w => sum += w);
+    const el = document.getElementById('pfWeightSum');
+    const warn = selected.size > 0 && Math.abs(sum - 100) > 0.5;
+    el.className = 'pf-weight-sum' + (warn ? ' pf-warn' : '');
+    el.innerHTML = selected.size
+      ? `Позиций: <b>${selected.size}</b> · Сумма весов: <b>${sum.toFixed(1)}%</b>${warn ? ' ⚠ не равна 100% — агрегаты ниже посчитаны по фактическим весам, не перенормированы' : ''}`
+      : 'Позиций не выбрано.';
+    return sum;
+  }
+
+  function renderRelatedWarning() {
+    const groups = parseRelatedGroups();
+    const box = document.getElementById('pfRelatedWarnBox');
+    const selectedIssuers = new Map(); // issuer_id -> issuer name, among selected
+    selected.forEach((_, secid) => {
+      const r = poolBySecid.get(secid);
+      if (r) selectedIssuers.set(r.issuer_id, r.issuer);
+    });
+    const hits = groups
+      .map(group => group.filter(inn => selectedIssuers.has(inn)))
+      .filter(present => present.length >= 2);
+    if (!hits.length) { box.innerHTML = ''; return; }
+    box.innerHTML = hits.map(present => {
+      const names = present.map(inn => `${selectedIssuers.get(inn)} (${inn})`).join(', ');
+      return `<div class="pf-related-warn">⚠ <b>Связанные стороны в портфеле:</b> ${names} — прошли лимит на эмитента по отдельности, но отмечены как одна группа риска.</div>`;
+    }).join('');
+  }
+
+  function bucketWeights(keyFn) {
+    const totals = new Map();
+    const counts = new Map(); // how many SELECTED positions fall into each bucket -- lets a
+                               // multi-series issuer's combined % be annotated "(N выпуска)"
+                               // rather than looking like a single-bond weight (see renderConcentration)
+    let sumW = 0;
+    selected.forEach((w, secid) => {
+      const r = poolBySecid.get(secid);
+      if (!r) return;
+      const key = keyFn(r);
+      totals.set(key, (totals.get(key) || 0) + w);
+      counts.set(key, (counts.get(key) || 0) + 1);
+      sumW += w;
+    });
+    return { totals, counts, sumW };
+  }
+
+  function ruPluralIssue(n) {
+    const mod10 = n % 10, mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return 'выпуск';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'выпуска';
+    return 'выпусков';
+  }
+
+  function renderConcentration() {
+    function bucketBy(keyFn, labelFn, opts) {
+      const { totals, counts, sumW } = bucketWeights(keyFn);
+      const entries = Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
+      if (!entries.length || sumW <= 0) return '<span class="pf-empty">Нет данных.</span>';
+      return entries.map(([key, w]) => {
+        const pct = (w / sumW) * 100;
+        const n = counts.get(key) || 1;
+        // Confirms this IS correctly-summed multi-series exposure, not a
+        // weighting bug: n>1 means the % above is several positions from
+        // the same issuer added together (bucketWeights sums by key, same
+        // as any other Map-accumulation in this file) -- annotated so it
+        // can't be misread as one bond's own weight.
+        const countNote = (opts && opts.showCount && n > 1)
+          ? ` <span class="pf-issuer-count">(${n} ${ruPluralIssue(n)})</span>` : '';
+        return `<div class="pf-concentration-row"><div class="pf-concentration-main">
+          <span>${labelFn(key)}${countNote}</span>
+          <span class="pf-concentration-bar"><span class="pf-concentration-fill" style="width:${Math.min(100, pct).toFixed(1)}%"></span></span>
+          <span>${pct.toFixed(1)}%</span>
+        </div></div>`;
+      }).join('');
+    }
+    document.getElementById('pfConcIssuer').innerHTML = bucketBy(
+      r => r.issuer_id, key => (poolBySecid_issuerName(key)), { showCount: true });
+
+    // ---- sector concentration: thresholds + notes + cluster summary -----
+    const { totals: sectorTotals, sumW } = bucketWeights(r => r.sector);
+    const sectorEntries = Array.from(sectorTotals.entries()).sort((a, b) => b[1] - a[1]);
+    const sectorPct = new Map(); // sector -> % of portfolio (only meaningful when sumW > 0)
+    sectorEntries.forEach(([sector, w]) => sectorPct.set(sector, sumW > 0 ? (w / sumW) * 100 : 0));
+
+    const sectorEl = document.getElementById('pfConcSector');
+    if (!sectorEntries.length || sumW <= 0) {
+      sectorEl.innerHTML = '<span class="pf-empty">Нет данных.</span>';
+    } else {
+      sectorEl.innerHTML = sectorEntries.map(([sector, w]) => {
+        const pct = sectorPct.get(sector);
+        const tier = pct >= SECTOR_CRITICAL_PCT ? 'pf-sector-critical' : pct >= SECTOR_WARN_PCT ? 'pf-sector-warn' : '';
+        const badge = tier ? `<span class="pf-sector-badge ${tier}">${pct >= SECTOR_CRITICAL_PCT ? 'высокая концентрация' : 'выше нормы'}</span>` : '';
+        const note = SECTOR_NOTES[sector];
+        return `<div class="pf-concentration-row"><div class="pf-concentration-main">
+            <span>${sector}${badge}</span>
+            <span class="pf-concentration-bar"><span class="pf-concentration-fill ${tier}" style="width:${Math.min(100, pct).toFixed(1)}%"></span></span>
+            <span>${pct.toFixed(1)}%</span>
+          </div>
+          ${note ? `<span class="pf-sector-note">${sector}: ${note}</span>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    // ---- combined-cluster check: sectors that individually pass but
+    // together share one macro driver (funding cost cycle, property cycle,
+    // ...) -- the exact gap raw per-sector bars miss.
+    const clusters = parseSectorClusters();
+    const clusterResults = clusters.map(c => {
+      const pct = c.sectors.reduce((s, sector) => s + (sectorPct.get(sector) || 0), 0);
+      const present = c.sectors.filter(sector => sectorPct.has(sector));
+      return { ...c, pct, present, breach: pct >= SECTOR_CLUSTER_WARN_PCT };
+    });
+    const breached = clusterResults.filter(c => c.breach && c.present.length);
+
+    const summaryEl = document.getElementById('pfSectorSummary');
+    if (!sumW) {
+      summaryEl.innerHTML = '';
+    } else if (breached.length) {
+      summaryEl.innerHTML = breached.map(c => `
+        <div class="pf-cluster-summary">
+          ⚠ <b>${c.pct.toFixed(0)}% портфеля в кластере «${escapeHtml(c.name)}»</b> (${c.present.join(', ')}) — повышенная чувствительность к одному макро-фактору, даже если каждый сектор по отдельности не выделяется.
+        </div>`).join('');
+    } else {
+      const worstSector = sectorEntries.length ? sectorEntries[0] : null;
+      const anySingleBreach = worstSector && sectorPct.get(worstSector[0]) >= SECTOR_WARN_PCT;
+      summaryEl.innerHTML = anySingleBreach
+        ? '' // per-sector badges already surface this case; no cluster to add on top
+        : `<div class="pf-cluster-summary pf-clean">Отраслевая концентрация в пределах нормы — ни один сектор и ни один заданный кластер не превышают пороги (${SECTOR_WARN_PCT}% / ${SECTOR_CLUSTER_WARN_PCT}%).</div>`;
+    }
+  }
+  // small helper so bucketBy's labelFn can resolve an issuer_id back to a display name
+  function poolBySecid_issuerName(issuer_id) {
+    const hit = pool.find(r => r.issuer_id === issuer_id);
+    return hit ? hit.issuer : issuer_id;
+  }
+
+  function renderScenarios(sumW) {
+    const banner = document.getElementById('pfScenBanner');
+    banner.innerHTML = DATA.aey_is_fallback
+      ? `<b>⚠ Резервные сценарии.</b> ${DATA.aey_source_note} — доверять цифрам ниже не стоит.`
+      : `<b>${DATA.aey_source_note}.</b>`;
+
+    const table = document.getElementById('pfScenTable');
+    if (!selected.size || sumW <= 0) {
+      table.innerHTML = '<tbody><tr><td class="pf-empty">Выберите хотя бы одну бумагу.</td></tr></tbody>';
+      return;
+    }
+    const scen = { base: 0, stress: 0, bull: 0 };
+    selected.forEach((w, secid) => {
+      const r = poolBySecid.get(secid);
+      if (!r) return;
+      const frac = w / sumW; // normalized by ACTUAL weight sum, so an off-100% total doesn't silently skew the average
+      scen.base += frac * (r.aey_base_pct ?? 0);
+      scen.stress += frac * (r.aey_stress_pct ?? 0);
+      scen.bull += frac * (r.aey_bull_pct ?? 0);
+    });
+    const vals = [['Стресс', scen.stress], ['База', scen.base], ['Бык', scen.bull]];
+    const best = Math.max(...vals.map(v => v[1]));
+    const worst = Math.min(...vals.map(v => v[1]));
+    table.innerHTML = `<thead><tr><th>Сценарий</th><th>Портфельная ожид. доходность (взвеш. AEY), %</th></tr></thead><tbody>` +
+      vals.map(([label, v]) => `<tr><td>${label}</td><td class="${v === best ? 'pf-scen-best' : v === worst ? 'pf-scen-worst' : ''}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</td></tr>`).join('') +
+      `</tbody>`;
+  }
+
+  // Portfolio-level OFZ premium (Task): weighted-average AEY(base) minus
+  // weighted-average nearest-duration-OFZ annualised return, at 1y/2y --
+  // reuses each position's OWN per-bond premium (ofz_premium_1y_pp/2y_pp,
+  // ofzPremiumPp() above), just weight-aggregated. Mathematically identical
+  // to separately weight-averaging AEY and the OFZ return with the SAME
+  // weights and subtracting (weighted-avg(A) - weighted-avg(B) ==
+  // weighted-avg(A-B) for matching weights), so this is not a different
+  // number from what the task describes, just computed via the already-
+  // reused per-bond figure rather than re-deriving it. Positions with no
+  // comparable OFZ (duration gap >2yr, or no OFZ data) are excluded from
+  // the weighted average -- `coverage_w` reports how much of the selected
+  // weight that leaves out, shown alongside the number rather than silently
+  // treated as zero premium.
+  function portfolioOfzPremium(sumW, horizonYears) {
+    const key = horizonYears === 1 ? 'ofz_premium_1y_pp' : 'ofz_premium_2y_pp';
+    let coveredW = 0, weightedSum = 0;
+    selected.forEach((w, secid) => {
+      const r = poolBySecid.get(secid);
+      if (!r || r[key] == null) return;
+      coveredW += w;
+      weightedSum += w * r[key];
+    });
+    if (coveredW <= 0) return null;
+    return { premium: weightedSum / coveredW, coverage_pct: sumW > 0 ? (coveredW / sumW) * 100 : 0 };
+  }
+
+  // Portfolio-level coupon/maturity-wall (Task): combines each SELECTED
+  // position's own real monthly cashflow buckets (r.maturity_wall, from
+  // pipeline.py's maturity_wall_by_secid -- empty for floaters or
+  // Рынок-sourced bonds without a computed schedule, see rowFromUniverseBond)
+  // weight-scaled by w/100 (a 10%-weight position contributes 10% of its
+  // real per-1000-face coupon/principal), summed per month. Reuses
+  // renderWallSvg (the exact same chart the watchlist-wide wall draws).
+  function renderPortfolioWall() {
+    const banner = document.getElementById('pfWallBanner');
+    const byMonth = new Map(); // 'YYYY-MM' -> {coupon, principal}
+    let coveredW = 0, missingWall = 0;
+    selected.forEach((w, secid) => {
+      const r = poolBySecid.get(secid);
+      if (!r) return;
+      const wall = r.maturity_wall || [];
+      if (!wall.length) { missingWall++; return; }
+      coveredW += w;
+      const frac = w / 100;
+      wall.forEach(b => {
+        const cur = byMonth.get(b.month) || { month: b.month, coupon: 0, principal: 0 };
+        cur.coupon += b.coupon * frac;
+        cur.principal += b.principal * frac;
+        byMonth.set(b.month, cur);
+      });
+    });
+    const rows = Array.from(byMonth.values()).sort((a, b) => a.month.localeCompare(b.month));
+
+    if (!selected.size) {
+      banner.style.display = 'none';
+      renderWallSvg('pfWallChart', [], () => '');
+      return;
+    }
+    if (missingWall > 0) {
+      banner.style.display = '';
+      banner.innerHTML = `<b>${missingWall} из ${selected.size}</b> выбранных позиций без графика (флоатер без фиксированного расписания купонов, либо бумага из вкладки «Рынок» без рассчитанного графика — см. секцию «Пул из вкладки «Рынок»» выше) — исключены из графика ниже, не показаны как нулевые выплаты.`;
+    } else {
+      banner.style.display = 'none';
+    }
+    renderWallSvg('pfWallChart', rows, r =>
+      `<b>${r.month}</b>Купоны: ${r.coupon.toFixed(1)}<br>Погашение: ${r.principal.toFixed(1)}<br>(в единицах веса портфеля × выплата/1000 номинала)`);
+  }
+
+  function renderStatsOnly() {
+    const sumW = renderWeightSum();
+    renderRelatedWarning();
+    renderConcentration();
+    renderScenarios(sumW);
+    renderPortfolioWall();
+
+    let expectedDefaults = 0; // naive independence: sum of each position's own 1yr PD -- an EXPECTED COUNT, not a probability (see tile tooltip)
+    let probAtLeastOne = null; // the actual probability, same independence assumption: 1 - product(1 - p_i)
+    let maxIssuerShare = 0;
+    const issuerW = new Map();
+    let survivalProduct = 1;
+    let anyPd = false;
+    selected.forEach((w, secid) => {
+      const r = poolBySecid.get(secid);
+      if (!r) return;
+      if (r.p_default_pct != null) {
+        expectedDefaults += r.p_default_pct / 100;
+        survivalProduct *= (1 - r.p_default_pct / 100);
+        anyPd = true;
+      }
+      issuerW.set(r.issuer_id, (issuerW.get(r.issuer_id) || 0) + w);
+    });
+    if (anyPd) probAtLeastOne = (1 - survivalProduct) * 100;
+    issuerW.forEach(w => { if (sumW > 0) maxIssuerShare = Math.max(maxIssuerShare, (w / sumW) * 100); });
+
+    const ofz1 = portfolioOfzPremium(sumW, 1);
+    const ofz2 = portfolioOfzPremium(sumW, 2);
+    const ofzCell = (o) => o == null ? '—' :
+      `${o.premium >= 0 ? '+' : ''}${o.premium.toFixed(1)}пп`;
+    const ofzTitle = (o, h) => o == null
+      ? `Ни у одной выбранной бумаги нет сопоставимой по дюрации ОФЗ (горизонт ${h}г).`
+      : `Средневзвешенная AEY (база) минус средневзвешенная аннуализированная доходность ближайшей по дюрации ОФЗ (carry+roll-down, базовый сценарий ЦБ), горизонт ${h}г.` +
+        (o.coverage_pct < 99.5 ? ` Покрытие: ${o.coverage_pct.toFixed(0)}% веса портфеля (у остальных нет сопоставимой ОФЗ).` : '');
+
+    const stats = [
+      ['Позиций в портфеле', selected.size, null],
+      ['Сумма весов', sumW.toFixed(1) + '%', null],
+      ['Ожид. число дефолтов (1г, независимость)', expectedDefaults.toFixed(2),
+        'Сумма годовых вероятностей дефолта (PD) по каждой позиции — ОЖИДАЕМОЕ КОЛИЧЕСТВО дефолтов за год, не вероятность. ' +
+        'Это НЕ то же самое, что "вероятность хотя бы одного дефолта" (см. следующую плитку) — для портфеля с низкими PD числа близки, но не идентичны.'],
+      ['Вероятность ≥1 дефолта (1г, независимость)', probAtLeastOne != null ? probAtLeastOne.toFixed(0) + '%' : '—',
+        `1 − произведение (1 − PD) по каждой позиции — точная вероятность хотя бы одного дефолта в портфеле за 1 год, при допущении НЕЗАВИСИМОСТИ дефолтов (в кризис дефолты кластеризуются, это не учтено, см. баннер выше). ` +
+        (probAtLeastOne != null ? `Например, ${expectedDefaults.toFixed(2)} ожидаемых дефолтов ≈ ${probAtLeastOne.toFixed(0)}% вероятность хотя бы одного.` : '')],
+      ['Наибольшая доля одного эмитента', selected.size ? maxIssuerShare.toFixed(1) + '%' : '—', null],
+      ['Премия к ОФЗ, 1г (взвеш.)', ofzCell(ofz1), ofzTitle(ofz1, 1)],
+      ['Премия к ОФЗ, 2г (взвеш.)', ofzCell(ofz2), ofzTitle(ofz2, 2)],
+    ];
+    document.getElementById('pfStatRow').innerHTML = stats.map(([label, value, title]) => `
+      <div class="stat-tile"${title ? ` title="${escapeHtml(title)}"` : ''}><div class="value">${value}</div><div class="label">${label}</div></div>
+    `).join('');
+  }
+
+  function renderAll() {
+    renderPickTable();
+    renderStatsOnly();
+  }
+
+  document.getElementById('pfSelectTop20').addEventListener('click', () => {
+    // gatedRankedPool is already rating-floor + liquidity-floor filtered
+    // and issuer-capped (see gateAndCapPool above) -- this button now
+    // just takes its first DEFAULT_TOP_N, it does not re-sort raw AEY over
+    // the full pool the way the old "Топ-20 по AEY" button did. Operates on
+    // `pool` whatever it currently is (watchlist or a Рынок-tab selection).
+    selected.clear();
+    defaultTop20Secids.forEach(secid => selected.set(secid, 0));
+    setEqualWeights();
+    renderAll();
+  });
+  document.getElementById('pfResetToWatchlist').addEventListener('click', () => {
+    pool = buildPoolFromWatchlist();
+    poolSource = { type: 'watchlist' };
+    rebuildDerivedPoolState();
+    selected.clear();
+    expandedSecids.clear();
+    renderPoolSourceBanner();
+    renderAll();
+  });
+  document.getElementById('pfClearAll').addEventListener('click', () => { selected.clear(); renderAll(); });
+  document.getElementById('pfEqualWeight').addEventListener('click', () => { setEqualWeights(); renderAll(); });
+  textarea.addEventListener('input', renderStatsOnly);
+  clusterTextarea.addEventListener('input', renderStatsOnly);
+
+  // ---- Task 6: entry point for the Рынок tab's "Построить портфель из
+  // этой выборки" button. Takes a plain secid array (not a serialized row
+  // object) and re-derives everything from DATA.universe_now itself, so the
+  // two tabs can never disagree on field shapes/values -- one source of
+  // truth (the same export the Рынок tab's own table reads). Replaces
+  // `pool` wholesale (the pickable table becomes exactly this set, not the
+  // old watchlist pool plus these bonds), then auto-checks only the subset
+  // that clears the SAME rating-floor/liquidity-floor/issuer-cap gate
+  // "Топ-20" already applies -- the safety net the task calls for, applied
+  // to whichever pool arrived, not silently skipped for a Рынок-sourced set.
+  window.__pfLoadFromMarketSelection = function (secids) {
+    const rows = [];
+    let missingAey = 0;
+    secids.forEach(secid => {
+      const b = universeBySecid.get(secid);
+      if (!b) return; // secid came from the same DATA.universe_now this map is built from -- shouldn't happen
+      const row = rowFromUniverseBond(b);
+      if (row) rows.push(row); else missingAey++;
+    });
+    rows.sort((a, b) => (b.aey_base_risk_adj_pct ?? -Infinity) - (a.aey_base_risk_adj_pct ?? -Infinity));
+    pool = rows;
+    poolSource = { type: 'market', requested: secids.length, included: rows.length, missingAey };
+    rebuildDerivedPoolState();
+    selected.clear();
+    gatedRankedPool.forEach(r => selected.set(r.secid, 0)); // safety net: only rating/liquidity/cap-passing rows auto-checked
+    setEqualWeights();
+    expandedSecids.clear();
+    renderPoolSourceBanner();
+    renderAll(); // renderPickTable() handles an empty pool fine (empty tbody, headers intact)
+    document.getElementById('sec-portfolio').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  renderPoolSourceBanner();
+  renderAll();
 })();
 </script>
 </body>
