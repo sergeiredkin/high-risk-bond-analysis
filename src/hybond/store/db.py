@@ -8,7 +8,7 @@ upserted.
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 DB_PATH = Path("data/db/hybond.sqlite")
@@ -152,6 +152,15 @@ def init_db(con: sqlite3.Connection) -> None:
                        ("placement_pct", "REAL"), ("placement_partial_since", "TEXT")):
         if col not in bond_cols:
             con.execute(f"ALTER TABLE bond ADD COLUMN {col} {decl}")
+    # event: price-impact fields (BONDEM-layer prep) -- all nullable, existing
+    # rows get NULL rather than a fabricated value. See fill_price_impact().
+    event_cols = {r["name"] for r in con.execute("PRAGMA table_info(event)")}
+    for col in ("price_before_bp", "price_after_3d_bp", "price_after_7d_bp",
+                "price_after_30d_bp", "spread_delta_30d_bp"):
+        if col not in event_cols:
+            con.execute(f"ALTER TABLE event ADD COLUMN {col} REAL")
+    if "price_impact_filled_on" not in event_cols:
+        con.execute("ALTER TABLE event ADD COLUMN price_impact_filled_on TEXT")
     con.commit()
 
 
@@ -418,6 +427,28 @@ def mark_classified(con, body_hash: str) -> None:
     con.execute("UPDATE filing SET classified=1 WHERE body_hash=?", (body_hash,))
 
 
+def skip_noise_filings(con, rows) -> int:
+    """Bulk-classify already-identified noise filings (see
+    classify_utils.is_likely_noise) without invoking hy-event-classify --
+    same event-table write scripts/bulk_mark_routine.py already makes for a
+    routine/noise filing (category='routine', severity='noise'), just
+    triggered by a keyword-pattern match instead of an exact-title rule.
+    `rows` are filing rows (sqlite3.Row, from unclassified_filings()).
+    `filing`/`event` have no confidence column (only market_note does), so
+    the 0.95 confidence the calling task named isn't stored here -- there's
+    nowhere honest to put it."""
+    for r in rows:
+        insert_event(
+            con, issuer_id=r["issuer_id"],
+            occurred=r["published"] or r["fetched_on"],
+            category="routine", severity="noise",
+            summary=r["title"], source_url=r["url"],
+        )
+        mark_classified(con, r["body_hash"])
+    con.commit()
+    return len(rows)
+
+
 # --- market_note: secondary business-news/forum signal (e.g. Smart-Lab's
 # general news feed) -- deliberately a SEPARATE table from `event`, which is
 # reserved for classified AZIPI/primary material facts. severity/category
@@ -491,6 +522,98 @@ def events_since(con, issuer_id: str, since_date: str) -> list:
     return con.execute(
         "SELECT * FROM event WHERE issuer_id=? AND occurred>=? ORDER BY occurred DESC",
         (issuer_id, since_date)).fetchall()
+
+
+def _price_impact_ref_bond(con, issuer_id: str) -> str | None:
+    """The issuer's price-impact reference bond: highest AVERAGE daily
+    volume across all its price_snapshot history (not a single day's
+    volume) -- same "most liquid bond represents the issuer" principle
+    promote.py's VDO_MIN_VOLUME liquidity gate already applies, just picking
+    the best bond instead of gating a threshold. None if the issuer has no
+    bond with any price_snapshot history at all."""
+    row = con.execute(
+        "SELECT b.secid FROM bond b JOIN price_snapshot ps ON ps.secid = b.secid "
+        "WHERE b.issuer_id = ? GROUP BY b.secid ORDER BY AVG(ps.volume) DESC LIMIT 1",
+        (issuer_id,)).fetchone()
+    return row["secid"] if row else None
+
+
+def _spread_before(con, secid: str, occurred: str) -> float | None:
+    """Nearest spread_snapshot STRICTLY before occurred -- "G-spread day
+    before event_date" (the calling task's own field comment), not the
+    event day's own price."""
+    row = con.execute(
+        "SELECT g_spread_bp FROM spread_snapshot WHERE secid=? AND snap_date<? "
+        "ORDER BY snap_date DESC LIMIT 1", (secid, occurred)).fetchone()
+    return row["g_spread_bp"] if row else None
+
+
+def _spread_after_trading_days(con, secid: str, occurred: str, n: int) -> float | None:
+    """The Nth spread_snapshot row strictly after `occurred` for this bond --
+    a trading-day count (however many calendar days that spans), not a fixed
+    calendar offset, since spread_snapshot only has rows for days the
+    pipeline actually ran (see daily_run.sh's weekday cron)."""
+    row = con.execute(
+        "SELECT g_spread_bp FROM spread_snapshot WHERE secid=? AND snap_date>? "
+        "ORDER BY snap_date ASC LIMIT 1 OFFSET ?", (secid, occurred, n - 1)).fetchone()
+    return row["g_spread_bp"] if row else None
+
+
+def _spread_after_calendar_days(con, secid: str, occurred: str, n: int) -> float | None:
+    """Nearest spread_snapshot on/after occurred+n CALENDAR days -- for the
+    30d field, which the calling task specifies as calendar days, unlike
+    the 3d/7d trading-day fields above."""
+    target = (datetime.fromisoformat(occurred) + timedelta(days=n)).date().isoformat()
+    row = con.execute(
+        "SELECT g_spread_bp FROM spread_snapshot WHERE secid=? AND snap_date>=? "
+        "ORDER BY snap_date ASC LIMIT 1", (secid, target)).fetchone()
+    return row["g_spread_bp"] if row else None
+
+
+def fill_price_impact(con) -> dict:
+    """Backfills event.price_before_bp / price_after_{3d,7d,30d}_bp /
+    spread_delta_30d_bp for every event row that doesn't have
+    price_before_bp yet, using each issuer's price-impact reference bond
+    (see _price_impact_ref_bond). Never touches a row that already has
+    price_before_bp filled -- this only fills gaps, never revises a prior
+    fill. Returns {"updated": n, "still_null": n, "total_checked": n};
+    still_null is EXPECTED for events too recent for spread_snapshot to
+    have caught up to yet, or for issuers with no priced bond at all --
+    not an error.
+    """
+    events = con.execute(
+        "SELECT event_id, issuer_id, occurred FROM event "
+        "WHERE price_before_bp IS NULL AND occurred IS NOT NULL").fetchall()
+    updated = 0
+    still_null = 0
+    today = date.today().isoformat()
+    ref_bond_cache: dict[str, str | None] = {}
+    for ev in events:
+        issuer_id, occurred = ev["issuer_id"], ev["occurred"]
+        if issuer_id not in ref_bond_cache:
+            ref_bond_cache[issuer_id] = _price_impact_ref_bond(con, issuer_id)
+        secid = ref_bond_cache[issuer_id]
+        if not secid:
+            still_null += 1
+            continue
+
+        before = _spread_before(con, secid, occurred)
+        after_3d = _spread_after_trading_days(con, secid, occurred, 3)
+        after_7d = _spread_after_trading_days(con, secid, occurred, 7)
+        after_30d = _spread_after_calendar_days(con, secid, occurred, 30)
+        if before is None and after_3d is None and after_7d is None and after_30d is None:
+            still_null += 1
+            continue
+        delta_30d = (after_30d - before) if (after_30d is not None and before is not None) else None
+
+        con.execute(
+            "UPDATE event SET price_before_bp=?, price_after_3d_bp=?, price_after_7d_bp=?, "
+            "price_after_30d_bp=?, spread_delta_30d_bp=?, price_impact_filled_on=? "
+            "WHERE event_id=?",
+            (before, after_3d, after_7d, after_30d, delta_30d, today, ev["event_id"]))
+        updated += 1
+    con.commit()
+    return {"updated": updated, "still_null": still_null, "total_checked": len(events)}
 
 
 def market_notes_since(con, issuer_id: str, since_date: str) -> list:
@@ -849,6 +972,7 @@ CREATE TABLE IF NOT EXISTS universe_snapshot (
     aey_bull       REAL,
     aey_base_risk_adj REAL,
     vdo_scope      INTEGER DEFAULT 0,
+    coupon_period  INTEGER,
     PRIMARY KEY (secid, snap_date)
 );
 """
@@ -874,6 +998,24 @@ def init_universe(con) -> None:
     if "vdo_scope" not in cols:
         con.execute(
             "ALTER TABLE universe_snapshot ADD COLUMN vdo_scope INTEGER DEFAULT 0")
+    # ev_positive/yield_zone: PD-adjusted expected-value inflection (Task A,
+    # compute/inflection.py) -- ev_positive is the floor_ytm check
+    # (aey_base >= break-even for the tier's PD), yield_zone folds that plus
+    # the market-spread-vs-implied-fair-spread ceiling into one of 'green'/
+    # 'caution'/'negative_ev'/'unrated'. Computed as a second pass in
+    # universe_pipeline.run_universe() (needs the whole run's rated-bond
+    # spread distribution before any single bond can be classified against
+    # it), not inline with the rest of the per-bond fields above. Retrofit,
+    # same pattern.
+    if "ev_positive" not in cols:
+        con.execute("ALTER TABLE universe_snapshot ADD COLUMN ev_positive INTEGER")
+    if "yield_zone" not in cols:
+        con.execute("ALTER TABLE universe_snapshot ADD COLUMN yield_zone TEXT")
+    # coupon_period: MOEX ISS COUPONPERIOD (days between coupons), used to
+    # derive the coupon-frequency filter (monthly/quarterly/semi-annual/
+    # annual) on the Рынок tab. Retrofit, same pattern.
+    if "coupon_period" not in cols:
+        con.execute("ALTER TABLE universe_snapshot ADD COLUMN coupon_period INTEGER")
     con.commit()
 
 
@@ -883,12 +1025,25 @@ def insert_universe_snapshot(con, **f) -> None:
             "yield_to_offer,accrued_int,volume,num_trades,duration_moex,ytm,"
             "tenor_yrs,rf_rate,g_spread_bp,yield_source,rating,"
             "implied_fair_spread_bp,mispricing_bp,in_watchlist,signal_excluded,"
-            "mod_dur,aey_base,aey_stress,aey_bull,aey_base_risk_adj,vdo_scope")
+            "mod_dur,aey_base,aey_stress,aey_bull,aey_base_risk_adj,vdo_scope,"
+            "coupon_period")
     f.setdefault("vdo_scope", 0)  # added after callers in older tests were written
+    f.setdefault("coupon_period", None)  # added after callers in older tests were written
     placeholders = ",".join(f":{c}" for c in cols.split(","))
     con.execute(
         f"INSERT OR REPLACE INTO universe_snapshot({cols}) VALUES({placeholders})",
         f)
+
+
+def bulk_update_yield_zone(con, rows: list[tuple]) -> None:
+    """rows: list of (ev_positive, yield_zone, secid, snap_date). Second-pass
+    write for compute/inflection.py's classification -- see universe_pipeline.
+    run_universe(), which computes the whole run's rated-bond spread
+    distribution before any single bond can be classified, so this can't be
+    folded into insert_universe_snapshot()'s per-bond INSERT above."""
+    con.executemany(
+        "UPDATE universe_snapshot SET ev_positive=?, yield_zone=? "
+        "WHERE secid=? AND snap_date=?", rows)
 
 
 def latest_universe_snap_date(con) -> str | None:

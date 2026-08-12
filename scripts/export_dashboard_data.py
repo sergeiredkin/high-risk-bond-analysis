@@ -22,8 +22,10 @@ from pathlib import Path
 
 sys.path.insert(0, "src")
 
+from hybond.classify_utils import queue_bucket  # noqa: E402
 from hybond.compute.default_probs import (  # noqa: E402
-    RATING_ORDER, RECOVERY_RATE, implied_fair_spread_bp, lookup)
+    DEFAULT_PROBS, RATING_ORDER, RECOVERY_RATE, implied_fair_spread_bp, lookup)
+from hybond.compute import inflection  # noqa: E402
 from hybond.store import db  # noqa: E402
 from hybond import portfolio  # noqa: E402
 from hybond import promote  # noqa: E402
@@ -71,6 +73,20 @@ def filing_counts_by_issuer(con) -> dict[str, dict]:
             for r in rows}
 
 
+def queue_count(con) -> int:
+    """Unclassified filings + market_notes, noise-pattern matches excluded --
+    the home screen / Вотчлист tab's "N в очереди на классификацию"
+    indicator. Same classify_utils.queue_bucket() the CLI's `hybond queue`/
+    `hybond market-notes-queue` three-section display uses, so the
+    dashboard's count can never disagree with what those commands show."""
+    from hybond.classify_utils import queue_bucket
+    filing_rows = con.execute("SELECT title FROM filing WHERE classified=0").fetchall()
+    note_rows = con.execute("SELECT headline FROM market_note WHERE severity IS NULL").fetchall()
+    n = sum(1 for r in filing_rows if queue_bucket(r["title"]) != "noise")
+    n += sum(1 for r in note_rows if queue_bucket(r["headline"]) != "noise")
+    return n
+
+
 def spread_history_by_secid(con) -> dict[str, list[dict]]:
     rows = con.execute(
         "SELECT secid, snap_date, g_spread_bp, ytm FROM spread_snapshot "
@@ -83,6 +99,21 @@ def spread_history_by_secid(con) -> dict[str, list[dict]]:
             "ytm_pct": round(r["ytm"] * 100, 2) if r["ytm"] is not None else None,
         })
     return out
+
+
+def convexity_by_secid(con) -> dict[str, float | None]:
+    """secid -> latest computed convexity from spread_snapshot -- Task B's
+    verdict component (per-bond drawer, Layer 3/pro-only) wants it alongside
+    G-spread/mod_dur, neither of which the factlist bond dict currently
+    carries convexity for (assemble.py's Bond dataclass stops at mod_dur).
+    NULL when yield_source='moex' (floaters -- see spread_snapshot's own
+    column comment), same as every other convexity consumer in this
+    codebase."""
+    rows = con.execute(
+        "SELECT secid, convexity FROM spread_snapshot s1 WHERE snap_date = "
+        "(SELECT MAX(snap_date) FROM spread_snapshot s2 WHERE s2.secid = s1.secid)"
+    ).fetchall()
+    return {r["secid"]: r["convexity"] for r in rows}
 
 
 def mispricing_delta_by_secid(con) -> dict[str, dict]:
@@ -240,6 +271,25 @@ def _nearest_snap_date_on_or_before(con, cutoff: str) -> str | None:
     return row["snap_date"] if row else None
 
 
+def _coupon_freq_bucket(coupon_period: int | None) -> str | None:
+    """MOEX ISS COUPONPERIOD is days between coupons -- bucket into the
+    approximate payment frequency the filter panel offers. Thresholds are
+    generous bands around the nominal 30/91/182/365-day periods to absorb
+    real-world day-count variance (leap years, non-30-day months), not exact
+    calendar-day cutoffs. None when the field itself is unknown (e.g. rows
+    from a snapshot taken before this column existed) -- never guessed."""
+    if coupon_period is None or coupon_period <= 0:
+        return None  # 0/negative -- MOEX reports this for a handful of zero-coupon/discount
+                      # instruments with no periodic coupon at all, not a monthly one
+    if coupon_period <= 35:
+        return "monthly"
+    if coupon_period <= 100:
+        return "quarterly"
+    if coupon_period <= 200:
+        return "semiannual"
+    return "annual"
+
+
 def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str]) -> list[dict]:
     """One time-bucket of universe_snapshot, shaped for the screener AND the
     market-map tabs. Coupon type is a best-effort heuristic (COUPONPERCENT
@@ -287,6 +337,8 @@ def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str]) ->
             "offer_date": r["offer_date"],
             "coupon_pct": r["coupon_pct"],
             "coupon_type": "fixed" if r["coupon_pct"] is not None else "floater",
+            "coupon_period": r["coupon_period"],
+            "coupon_freq": _coupon_freq_bucket(r["coupon_period"]),
             "list_level": r["list_level"],
             "qualified": bool(r["qualified"]),
             "last_pct": r["last_pct"],
@@ -317,6 +369,14 @@ def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str]) ->
             "aey_base_risk_adj_pct": (round(r["aey_base_risk_adj"] * 100, 2)
                                        if r["aey_base_risk_adj"] is not None else None),
             "aey_risk_decomposition": _aey_risk_decomposition_pct(r["aey_base"], rating),
+            # Task A -- PD-adjusted expected-value inflection
+            # (compute/inflection.py), computed and stored per-bond by
+            # universe_pipeline.run_universe()'s second pass. yield_zone is
+            # one of 'green'/'caution'/'negative_ev'/'unrated'; ev_positive
+            # is the pure floor_ytm check (None when unrated/unclassifiable,
+            # distinct from False).
+            "yield_zone": r["yield_zone"],
+            "ev_positive": bool(r["ev_positive"]) if r["ev_positive"] is not None else None,
         })
     return bonds
 
@@ -412,7 +472,11 @@ def universe_snapshot_bundle(con) -> dict:
         empty = {"snap_date": None, "bonds": []}
         return {"universe_now": empty, "universe_week_ago": empty,
                 "universe_month_ago": empty, "rf_curve": [],
-                "fair_value_bp_by_tier": {}}
+                "fair_value_bp_by_tier": {}, "yield_inflection_by_rating": {},
+                "yield_inflection_ceiling_multiple": None,
+                "yield_inflection_caution_multiple": None,
+                "yield_inflection_unrated_max_pct": inflection.UNRATED_MAX_YIELD_PCT,
+                "yield_inflection_rated_absolute_max_pct": inflection.RATED_ABSOLUTE_MAX_AEY_PCT}
 
     issuer_sectors = {r["issuer_id"]: r["sector"]
                       for r in con.execute("SELECT issuer_id, sector FROM issuer")}
@@ -455,8 +519,40 @@ def universe_snapshot_bundle(con) -> dict:
         for tier in FAIR_VALUE_TIERS
     }
 
+    # Task A -- PD-adjusted expected-value inflection (compute/inflection.py):
+    # per-rating-tier floor_ytm/ceiling for the Рынок tab's "Показать предел
+    # доходности" overlay. The ceiling/caution multiples must match what
+    # universe_pipeline.run_universe() actually used to classify today's
+    # bonds' yield_zone -- recomputed here from the SAME live distribution
+    # (today's rated, non-excluded bonds' g_spread_bp/implied_fair_spread_bp
+    # ratios) rather than re-derived independently, since the per-run
+    # multiples themselves aren't persisted anywhere, only their effect
+    # (yield_zone/ev_positive per bond).
+    now_bonds = buckets["universe_now"]["bonds"]
+    ratios = [
+        b["g_spread_bp"] / b["implied_fair_spread_bp"]
+        for b in now_bonds
+        if not b["signal_excluded"] and b["implied_fair_spread_bp"]
+        and b["g_spread_bp"] is not None and b["g_spread_bp"] > 0
+    ]
+    ceiling_mult, caution_mult = inflection.ceiling_multiples_from_distribution(ratios)
+    inflection_table = inflection.yield_inflection_by_rating(ceiling_mult, caution_mult)
+    yield_inflection_by_rating = {
+        rating: {
+            "floor_ytm_pct": round(row["floor_ytm"] * 100, 2),
+            "ceiling_spread_bp": round(row["ceiling_spread_bp"], 0),
+            "caution_spread_bp": round(row["caution_spread_bp"], 0),
+        }
+        for rating, row in inflection_table.items()
+    }
+
     return {**buckets, "rf_curve": rf_curve,
-            "fair_value_bp_by_tier": fair_value_bp_by_tier}
+            "fair_value_bp_by_tier": fair_value_bp_by_tier,
+            "yield_inflection_by_rating": yield_inflection_by_rating,
+            "yield_inflection_ceiling_multiple": round(ceiling_mult, 2),
+            "yield_inflection_caution_multiple": round(caution_mult, 2),
+            "yield_inflection_unrated_max_pct": inflection.UNRATED_MAX_YIELD_PCT,
+            "yield_inflection_rated_absolute_max_pct": inflection.RATED_ABSOLUTE_MAX_AEY_PCT}
 
 
 def known_issuers_meta(con) -> dict[str, dict]:
@@ -596,16 +692,19 @@ def universe_for_dashboard(con, scenarios: dict) -> dict:
 
 def universe_aey_by_secid(con, snap_date: str | None) -> dict[str, dict]:
     """secid -> {mispricing_bp, aey_base, aey_stress, aey_bull,
-    aey_base_risk_adj} from the latest universe_snapshot, for enriching the
-    watchlist tab's per-issuer bonds (which come from factlists -- a
-    completely separate pipeline from universe_pipeline.py). This is a JOIN
-    by secid, not a recomputation -- there is exactly one AEY calculation in
-    the codebase (portfolio.py), read from two places."""
+    aey_base_risk_adj, yield_zone, ev_positive} from the latest
+    universe_snapshot, for enriching the watchlist tab's per-issuer bonds
+    (which come from factlists -- a completely separate pipeline from
+    universe_pipeline.py). This is a JOIN by secid, not a recomputation --
+    there is exactly one AEY calculation in the codebase (portfolio.py), and
+    exactly one yield-zone classification (compute/inflection.py, Task A),
+    each read from two places. yield_zone/ev_positive feed Task B's verdict
+    component on the per-bond detail drawer."""
     if not snap_date:
         return {}
     rows = con.execute(
-        "SELECT secid, mispricing_bp, aey_base, aey_stress, aey_bull, aey_base_risk_adj "
-        "FROM universe_snapshot WHERE snap_date=?", (snap_date,)).fetchall()
+        "SELECT secid, mispricing_bp, aey_base, aey_stress, aey_bull, aey_base_risk_adj, "
+        "yield_zone, ev_positive FROM universe_snapshot WHERE snap_date=?", (snap_date,)).fetchall()
     return {r["secid"]: dict(r) for r in rows}
 
 
@@ -775,6 +874,7 @@ def main() -> None:
     shist = spread_history_by_secid(con)
     fcounts = filing_counts_by_issuer(con)
     aey_by_secid = universe_aey_by_secid(con, universe["snap_date"])
+    convexity_by_secid_map = convexity_by_secid(con)
     mis_delta_by_secid = mispricing_delta_by_secid(con)
     events_full_by_issuer = full_events_by_issuer(con)
     expected_returns = expected_returns_by_secid(con)
@@ -834,6 +934,13 @@ def main() -> None:
             b["aey_risk_decomposition"] = _aey_risk_decomposition_pct(
                 aey["aey_base"] if aey else None, meta.get("rating"))
             b["expected_return"] = expected_returns.get(b["secid"], {})
+            # Task B -- verdict component on the per-bond detail drawer:
+            # yield_zone/ev_positive straight from universe_snapshot (Task
+            # A), same JOIN pattern as the AEY fields just above.
+            b["yield_zone"] = aey["yield_zone"] if aey else None
+            b["ev_positive"] = (bool(aey["ev_positive"])
+                                 if aey and aey["ev_positive"] is not None else None)
+            b["convexity"] = convexity_by_secid_map.get(b["secid"])
             # Registered-vs-placed volume (Task 3 follow-up): placement_pct/
             # placement_partial_since are raw facts from the bond table
             # (pipeline.py/db.upsert_bond); is_placement_stalled is the same
@@ -871,12 +978,14 @@ def main() -> None:
     notes = data_notes(con, watchlist)
     known_issuers = known_issuers_meta(con)
     company_scan_history = company_scan_history_export(con)
+    queue_count_val = queue_count(con)
     con.close()
 
     out = {
         "generated_at": report.get("snap_date"),
         "day1_snap_date": report.get("snap_date"),
         "day2_snap_date": issuers[0]["snap_date"] if issuers else None,
+        "queue_count": queue_count_val,
         "spread_screen_day1": report.get("spread_screen", []),
         "maturity_wall": report.get("maturity_wall", []),
         "redemptions_by_issuer": report.get("redemptions_by_issuer", {}),
@@ -889,6 +998,22 @@ def main() -> None:
         "universe_month_ago": market_map["universe_month_ago"],
         "rf_curve": market_map["rf_curve"],
         "fair_value_bp_by_tier": market_map["fair_value_bp_by_tier"],
+        # Task A -- PD-adjusted expected-value inflection (compute/
+        # inflection.py): per-rating floor/ceiling for the Рынок tab's
+        # "Показать предел доходности" overlay, plus the live multiples used
+        # so the chart can show its own calibration transparently.
+        "yield_inflection_by_rating": market_map["yield_inflection_by_rating"],
+        "yield_inflection_ceiling_multiple": market_map["yield_inflection_ceiling_multiple"],
+        "yield_inflection_caution_multiple": market_map["yield_inflection_caution_multiple"],
+        "yield_inflection_unrated_max_pct": market_map["yield_inflection_unrated_max_pct"],
+        "yield_inflection_rated_absolute_max_pct": market_map["yield_inflection_rated_absolute_max_pct"],
+        # Task B verdict component, Layer 3 (pro-only): "PD table value
+        # used" -- the raw 1yr PD (%) default_probs.lookup() reads for a
+        # bond's rating, same table pd_adjusted_aey/mispricing_bp already
+        # use, just exposed directly instead of only through derived bp/pp
+        # figures.
+        "pd_by_rating": {rating: round(probs["yr1"] * 100, 3)
+                          for rating, probs in DEFAULT_PROBS.items()},
         "ofz": ofz,
         # Single source of truth for the dashboard's "Топ-кандидаты" toggle
         # (Портфельный рейтинг table) -- sourced directly from promote.py's

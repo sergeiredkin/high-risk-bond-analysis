@@ -21,6 +21,7 @@ import json
 from datetime import date
 from pathlib import Path
 
+from .classify_utils import queue_bucket
 from .scrape import edisclosure as ed
 from .scrape import smartlab as sl
 from .store import db
@@ -202,34 +203,65 @@ def market_note_queue_view() -> dict:
     """market_note counterpart to classify_queue_view: rows still awaiting
     classification (severity IS NULL). hy-event-classify reads headline+summary
     for these (no filing body -- see the skill's Inputs section) and stores the
-    result via db.set_market_note_classification."""
+    result via db.set_market_note_classification.
+
+    Bucketed by classify_utils.queue_bucket() against the headline, same
+    noise/priority pre-filter classify_queue_view() applies to filings below
+    -- a DISPLAY split only, nothing here is written back to the DB."""
     con = db.connect()
     db.init_db(con)
     db.init_market_note(con)
     rows = db.unclassified_market_notes(con)
     con.close()
+
+    def to_dict(r):
+        return {"note_id": r["note_id"], "issuer_id": r["issuer_id"],
+                "occurred": r["occurred"], "headline": r["headline"],
+                "summary": r["summary"], "url": r["url"], "source": r["source"]}
+
+    priority, normal, noise = [], [], []
+    for r in rows:
+        bucket = queue_bucket(r["headline"])
+        (priority if bucket == "priority" else noise if bucket == "noise" else normal).append(r)
+
     return {
         "unclassified_count": len(rows),
-        "queue": [{"note_id": r["note_id"], "issuer_id": r["issuer_id"],
-                   "occurred": r["occurred"], "headline": r["headline"],
-                   "summary": r["summary"], "url": r["url"],
-                   "source": r["source"]} for r in rows[:50]],
+        "priority_count": len(priority), "normal_count": len(normal), "noise_count": len(noise),
+        "priority": [to_dict(r) for r in priority[:50]],
+        "queue": [to_dict(r) for r in normal[:50]],
+        "noise": [to_dict(r) for r in noise[:50]],
     }
 
 
 def classify_queue_view(snap_date: date | None = None) -> dict:
     """What the classifier skill would work on next: unclassified filings. This
-    is the hand-off point to hy-event-classify (manual invoke now, API later)."""
+    is the hand-off point to hy-event-classify (manual invoke now, API later).
+
+    Bucketed by classify_utils.queue_bucket() against the title into
+    priority/normal/noise -- a DISPLAY split only (see that module's
+    docstring); everything is still in `filing` with classified=0 regardless
+    of bucket. `queue` (the actually-actionable list) stays the "normal"
+    bucket for backward compatibility with existing callers of this dict."""
     con = db.connect()
     db.init_db(con)
     db.init_filing(con)
     rows = db.unclassified_filings(con)
     con.close()
+
+    def to_dict(r):
+        return {"issuer_id": r["issuer_id"], "published": r["published"],
+                "title": r["title"], "url": r["url"], "body_hash": r["body_hash"],
+                "source": "smartlab" if r["edisclosure_id"] == sl.SOURCE_MARKER else "primary"}
+
+    priority, normal, noise = [], [], []
+    for r in rows:
+        bucket = queue_bucket(r["title"])
+        (priority if bucket == "priority" else noise if bucket == "noise" else normal).append(r)
+
     return {
         "unclassified_count": len(rows),
-        "queue": [{"issuer_id": r["issuer_id"], "published": r["published"],
-                   "title": r["title"], "url": r["url"],
-                   "body_hash": r["body_hash"],
-                   "source": "smartlab" if r["edisclosure_id"] == sl.SOURCE_MARKER
-                             else "primary"} for r in rows[:50]],
+        "priority_count": len(priority), "normal_count": len(normal), "noise_count": len(noise),
+        "priority": [to_dict(r) for r in priority[:50]],
+        "queue": [to_dict(r) for r in normal[:50]],
+        "noise": [to_dict(r) for r in noise[:50]],
     }

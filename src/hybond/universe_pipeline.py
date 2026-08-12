@@ -43,7 +43,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from .compute import bondmath, default_probs
+from .compute import bondmath, default_probs, inflection
 from .ingest import sources
 from . import portfolio
 from .store import db
@@ -389,6 +389,7 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
             in_watchlist=in_wl, signal_excluded=1 if signal_excluded else 0,
             mod_dur=mdur_yrs, aey_base=aey_base, aey_stress=aey_stress, aey_bull=aey_bull,
             aey_base_risk_adj=aey_base_risk_adj, vdo_scope=1 if vdo_scope else 0,
+            coupon_period=m.get("COUPONPERIOD"),
         )
         n_priced += 1
         top_rows.append({
@@ -398,6 +399,8 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
             "mispricing_bp": misprice, "in_watchlist": in_wl,
             "signal_excluded": signal_excluded,
         })
+
+    zone_counts = _classify_yield_zones(con, sd)
 
     con.commit()
     n_in_watchlist = sum(1 for r in top_rows if r["in_watchlist"])
@@ -416,7 +419,44 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
         "aey_source_date": scenarios["source_date"],
         "aey_is_fallback": scenarios["is_fallback"],
         "top_by_g_spread": top_rows[:10],
+        "yield_zone_counts": zone_counts,
     }
+
+
+def _classify_yield_zones(con, sd: str) -> dict[str, int]:
+    """Second pass over this run's just-inserted universe_snapshot rows
+    (Task A -- PD-adjusted expected-value inflection, compute/inflection.py):
+    the ceiling/caution multiples are derived from THIS run's own live
+    distribution of (g_spread_bp / implied_fair_spread_bp) across rated,
+    non-excluded bonds (see inflection.py's module docstring for why a fixed
+    multiplier doesn't work), so no single bond can be classified until the
+    whole run's rated rows are known -- can't be folded into the per-bond
+    loop above. Returns a zone -> count summary for the CLI report."""
+    rows = con.execute(
+        "SELECT secid, rating, g_spread_bp, aey_base, implied_fair_spread_bp, "
+        "signal_excluded FROM universe_snapshot WHERE snap_date=?", (sd,)).fetchall()
+
+    ratios = [
+        r["g_spread_bp"] / r["implied_fair_spread_bp"]
+        for r in rows
+        if not r["signal_excluded"] and r["implied_fair_spread_bp"]
+        and r["implied_fair_spread_bp"] > 0
+        and r["g_spread_bp"] is not None and r["g_spread_bp"] > 0
+    ]
+    ceiling_mult, caution_mult = inflection.ceiling_multiples_from_distribution(ratios)
+
+    updates = []
+    zone_counts: dict[str, int] = {}
+    for r in rows:
+        zone = inflection.classify_yield_zone(
+            r["aey_base"], r["g_spread_bp"], r["rating"], ceiling_mult, caution_mult)
+        ev_pos = inflection.ev_positive(r["aey_base"], r["rating"])
+        ev_pos_db = None if ev_pos is None else (1 if ev_pos else 0)
+        updates.append((ev_pos_db, zone, r["secid"], sd))
+        zone_counts[zone] = zone_counts.get(zone, 0) + 1
+
+    db.bulk_update_yield_zone(con, updates)
+    return zone_counts
 
 
 def vdo_screen_report(con, snap_date: str | None = None, top_n: int = 20) -> dict:

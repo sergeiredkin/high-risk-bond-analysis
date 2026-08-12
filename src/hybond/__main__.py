@@ -109,21 +109,123 @@ def cmd_market_notes(_args) -> int:
     return 0
 
 
-def cmd_queue(_args) -> int:
+def _print_queue_sections(view: dict, issuer_names: dict[str, str] | None = None) -> None:
+    """Shared three-section rendering for `queue` and `market-notes-queue`:
+    priority first (needs attention soonest), then the actually-actionable
+    normal bucket, then noise collapsed to a count + issuer list (full
+    title/date is redundant for rows that are almost certainly routine)."""
+    issuer_names = issuer_names or {}
+
+    def issuer_label(issuer_id):
+        return issuer_names.get(issuer_id, issuer_id)
+
+    print(f"\n=== ПРИОРИТЕТ ({view['priority_count']} записей) ===")
+    for r in view["priority"]:
+        title = r.get("title") or r.get("headline")
+        date_ = r.get("published") or r.get("occurred")
+        print(f"  [{date_}] {issuer_label(r['issuer_id'])}: {title}")
+
+    print(f"\n=== К КЛАССИФИКАЦИИ ({view['normal_count']} записей) ===")
+    for r in view["queue"]:
+        title = r.get("title") or r.get("headline")
+        date_ = r.get("published") or r.get("occurred")
+        print(f"  [{date_}] {issuer_label(r['issuer_id'])}: {title}")
+
+    print(f"\n=== ШУМ — пропустить ({view['noise_count']} записей) ===")
+    noise_issuers = sorted({issuer_label(r["issuer_id"]) for r in view["noise"]})
+    if noise_issuers:
+        print("  " + ", ".join(noise_issuers))
+
+
+def _issuer_name_map(con, issuer_ids) -> dict[str, str]:
+    from .store import db
+    ids = sorted(set(issuer_ids))
+    if not ids:
+        return {}
+    placeholders = ",".join("?" * len(ids))
+    rows = con.execute(
+        f"SELECT issuer_id, name FROM issuer WHERE issuer_id IN ({placeholders})", ids
+    ).fetchall()
+    return {r["issuer_id"]: r["name"] for r in rows}
+
+
+def cmd_queue(args) -> int:
     from . import scrape_pipeline
+    from .store import db
+
     view = scrape_pipeline.classify_queue_view()
+    con = db.connect()
+    all_ids = [r["issuer_id"] for r in view["priority"] + view["queue"] + view["noise"]]
+    names = _issuer_name_map(con, all_ids)
+
+    if args.skip_noise:
+        from .classify_utils import queue_bucket
+        # NOT view["noise"] -- classify_queue_view() caps every bucket at
+        # [:50] for DISPLAY (same pre-existing convention the JSON dump
+        # above already had). --skip-noise is an ACTION, not a display, and
+        # must act on every matching row, not just the first 50 shown.
+        all_rows = db.unclassified_filings(con)
+        target_rows = [r for r in all_rows if queue_bucket(r["title"]) == "noise"]
+        if not target_rows:
+            print("Нет записей, подходящих под шумовые паттерны — нечего пропускать.")
+            con.close()
+            return 0
+        print(f"{len(target_rows)} filing(s) match a noise pattern and will be marked "
+              f"classified=1 (category=routine, severity=noise) without hy-event-classify.")
+        answer = input("Продолжить? [y/N]: ").strip().lower()
+        if answer != "y":
+            print("Отменено.")
+            con.close()
+            return 0
+        n = db.skip_noise_filings(con, target_rows)
+        print(f"Marked {n} filing(s) as routine/noise.")
+        con.close()
+        return 0
+
+    con.close()
+    # JSON dump kept as-is (hy-event-classify reads each row's "source"
+    # field from this -- see the skill's Inputs section) -- the three
+    # sections below are an additional human-readable summary, not a
+    # replacement.
     print(json.dumps(view, ensure_ascii=False, indent=2))
-    print(f"\n{view['unclassified_count']} filing(s) awaiting classification. "
-          f"Invoke hy-event-classify on each.", file=sys.stderr)
+    _print_queue_sections(view, names)
+    print(f"\n{view['unclassified_count']} filing(s) awaiting classification "
+          f"({view['priority_count']} priority, {view['normal_count']} to classify, "
+          f"{view['noise_count']} noise). Invoke hy-event-classify on each "
+          f"non-noise row.", file=sys.stderr)
     return 0
 
 
 def cmd_market_notes_queue(_args) -> int:
     from . import scrape_pipeline
+    from .store import db
+
     view = scrape_pipeline.market_note_queue_view()
+    con = db.connect()
+    all_ids = [r["issuer_id"] for r in view["priority"] + view["queue"] + view["noise"]]
+    names = _issuer_name_map(con, all_ids)
+    con.close()
+
     print(json.dumps(view, ensure_ascii=False, indent=2))
-    print(f"\n{view['unclassified_count']} market note(s) awaiting classification. "
-          f"Invoke hy-event-classify on each (headline+summary input).", file=sys.stderr)
+    _print_queue_sections(view, names)
+    print(f"\n{view['unclassified_count']} market note(s) awaiting classification "
+          f"({view['priority_count']} priority, {view['normal_count']} to classify, "
+          f"{view['noise_count']} noise). Invoke hy-event-classify on each non-noise "
+          f"row (headline+summary input).", file=sys.stderr)
+    return 0
+
+
+def cmd_fill_price_impact(_args) -> int:
+    from .store import db
+    con = db.connect()
+    db.init_db(con)
+    result = db.fill_price_impact(con)
+    con.close()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"\n{result['updated']} event row(s) updated with price-impact data. "
+          f"{result['still_null']} remain NULL (event too recent for spread_snapshot "
+          f"to have caught up, or issuer has no priced bond) -- expected, not an error.",
+          file=sys.stderr)
     return 0
 
 
@@ -340,6 +442,9 @@ def cmd_scan_company(args) -> int:
     from . import company_scan_pipeline as csp
     from .store import db
 
+    print("DEPRECATED: prefer asking Claude Code to run the company-scan skill "
+          "(skills/company-scan/SKILL.md) -- no ANTHROPIC_API_KEY needed. This keyed "
+          "path is kept working for scripted/cron use only.", file=sys.stderr)
     con = db.connect()
     db.init_db(con)
     result = csp.scan_company(con, args.query, api_key=args.key)
@@ -366,6 +471,10 @@ def cmd_scan_candidates(args) -> int:
     from . import company_scan_pipeline as csp
     from .store import db
 
+    print("DEPRECATED: prefer asking Claude Code to run the company-scan skill "
+          "across `hybond scan-candidates-list`'s output in-session -- no "
+          "ANTHROPIC_API_KEY needed. This keyed path is kept working for "
+          "scripted/cron use only.", file=sys.stderr)
     con = db.connect()
     db.init_db(con)
     limit = None if args.limit == 0 else args.limit
@@ -382,6 +491,60 @@ def cmd_scan_candidates(args) -> int:
           f"{summary['skipped_by_limit']} left for a later run (--limit), "
           f"{summary['candidates_found']} candidate(s) found, "
           f"{summary['already_scanned']} previously scanned.", file=sys.stderr)
+    return 0
+
+
+def cmd_scan_candidates_list(args) -> int:
+    """No-key todo list for the company-scan skill's batch mode: same
+    candidate+rescan-due list run_scan_candidates() acts on, printed as JSON
+    with no scanning and no API key required."""
+    from . import company_scan_pipeline as csp
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    todo = csp.list_scan_todo(con, include_rescan=not args.no_rescan)
+    con.close()
+    print(json.dumps(todo, ensure_ascii=False, indent=2))
+    print(f"\n{len(todo)} due for a scan (new candidates + rescan-due).", file=sys.stderr)
+    return 0
+
+
+def cmd_scan_company_store(args) -> int:
+    """Persist one scan the company-scan Claude Code skill already produced
+    (its own web search, no API call from this script) -- reads the
+    markdown report and, if present, the parsed JSON addendum from files and
+    writes a company_scan_result row via store_scan_result(), same schema
+    and downstream dashboard rendering as the deprecated keyed path."""
+    from . import company_scan_pipeline as csp
+    from .store import db
+
+    markdown = Path(args.markdown).read_text(encoding="utf-8")
+    card = None
+    if args.card:
+        card_text = Path(args.card).read_text(encoding="utf-8")
+        try:
+            card = json.loads(card_text)
+        except json.JSONDecodeError as e:
+            print(f"--card file is not valid JSON: {e}", file=sys.stderr)
+            return 1
+
+    con = db.connect()
+    db.init_db(con)
+    result = csp.store_scan_result(con, query=args.query, markdown=markdown, card=card,
+                                    model=args.model)
+    con.close()
+    print(json.dumps({k: v for k, v in result.items() if k != "card"},
+                     ensure_ascii=False, indent=2))
+    if card:
+        print(f"\n{card.get('issuer_name', args.query)}: "
+              f"issuer={card.get('issuer_quality', '?')} "
+              f"bond={card.get('bond_suitability', '?')} "
+              f"confidence={card.get('confidence', '?')} "
+              f"coverage={card.get('data_coverage_pct', '?')}%", file=sys.stderr)
+    else:
+        print(f"\nNo JSON addendum given -- see raw_markdown in "
+              f"company_scan_result id={result['id']}.", file=sys.stderr)
     return 0
 
 
@@ -534,11 +697,20 @@ def main(argv=None) -> int:
                          "source, supplements AZIPI for Interfax-only issuers)")
     ps.set_defaults(func=cmd_scrape)
     pq = sub.add_parser("queue", help="Slice 3: show filings awaiting classification")
+    pq.add_argument("--skip-noise", action="store_true",
+                     help="bulk-mark all noise-pattern-matching filings as classified "
+                          "(category=routine, severity=noise) without running them "
+                          "through hy-event-classify -- prompts for confirmation first")
     pq.set_defaults(func=cmd_queue)
 
     pmq = sub.add_parser("market-notes-queue",
                           help="Show market_note rows awaiting classification")
     pmq.set_defaults(func=cmd_market_notes_queue)
+
+    pfpi = sub.add_parser("fill-price-impact",
+                           help="Backfill event.price_before_bp/price_after_*_bp from "
+                                "spread_snapshot (BONDEM-layer prep)")
+    pfpi.set_defaults(func=cmd_fill_price_impact)
     pm = sub.add_parser("market-notes",
                         help="Ingest smart-lab.ru's general news RSS feed into market_note "
                              "(secondary business-news signal, distinct from filing/event)")
@@ -596,18 +768,15 @@ def main(argv=None) -> int:
     pf.add_argument("--key", help="parser-api key (or set PARSER_API_KEY)")
     pf.set_defaults(func=cmd_financials)
     psc = sub.add_parser("scan-company",
-                         help="LLM company-scan for an issuer not yet in hybond "
-                              "(web-research prompt, same as the dashboard's "
-                              "\"Проверить компанию\" panel) -- stores the result "
-                              "in company_scan_result")
+                         help="[DEPRECATED, needs a key] LLM company-scan for an issuer "
+                              "not yet in hybond -- prefer the company-scan Claude Code "
+                              "skill instead (skills/company-scan/SKILL.md), no key needed")
     psc.add_argument("query", help="ИНН or company name to screen")
     psc.add_argument("--key", help="Anthropic API key (or set ANTHROPIC_API_KEY)")
     psc.set_defaults(func=cmd_scan_company)
     pscb = sub.add_parser("scan-candidates",
-                          help="Batch company-scan: the auto-flagged candidate list "
-                               "(unrated, cleared ВДО screen, not yet tracked) plus "
-                               "any previously-scanned issuer whose rating/filings "
-                               "have drifted since its last scan")
+                          help="[DEPRECATED, needs a key] Batch company-scan -- prefer "
+                               "`hybond scan-candidates-list` + the company-scan skill instead")
     pscb.add_argument("--key", help="Anthropic API key (or set ANTHROPIC_API_KEY)")
     pscb.add_argument("--limit", type=int, default=10,
                       help="max NEW scans this run, guards against an accidental "
@@ -615,6 +784,26 @@ def main(argv=None) -> int:
     pscb.add_argument("--no-rescan", action="store_true",
                       help="only scan brand-new candidates, skip the rescan-due list")
     pscb.set_defaults(func=cmd_scan_candidates)
+    pscl = sub.add_parser("scan-candidates-list",
+                          help="No-key todo list (new candidates + rescan-due) for the "
+                               "company-scan skill's batch mode -- prints JSON, scans nothing")
+    pscl.add_argument("--no-rescan", action="store_true",
+                      help="only list brand-new candidates, skip the rescan-due list")
+    pscl.set_defaults(func=cmd_scan_candidates_list)
+    pscs = sub.add_parser("scan-company-store",
+                          help="Persist one company-scan skill result (markdown report + "
+                               "optional JSON addendum, both already produced by Claude Code) "
+                               "into company_scan_result -- no API call, no key")
+    pscs.add_argument("query", help="ИНН or company name that was screened")
+    pscs.add_argument("--markdown", required=True,
+                      help="path to a file with the full Step-16 markdown report")
+    pscs.add_argument("--card",
+                      help="path to a file with the parsed JSON rendering-addendum "
+                           "(omit if the skill produced no JSON block)")
+    pscs.add_argument("--model", default="claude-code-skill",
+                      help="free-text provenance tag stored in the `model` column "
+                           "(default: claude-code-skill)")
+    pscs.set_defaults(func=cmd_scan_company_store)
     pc = sub.add_parser("cbr", help="CBR key-rate meeting tracker")
     pc.add_argument("--fetch", metavar="YYYY-MM-DD",
                     help="fetch/backfill all available documents for one meeting date")
