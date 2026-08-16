@@ -18,10 +18,10 @@ issuer_id,secid,agency,rating,outlook,action,rated_on,source,is_current,verified
 7703104630,,manual,ruA-,,,2026-07-27,manual,0,,1
 2128702350,,"АКРА",ruB+,stable,upgraded,2026-07-09,manual,1,,0
 5607019523,,"АКРА",ruBB-,developing,downgraded,2025-12-17,manual,1,,0
-1655096633,,"Expert RA",ruBB+,developing,downgraded,2026-06-03,manual,1,,0
-7813379412,,"Expert RA",ruBBB,developing,downgraded,2025-10-08,manual,1,,0
-7453326003,,NKR,ruBBB-,stable,confirmed,2025-08-06,manual,1,,0
-9718236471,,NKR,ruBBB+,stable,confirmed,2026-06-03,manual,1,,0
+1655096633,,"Эксперт РА",ruBB+,developing,downgraded,2026-06-03,manual,1,,0
+7813379412,,"Эксперт РА",ruBBB,developing,downgraded,2025-10-08,manual,1,,0
+7453326003,,"НКР",ruBBB-,stable,confirmed,2025-08-06,manual,1,,0
+9718236471,,"НКР",ruBBB+,stable,confirmed,2026-06-03,manual,1,,0
 9718236471,,"АКРА",ruBBB+,negative,confirmed,2026-05-05,manual,1,,0
 7703104630,,"Эксперт РА",ruA+,developing,downgraded,2026-06-30,manual,1,2026-07-30,0
 9717068640,,"АКРА",ruBBB+,"развивающийся",downgraded,2026-04-01,manual,1,2026-07-30,0

@@ -161,6 +161,13 @@ def init_db(con: sqlite3.Connection) -> None:
             con.execute(f"ALTER TABLE event ADD COLUMN {col} REAL")
     if "price_impact_filled_on" not in event_cols:
         con.execute("ALTER TABLE event ADD COLUMN price_impact_filled_on TEXT")
+    # issuer: active flag, defaults to 1 so every existing row is treated as
+    # active on retrofit -- lets an issuer be marked inactive (e.g. delisted,
+    # matured out, or a defaulted name being wound down) without deleting its
+    # history.
+    issuer_cols = {r["name"] for r in con.execute("PRAGMA table_info(issuer)")}
+    if "active" not in issuer_cols:
+        con.execute("ALTER TABLE issuer ADD COLUMN active INTEGER DEFAULT 1")
     con.commit()
 
 

@@ -93,8 +93,8 @@ def bond_aey(ytm: float | None, mod_dur_yrs: float | None, delta_rate: float) ->
 
 
 def pd_adjusted_aey(aey: float | None, rating: str | None, horizon_yr: int = 1) -> float | None:
-    """Expected-return version of AEY: (1 - PD) * aey - PD * (1 - RECOVERY_RATE),
-    using the same Эксперт РА default-probability table and recovery
+    """Expected-return version of AEY: (1 - PD) * aey - PD * LGD,
+    using the same Эксперт РА default-probability table and LGD/recovery
     assumption as the mispricing signal (default_probs.py). None when there's
     no aey or no rating to look up a PD for -- an unrated bond stays
     unranked here rather than being silently treated as riskless.
@@ -117,7 +117,7 @@ def pd_adjusted_aey(aey: float | None, rating: str | None, horizon_yr: int = 1) 
         return None
     key = default_probs._HORIZON_KEYS.get(horizon_yr, "yr1")
     pd = probs[key]
-    return (1 - pd) * aey - pd * (1 - default_probs.RECOVERY_RATE)
+    return (1 - pd) * aey - pd * default_probs.LGD
 
 
 def aey_risk_decomposition(aey: float | None, rating: str | None,
@@ -139,7 +139,7 @@ def aey_risk_decomposition(aey: float | None, rating: str | None,
     pd = probs[key]
     p_survive = 1 - pd
     return_if_survive = aey
-    return_if_default = -(1 - default_probs.RECOVERY_RATE)
+    return_if_default = -default_probs.LGD
     expected_value = p_survive * return_if_survive + pd * return_if_default
     return {
         "p_survive": p_survive, "return_if_survive": return_if_survive,

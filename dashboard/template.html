@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -85,6 +85,44 @@
     --series-3: #2ECC71; /* green */
     --series-4: #E8920F; /* amber */
   }
+  /* ---- Light theme: overrides the same tokens above, nothing else ----
+     data-theme=light on the html element (see applyTheme() near the top of
+     the script block). Every existing var(old-name) call site in this file
+     already resolves through the page/surface-1/text-muted/border etc.
+     aliases above, which themselves point at bg-primary/text-primary/
+     verdict-etc -- so overriding just the base tokens here (not the
+     aliases directly) re-themes the entire dashboard without touching a
+     single call site. Gold (gold-primary/gold-hover/gold-muted) is
+     deliberately NOT overridden -- the brand accent is unchanged in both
+     themes, per the task spec. series-1/3/4 (chart series colors) are
+     also left as is: they are saturated mid-tones that read fine on both
+     a dark and a light background.
+     NB: this comment avoids -- and var() and quote punctuation entirely on
+     purpose, after a real bug here: an earlier draft's prose contained a
+     literal "*" followed by "/" (inside a var-name aside), which is the
+     CSS comment terminator -- it silently closed this comment early and
+     corrupted everything parsed after it (the light-theme rule below
+     vanished from the CSSOM entirely, with no console error). Keep this
+     comment's body free of that two-character sequence and of unescaped
+     quote characters if you ever need to expand it. */
+  [data-theme="light"] {
+    color-scheme: light;
+    --bg-primary:    #FFFFFF;
+    --bg-surface:    #F5F5F7;
+    --bg-elevated:   #EDEDF2;
+    --bg-border:     #E0E0E0;
+    --text-primary:  #1D1D1F;
+    --text-secondary:#6E6E73;
+    --text-tertiary: #999999;
+    --verdict-green: #1A7F3C;
+    --verdict-green-bg: rgba(26,127,60,0.12);
+    --verdict-yellow: #B8860B;
+    --verdict-yellow-bg: rgba(184,134,11,0.12);
+    --verdict-red:   #C0392B;
+    --verdict-red-bg: rgba(192,57,43,0.12);
+    --verdict-grey:  #6E6E73;
+    --verdict-grey-bg: rgba(110,110,115,0.12);
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--page); color: var(--text-primary);
@@ -96,6 +134,10 @@
     gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   .subtitle { color: var(--text-secondary); font-size: 14px; }
+  /* Wordmark vs. tagline split, purely so mobile can hide the tagline
+     (see .logo-subtitle in the 480px media query) without touching the
+     h1 markup structure otherwise. */
+  .logo-subtitle { font-weight: 400; }
   .toolbar-btn {
     border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
     border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px;
@@ -769,6 +811,18 @@
     color: var(--text-secondary); border-radius: 999px; padding: 6px 14px; cursor: pointer;
     font-size: 12px; font-weight: 600; white-space: nowrap; margin: 8px 4px 8px 0; }
   .disclosure-pill:hover { border-color: var(--gold-primary); color: var(--gold-primary); }
+  /* ---- Theme toggle + font-size slider: same nav row, left of the
+     disclosure pill -- see applyTheme()/applyFontScale() near the top of
+     the script block for the localStorage-backed logic. */
+  .theme-font-controls { display: flex; align-items: center; gap: 10px; margin: 8px 4px 8px 0; }
+  .theme-toggle-btn { display: flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border: 1px solid var(--bg-border); background: var(--bg-elevated);
+    color: var(--text-secondary); border-radius: var(--radius-btn); cursor: pointer; padding: 0; }
+  .theme-toggle-btn:hover { border-color: var(--gold-primary); color: var(--gold-primary); }
+  .font-slider-control { display: flex; align-items: center; gap: 6px; width: 160px;
+    font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+  #fontSizeSlider { width: 100px; accent-color: var(--gold-primary); }
+  .font-slider-readout { min-width: 34px; font-variant-numeric: tabular-nums; }
 
   /* ---- Today's signals strip (Вотчлист tab) ------------------------------ */
   .signals-strip { display: flex; flex-direction: column; gap: 6px; margin: 0 0 24px; }
@@ -931,6 +985,28 @@
     .home-columns { grid-template-columns: 1fr; }
     .home-actions { grid-template-columns: 1fr; }
   }
+  /* ---- Mobile layout fixes (390px / iPhone 14 target) --------------------
+     .home-columns/.home-actions already collapse to 1fr at 768px above --
+     480px is inside that range, so no duplicate rule needed there. */
+  @media (max-width: 480px) {
+    /* Fix 1: Market Pulse / portfolio-health tiles -> 2x2 instead of the
+       desktop auto-fit grid (which would put all 4 in one cramped row or
+       stack them 1-wide depending on tile min-width). */
+    .pulse-tiles { grid-template-columns: 1fr 1fr; }
+    /* Fix 2: nav tabs scroll horizontally instead of wrapping -- targets
+       .tab-bar itself (not the outer .tab-bar-row, which also holds the
+       theme/font/disclosure controls and shouldn't scroll together with
+       the tabs). Covers both the main nav and the Портфель subtab-row,
+       which reuses the same .tab-bar class. */
+    .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch;
+      flex-wrap: nowrap; scrollbar-width: none; }
+    .tab-bar::-webkit-scrollbar { display: none; }
+    .tab-btn { white-space: nowrap; flex-shrink: 0; }
+    /* Fix 4: hide the "— Кредитный дашборд ВДО" tagline, keep "hybond". */
+    .logo-subtitle { display: none; }
+    /* Fix 6: font slider isn't practical on touch -- theme toggle stays. */
+    .font-slider-control { display: none; }
+  }
 </style>
 </head>
 <body data-disclosure="standard">
@@ -941,7 +1017,7 @@
 <div class="wrap">
   <header class="top">
     <div>
-      <h1>hybond — Кредитный дашборд ВДО</h1>
+      <h1>hybond<span class="logo-subtitle"> — Кредитный дашборд ВДО</span></h1>
       <div class="subtitle" id="subtitle"></div>
     </div>
   </header>
@@ -952,6 +1028,14 @@
       <button class="tab-btn" data-tab="market">Рынок</button>
       <button class="tab-btn" data-tab="cbr">ЦБ РФ</button>
       <button class="tab-btn" data-tab="portfolio">Портфель</button>
+    </div>
+    <div class="theme-font-controls">
+      <button type="button" class="theme-toggle-btn" id="themeToggle" title="Переключить тему" aria-label="Переключить тему"></button>
+      <div class="font-slider-control" id="fontSliderControl">
+        <span>Шрифт:</span>
+        <input type="range" id="fontSizeSlider" min="90" max="130" step="5" value="100" aria-label="Размер шрифта">
+        <span class="font-slider-readout" id="fontSizeReadout">100%</span>
+      </div>
     </div>
     <button class="disclosure-pill" id="disclosureToggle" title="Уровень детализации карточки вердикта на вкладке «Вотчлист» (Part D) — прототип, другие страницы пока не затронуты">Детализация: стандарт</button>
   </div>
@@ -1646,6 +1730,59 @@
 <script id="narrative-prompt" type="application/json">/*__NARRATIVE_PROMPT__*/</script>
 <script id="company-scan-prompt" type="application/json">/*__COMPANY_SCAN_PROMPT__*/</script>
 <script>
+// ---------- theme (light/dark) + font-size scale: restored FIRST, before
+// DATA is even parsed, so the flash of the wrong theme is as short as this
+// single-file/single-script architecture allows (the body markup is already
+// painted with its hardcoded data-theme="dark" default by the time any
+// script runs, since this <script> tag sits at the end of body -- there is
+// no earlier hook available without moving to a blocking <head> script).
+//
+// applyFontScale() note: the spec'd mechanism is
+// `document.documentElement.style.fontSize = pct + '%'`. Every one of this
+// file's 218 font-size declarations is an absolute px value (grep confirms
+// zero em/rem usage), starting with `body { font-size: 15px }` -- an
+// absolute unit breaks the inheritance chain a %-based root font-size
+// relies on, so that line alone has NO visible effect anywhere in this
+// dashboard. Rewriting all 218 px declarations to rem was explicitly out of
+// scope ("do not touch any explicit px font-size declarations"), so this
+// also sets `document.documentElement.style.zoom` as the mechanism that
+// actually produces a visible, testable effect (Chromium/Safari, which
+// covers the task's own Chrome DevTools verification step; not supported
+// pre-126 Firefox). Trade-off: zoom scales layout/spacing along with text
+// (there is no way to protect "12px floor" elements specifically without
+// the same rem rewrite), so the "12px floor elements unchanged" checklist
+// item does not hold under this fallback -- flagging that explicitly here
+// rather than silently shipping a slider that either does nothing or
+// silently fails part of its own spec.
+const THEME_KEY = 'hybond-theme';
+const FONT_SCALE_KEY = 'hybond-font-scale';
+const THEME_ICONS = {
+  sun: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>',
+  moon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+};
+const themeToggleBtn = document.getElementById('themeToggle');
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  themeToggleBtn.innerHTML = THEME_ICONS[theme === 'light' ? 'sun' : 'moon'];
+  localStorage.setItem(THEME_KEY, theme);
+}
+themeToggleBtn.addEventListener('click', () => {
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+});
+applyTheme(localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark');
+
+const fontSizeSlider = document.getElementById('fontSizeSlider');
+const fontSizeReadout = document.getElementById('fontSizeReadout');
+function applyFontScale(pct) {
+  document.documentElement.style.fontSize = pct + '%';
+  document.documentElement.style.zoom = pct / 100; // see note above
+  fontSizeSlider.value = pct;
+  fontSizeReadout.textContent = pct + '%';
+  localStorage.setItem(FONT_SCALE_KEY, pct);
+}
+fontSizeSlider.addEventListener('input', () => applyFontScale(+fontSizeSlider.value));
+applyFontScale(parseInt(localStorage.getItem(FONT_SCALE_KEY), 10) || 100);
+
 const DATA = JSON.parse(document.getElementById('dashboard-data').textContent);
 const NARRATIVE_PROMPT = JSON.parse(document.getElementById('narrative-prompt').textContent);
 const COMPANY_SCAN_PROMPT = JSON.parse(document.getElementById('company-scan-prompt').textContent);
@@ -2289,10 +2426,11 @@ document.getElementById('csManualToggle').addEventListener('click', () => {
 
 // ---------- disclosure-level toggle (Task B: verdict component prototype,
 // Вотчлист tab / Part D bond-detail drawer only -- other pages don't read
-// this yet). Dark theme is now the only theme (Design tokens task removed
-// the light/dark toggle entirely -- see :root in the stylesheet), so this
-// is the sole remaining toolbar toggle. One state variable, one data-*
-// attribute (on <body>, per the CSS disclosure classes in the stylesheet),
+// this yet). A separate toggle from the light/dark theme control above --
+// the light/dark toggle was removed by an earlier "Design tokens" task and
+// reinstated by the "Light/Dark Theme Toggle" task, independently of this
+// one. One state variable, one data-* attribute (on <body>, per the CSS
+// disclosure classes in the stylesheet),
 // persisted to localStorage. window.hybondDisclosure is
 // the single source of truth other code (computeVerdict/renderVerdictHtml)
 // can read; the CSS classes (.layer-0/1/2/3 + [data-disclosure] overrides)
@@ -2327,6 +2465,7 @@ notesEl.innerHTML = `
   <div class="banner"><b>О данных (Slice 1/2).</b> ${DATA.data_notes.slice1_slice2}</div>
   <div class="banner"><b>О данных (Slice 3).</b> ${DATA.data_notes.slice3}</div>
   <div class="banner"><b>О данных (Slice 4).</b> ${DATA.data_notes.slice4}</div>
+  ${DATA.pd_table_meta ? `<div class="banner"><b>Модель PD/LGD.</b> PD: ${DATA.pd_table_meta.source} Таблица 7 (${DATA.pd_table_meta.dated.split('-').reverse().join('.')}) · LGD: ${DATA.pd_table_meta.lgd} (эмпир. ВДО, Федресурс 2022–2026)</div>` : ''}
 `;
 
 // ---------- stat tiles ----------
@@ -3985,6 +4124,16 @@ function ruPluralIssuerWord(n) {
   return 'эмитентов';
 }
 
+// Mobile number-formatting fix: G-spread values >=1000бп abbreviate to
+// "N.Nкбп" on narrow viewports (ticker bar, pulse tiles) so they don't
+// force horizontal scroll/wrap next to their label. Desktop keeps the
+// full ru-RU-grouped number. Callers detect mobile via
+// window.innerWidth < 480 at render time, same threshold as the CSS fixes.
+function fmtBp(value, compact) {
+  if (compact && value >= 1000) return (value / 1000).toFixed(1) + 'кбп';
+  return Math.round(value).toLocaleString('ru-RU') + 'бп';
+}
+
 // Shared by the hero band and the Вотчлист tab -- DATA.queue_count is
 // exported by scripts/export_dashboard_data.py's queue_count(), the same
 // noise-excluded count `hybond queue`/`hybond market-notes-queue` report.
@@ -4040,9 +4189,10 @@ function renderHomeHero() {
   // a 4th "ОФЗ 10Y" tile; the dashboard's actual existing 4th Market Pulse
   // tile is "Рынок размещений" -- that's the real one being reused here.)
   const pulse = computeMarketPulse();
+  const heroMobile = window.innerWidth < 480;
   const tiles = [
     { value: pulse.cbrRate != null ? pulse.cbrRate.toFixed(2) + '%' : '—', label: 'ЦБ РФ', tab: 'cbr' },
-    { value: pulse.avgG != null ? Math.round(pulse.avgG).toLocaleString('ru-RU') + 'бп' : '—',
+    { value: pulse.avgG != null ? fmtBp(pulse.avgG, heroMobile) : '—',
       label: 'Средний G-спред', tab: 'market' },
     { value: String(pulse.flagsToday), cls: pulse.flagsToday > 0 ? 'pt-bad' : 'pt-good',
       label: 'Флаги', tab: 'watchlist', opts: { scrollTo: 'sec-events' } },
@@ -4271,9 +4421,10 @@ function renderTicker() {
   if (!track) return;
   const pulse = computeMarketPulse();
   renderNavBadge(pulse);
+  const tickerMobile = window.innerWidth < 480;
   const items = [];
   items.push({ html: `ЦБ РФ <b>${pulse.cbrRate != null ? pulse.cbrRate.toFixed(2) + '%' : '—'}</b>`, tab: 'cbr' });
-  items.push({ html: `Avg G-спред ВДО <b>${pulse.avgG != null ? Math.round(pulse.avgG).toLocaleString('ru-RU') + 'бп' : '—'}</b>`, tab: 'market' });
+  items.push({ html: `Avg G-спред ВДО <b>${pulse.avgG != null ? fmtBp(pulse.avgG, tickerMobile) : '—'}</b>`, tab: 'market' });
   items.push({
     html: `Флаги сегодня <b>${pulse.flagsToday}</b>${pulse.flagsToday > 0 ? ' 🔴' : ''}`,
     tab: 'watchlist', opts: { scrollTo: 'sec-events' }, extraClass: pulse.flagsToday > 0 ? 'has-flags' : '', flags: true,
@@ -4335,6 +4486,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   // to show it first. ----
   requestAnimationFrame(function renderPulseTiles() {
     const pulse = computeMarketPulse();
+    const pulseTilesMobile = window.innerWidth < 480;
     const gDelta = (pulse.avgG != null && pulse.avgGWeekAgo != null)
       ? pulse.avgG - pulse.avgGWeekAgo : null;
     const gDeltaHtml = gDelta == null ? ''
@@ -4342,7 +4494,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     const tiles = [
       { value: pulse.cbrRate != null ? pulse.cbrRate.toFixed(2) + '%' : '—', cls: '',
         label: 'ЦБ РФ', sub: pulse.cbrSince ? `неизменна с ${pulse.cbrSince}` : '', tab: 'cbr' },
-      { value: pulse.avgG != null ? Math.round(pulse.avgG).toLocaleString('ru-RU') + 'бп' : '—', cls: '',
+      { value: pulse.avgG != null ? fmtBp(pulse.avgG, pulseTilesMobile) : '—', cls: '',
         label: 'Средний G-спред ВДО', subHtml: gDeltaHtml, tab: 'market' },
       { value: String(pulse.flagsToday), cls: pulse.flagsToday > 0 ? 'pt-bad' : 'pt-good',
         label: 'Флаги (высокие/критичные)', sub: 'сегодня', tab: 'watchlist', opts: { scrollTo: 'sec-events' } },

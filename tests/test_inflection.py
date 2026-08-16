@@ -12,16 +12,16 @@ from hybond.universe_pipeline import _classify_yield_zones  # noqa: E402
 
 
 def test_floor_ytm_matches_hand_calc_ruBB_minus():
-    # PD=0.03954, RECOVERY_RATE=0.35 -> 0.03954*0.65/(1-0.03954)
-    expected = 0.03954 * 0.65 / (1 - 0.03954)
+    # 2026-08-16 PD rebase: PD=0.0598 (Эксперт РА Таблица 7).
+    expected = 0.0598 * default_probs.LGD / (1 - 0.0598)
     assert inflection.floor_ytm("ruBB-") == expected
-    assert round(expected, 4) == 0.0268
+    assert round(expected, 4) == 0.0594
 
 
 def test_floor_ytm_matches_hand_calc_ruCCC():
-    expected = 0.13524 * 0.65 / (1 - 0.13524)
+    expected = 0.1364 * 0.934 / (1 - 0.1364)
     assert inflection.floor_ytm("ruCCC") == expected
-    assert round(expected, 3) == 0.102
+    assert round(expected, 3) == 0.148
 
 
 def test_floor_ytm_unknown_rating_is_none():
@@ -30,15 +30,23 @@ def test_floor_ytm_unknown_rating_is_none():
 
 def test_floor_ytm_always_positive_and_above_raw_expected_loss():
     # Regression / sanity check: break-even must always be strictly greater
-    # than PD*(1-RECOVERY_RATE) (the raw expected loss with no 1/(1-PD)
-    # denominator), and never zero or negative, for every rating tier.
+    # than PD*LGD (the raw expected loss with no 1/(1-PD) denominator), and
+    # never negative, for every rating tier. 2026-08-16 PD rebase note: three
+    # tiers (ruAAA/ruAA+/ruAA-) now have a genuine 0.0 observed 1yr PD (zero
+    # defaults in the Эксперт РА sample) -- for those, floor == raw expected
+    # loss == 0 exactly, not strictly greater; every other tier still must be
+    # strictly greater than zero and than its raw expected loss.
     for rating, probs in default_probs.DEFAULT_PROBS.items():
         pd = probs["yr1"]
-        raw_expected_loss = pd * (1 - default_probs.RECOVERY_RATE)
+        raw_expected_loss = pd * default_probs.LGD
         floor = inflection.floor_ytm(rating)
         assert floor is not None
-        assert floor > 0
-        assert floor > raw_expected_loss
+        assert floor >= 0
+        if pd == 0:
+            assert floor == 0 == raw_expected_loss
+        else:
+            assert floor > 0
+            assert floor > raw_expected_loss
 
 
 def test_ev_positive_true_above_floor_false_below():
@@ -137,7 +145,14 @@ def test_yield_inflection_by_rating_covers_every_tier():
     for rating, row in table.items():
         assert row["floor_ytm"] is not None
         assert row["implied_fair_spread_bp"] is not None
-        assert row["ceiling_spread_bp"] > row["caution_spread_bp"] > row["implied_fair_spread_bp"]
+        # 2026-08-16 PD rebase: a 0.0 PD tier (ruAAA/ruAA+/ruAA-) has a fair
+        # spread of exactly 0bp, and ceiling/caution are both fair*multiple
+        # -- so all three collapse to 0 together for those tiers instead of
+        # the usual strict ordering.
+        if row["implied_fair_spread_bp"] == 0:
+            assert row["ceiling_spread_bp"] == row["caution_spread_bp"] == 0
+        else:
+            assert row["ceiling_spread_bp"] > row["caution_spread_bp"] > row["implied_fair_spread_bp"]
 
 
 # ---- DB-integration: universe_pipeline._classify_yield_zones() -----------

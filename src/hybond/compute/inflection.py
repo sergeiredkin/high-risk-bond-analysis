@@ -104,7 +104,7 @@ def floor_ytm(rating: str) -> float | None:
     if probs is None:
         return None
     pd = probs["yr1"]
-    return pd * (1 - default_probs.RECOVERY_RATE) / (1 - pd)
+    return pd * default_probs.LGD / (1 - pd)
 
 
 def ceiling_spread_bp(rating: str, multiple: float = FALLBACK_CEILING_MULTIPLE) -> float | None:

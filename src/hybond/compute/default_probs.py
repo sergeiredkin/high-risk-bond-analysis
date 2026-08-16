@@ -1,84 +1,116 @@
-"""Calibrated baseline default probabilities per rating level, sourced from
-Эксперт РА's published theoretical (logistic-model) default matrix, 2001-2025,
-as of April 2025. Pure lookup module -- no I/O, no network, no LLM.
+"""Calibrated baseline default probabilities per rating level.
 
-Use the theoretical table, not the observed frequencies: the observed data has
-rating-level anomalies from small samples (e.g. ruBB- observed 6.89% >
-ruBB 5.06%, backwards). The logistic model smooths these into a monotone
-relationship, and Эксперт РА itself recommends the theoretical table for
-forward-looking use.
+2026-08-16 rebase: previously used Эксперт РА's theoretical (logistic-model)
+default matrix from April 2025, DELIBERATELY not the agency's raw observed
+disclosure -- see git history on this docstring for that reasoning (the raw
+data has small-sample non-monotonicity, e.g. a worse-rated tier showing a
+better observed outcome than a better-rated one). This task explicitly
+directs replacing the table with the raw-observed 01.07.2026 disclosure
+figures anyway (regulatory-mandated under CBR Указание 6539-У), so that is
+what DEFAULT_PROBS's yr1 values now are. The non-monotonicity the old
+docstring warned about is still present in this new 1yr data (e.g. ruB+
+0.0582 > ruB 0.0505 -- a worse letter grade showing a LOWER observed 1yr
+default rate) -- flagging this explicitly rather than silently absorbing a
+methodology reversal: this table is now the officially-sourced but noisier
+one, not the smoothed one.
 
-These frequencies are non-static -- the agency updates them semi-annually as
-macro conditions shift (the 2022-2026 default wave has elevated BB/B
-frequencies). Treat as calibrated priors, not precise loss estimates. Re-check
-against raexpert.ru/about/disclosure/default-level-data/ roughly every six
-months; next expected update ~H2 2026.
+Structural note: Эксперт РА's 01.07.2026 Таблица 7 publishes ONLY a 1-year
+horizon. The rest of this module (survival_probability, expected_return.py's
+survival-weighted IRR, mispricing_bp at horizon_yr=2/3) depends on yr2/yr3
+per-rating figures that no longer exist as agency data. Rather than fabricate
+yr2/yr3 numbers (explicitly out of scope) or break every multi-year caller,
+yr2/yr3 are DERIVED from the new yr1 via a constant-hazard (flat annual
+hazard rate) model: h = -ln(1 - yr1), yr_n = 1 - (1-yr1)**n. This is the same
+technique survival_probability() already uses to extrapolate PAST year 3
+(see implied_annual_hazard_from_yr3) -- applied here from year 1 instead,
+since year 1 is now the only real anchor point. uses_extrapolated_pd (see
+expected_return.py) does NOT currently flag yr2/yr3 as extrapolated the way
+it flags >3yr -- that flag's scope was written when yr2/yr3 were real agency
+data and has not been updated; treat ANY horizon >1yr computed from this
+table as model output, not just >3yr, until that flag is widened.
 
-Source: Эксперт РА, «Матрица дефолтов как инструмент оценки кредитного риска»,
-апрель 2025 (raexpert.ru/press/articles/pohvalenskaya_apr2025/). АКРА publishes
-an equivalent at acra-ratings.ru/compliance/ -- cross-check if values diverge
-significantly.
+Source: Эксперт РА, Таблица 7, 01.07.2026
+1-year default frequencies, national Russian rating scale
+Next update due: January 2027 (semi-annual publication schedule)
+Do not edit manually — update via: hybond check-pd-table
+(that CLI command does not exist yet -- this comment documents the intended
+future update path per the task that introduced this table, not a shipped
+feature; update DEFAULT_PROBS_1YR by hand until it's built.)
 
-NOT rebased to Эксперт РА's 01.07.2026 regulatory disclosure
-(matrix_defaults_01.07.2026.pdf) despite it being newer: that filing
-(mandated under CBR Указание 6539-У) publishes only RAW OBSERVED default
-frequencies, not the theoretical logistic-model matrix this table is built
-from -- and its raw numbers reproduce the exact non-monotonicity problem
-this docstring warns about above (e.g. in that filing, ruB's 2yr/3yr
-observed frequencies are LOWER than ruB+'s, a worse-rated tier showing a
-better outcome: 10.35%/14.39% vs 12.17%/18.25%). No newer "theoretical"
-article superseding the April 2025 one was found (checked
-raexpert.ru/ratings/credits/matrix and .../corporatebond/matrix -- neither
-hosts a live theoretical table). Swapping in the raw disclosure would be a
-methodology regression dressed up as a refresh, so it was flagged rather
-than done silently -- re-check when Эксперт РА next publishes an updated
-theoretical article.
-
-Multi-year-horizon investigation (2026-07-31): none of the four Russian
-agencies (Эксперт РА, АКРА, НКР, НРА) publish cumulative PD past 3 years --
-confirmed against Эксперт РА's own 01.07.2026 disclosure text ("на
-горизонте одного, двух и трех лет"), НКР's methodology paper (which
-anchors to 3yr specifically because Basel Committee guidance recommends
-3yr as the standard cross-agency comparison horizon), and НРА's disclosure
-page (1yr/3yr only). This is a real ceiling in the published data, not a
-gap in this codebase's sourcing -- see survival_probability()'s docstring
-for how horizons beyond 3yr are handled (constant-hazard extrapolation,
-explicitly not agency data).
+Source PDF: data/exports/pd_tables/matrix_defaults_2026_07_01.pdf
+"Исторические данные об уровнях дефолта по рейтинговым категориям
+применяемых рейтинговых шкал на 01.07.2026", Таблица 7, горизонт 1 года.
 """
 from __future__ import annotations
 
-# Recovery rate for Russian ВДО: mid-point of the 30-40% practitioner range.
-# Dominates the fair-spread calculation -- named constant, not a magic number.
-# Flat across sectors for now; secured lenders (e.g. auto-pawn) plausibly
-# recover more (50-55%), but per-sector differentiation is a later
-# calibration step, not a v1 concern.
-RECOVERY_RATE = 0.35
+import math
 
-# Эксперт РА theoretical default probabilities (decimal, not percent).
+# LGD (loss given default) and its complement RECOVERY_RATE, for Russian ВДО.
+#
+# Source: Fedresurs empirical recovery data, Russian ВДО bonds 2022-2026
+# Average recovery rate 6.6% (retail investors receive ~6.6 kopeks per rouble)
+# Significantly lower than global IG averages (35-40%) due to:
+# - Unsecured subordinated claims typical in ВДО
+# - Russian bankruptcy proceedings favouring secured creditors
+# - Limited liquidation value of typical ВДО issuers
+#
+# Previously RECOVERY_RATE = 0.35 (LGD = 0.65), the mid-point of a generic
+# 30-40% practitioner range -- not Russian-ВДО-specific, not empirical. LGD
+# is derived from RECOVERY_RATE (not a second independent magic number) so
+# the two can never drift out of sync: LGD = 1 - RECOVERY_RATE = 0.934.
+RECOVERY_RATE = 0.066
+LGD = 1 - RECOVERY_RATE
+
+# Эксперт РА official 1-year default frequencies (decimal, not percent) --
+# see module docstring for source/date/non-monotonicity notes.
+DEFAULT_PROBS_1YR: dict[str, float] = {
+    "ruAAA":  0.0000,
+    "ruAA+":  0.0000,
+    "ruAA":   0.0021,
+    "ruAA-":  0.0000,
+    "ruA+":   0.0050,
+    "ruA":    0.0065,
+    "ruA-":   0.0059,
+    "ruBBB+": 0.0107,
+    "ruBBB":  0.0198,
+    "ruBBB-": 0.0147,
+    "ruBB+":  0.0295,
+    "ruBB":   0.0460,
+    "ruBB-":  0.0598,
+    "ruB+":   0.0582,
+    "ruB":    0.0505,
+    "ruB-":   0.0526,
+    "ruCCC":  0.1364,
+    "ruCC":   0.2857,
+    "ruC":    0.5000,
+}
+
+
+def _hazard_derived_multi_year(yr1: float) -> dict[str, float]:
+    """yr2/yr3 cumulative PD from a flat annual hazard implied by yr1 -- see
+    module docstring's "Structural note" for why (Table 7 is 1yr-only)."""
+    if yr1 <= 0:
+        return {"yr1": yr1, "yr2": 0.0, "yr3": 0.0}
+    if yr1 >= 1:
+        return {"yr1": yr1, "yr2": 1.0, "yr3": 1.0}
+    h = -math.log(1 - yr1)
+    return {
+        "yr1": yr1,
+        "yr2": 1 - math.exp(-2 * h),
+        "yr3": 1 - math.exp(-3 * h),
+    }
+
+
+# Эксперт РА official default probabilities: yr1 is the real 01.07.2026
+# Table 7 figure; yr2/yr3 are hazard-derived (see _hazard_derived_multi_year
+# and the module docstring's "Structural note" -- NOT independently sourced
+# agency data).
 DEFAULT_PROBS: dict[str, dict[str, float]] = {
-    "ruAAA":  {"yr1": 0.00143, "yr2": 0.00562, "yr3": 0.00989},
-    "ruAA+":  {"yr1": 0.00218, "yr2": 0.00796, "yr3": 0.01374},
-    "ruAA":   {"yr1": 0.00284, "yr2": 0.00994, "yr3": 0.01693},
-    "ruAA-":  {"yr1": 0.00371, "yr2": 0.01240, "yr3": 0.02083},
-    "ruA+":   {"yr1": 0.00484, "yr2": 0.01545, "yr3": 0.02561},
-    "ruA":    {"yr1": 0.00631, "yr2": 0.01924, "yr3": 0.03145},
-    "ruA-":   {"yr1": 0.00823, "yr2": 0.02395, "yr3": 0.03858},
-    "ruBBB+": {"yr1": 0.01072, "yr2": 0.02976, "yr3": 0.04724},
-    "ruBBB":  {"yr1": 0.01396, "yr2": 0.03694, "yr3": 0.05772},
-    "ruBBB-": {"yr1": 0.01815, "yr2": 0.04577, "yr3": 0.07037},
-    "ruBB+":  {"yr1": 0.02357, "yr2": 0.05658, "yr3": 0.08553},
-    "ruBB":   {"yr1": 0.03056, "yr2": 0.06975, "yr3": 0.10359},
-    "ruBB-":  {"yr1": 0.03954, "yr2": 0.08572, "yr3": 0.12494},
-    "ruB+":   {"yr1": 0.05102, "yr2": 0.10493, "yr3": 0.14996},
-    "ruB":    {"yr1": 0.06561, "yr2": 0.12785, "yr3": 0.17897},
-    "ruB-":   {"yr1": 0.08399, "yr2": 0.15490, "yr3": 0.21218},
-    "ruCCC":  {"yr1": 0.13524, "yr2": 0.22273, "yr3": 0.29137},
-    "ruCC":   {"yr1": 0.25834, "yr2": 0.35905, "yr3": 0.43681},
-    "ruC":    {"yr1": 0.51756, "yr2": 0.58956, "yr3": 0.65416},
+    rating: _hazard_derived_multi_year(yr1)
+    for rating, yr1 in DEFAULT_PROBS_1YR.items()
 }
 
 _HORIZON_KEYS = {1: "yr1", 2: "yr2", 3: "yr3"}
-
 
 def _normalise(rating: str) -> str:
     """"BB" -> "ruBB", "bb-" -> "ruBB-", "ruBB" -> "ruBB" (unchanged)."""
@@ -94,19 +126,34 @@ def lookup(rating: str) -> dict[str, float] | None:
     Handles common variants: missing "ru" prefix, case differences. Returns
     None rather than raising -- callers (factlist, pipeline) handle a miss by
     treating the mispricing fields as not-yet-available, not as an error.
+
+    Fallback for a scale-suffixed rating (e.g. "ruB+.mfi", a hypothetical
+    microfinance-scale variant -- grepped the live rating table and every
+    scraper's normalisation code on 2026-08-16 and found NONE in actual use
+    today, but the task that added this fallback asked for it defensively):
+    if the exact normalised string isn't a key, strip everything from the
+    first "." onward and retry against the base tier, rather than returning
+    None for a rating that's really just a suffixed variant of a known tier.
     """
     if not rating:
         return None
-    return DEFAULT_PROBS.get(_normalise(rating))
+    norm = _normalise(rating)
+    hit = DEFAULT_PROBS.get(norm)
+    if hit is not None:
+        return hit
+    if "." in norm:
+        base = norm.split(".", 1)[0]
+        return DEFAULT_PROBS.get(base)
+    return None
 
 
 def implied_fair_spread_bp(rating: str, horizon_yr: int = 1) -> float | None:
-    """default_prob * (1 - RECOVERY_RATE) * 10000, or None if rating unknown."""
+    """default_prob * LGD * 10000, or None if rating unknown."""
     probs = lookup(rating)
     if probs is None:
         return None
     key = _HORIZON_KEYS.get(horizon_yr, "yr1")
-    return probs[key] * (1 - RECOVERY_RATE) * 10000
+    return probs[key] * LGD * 10000
 
 
 def mispricing_bp(actual_g_spread_bp: float, rating: str,
@@ -121,17 +168,16 @@ def mispricing_bp(actual_g_spread_bp: float, rating: str,
 
 
 def implied_annual_hazard_from_yr3(rating: str) -> float | None:
-    """Constant per-year hazard rate implied by the rating's REAL 3-year
-    cumulative PD: h = 1 - (1 - PD_yr3)**(1/3). None if rating unknown.
+    """Constant per-year hazard rate implied by the rating's yr3 cumulative
+    PD: h = 1 - (1 - PD_yr3)**(1/3). None if rating unknown.
 
     APPROXIMATION, used only to extrapolate survival_probability() past the
-    3-year table (see that function and this module's docstring for why no
-    agency publishes anything past 3yr). Anchored to yr3, not yr1: the raw
-    yr1->yr2->yr3 marginal hazards are not monotonic in the underlying agency
-    data (e.g. ruBB's implied yr1->yr2 marginal hazard, ~4.04%, is HIGHER
-    than its yr1 hazard of 3.056% -- small-sample/model noise, not a real
-    front-loaded-risk signal), so yr3 -- the longest real data point -- is
-    the least noisy single anchor available for projecting further out.
+    3-year table. NOTE (2026-08-16 PD rebase): yr3 itself is now hazard-
+    derived from yr1, not independent agency data -- see this module's
+    docstring "Structural note". This function's own extrapolation-beyond-
+    yr3 is therefore a model built on a model; still the least-bad option
+    available (yr1 is the only real anchor left), but treat any horizon >1yr
+    read from this module as approximation, full stop.
     """
     probs = lookup(rating)
     if probs is None:
@@ -151,20 +197,18 @@ YEAR_BOUNDARY_TOL = 0.02
 def survival_probability(rating: str, t_years: float) -> float | None:
     """P(no default by t_years), for any t_years >= 0. None if rating unknown.
 
-    Exact at t=1, t=2, t=3 (matches DEFAULT_PROBS's real cumulative PDs).
-    Interpolated within (0,3) via piecewise-constant hazard per calendar
-    year -- standard actuarial treatment, and consistent with the fact the
-    underlying agency data is itself annual (there is no sub-year PD to
-    interpolate from).
+    Exact at t=1 (real agency data). t=2/t=3 are hazard-derived from t=1, not
+    independent agency data as of the 2026-08-16 PD rebase -- see this
+    module's docstring "Structural note". Interpolated within (0,3) via
+    piecewise-constant hazard per calendar year -- standard actuarial
+    treatment.
 
     Beyond t=3 (+YEAR_BOUNDARY_TOL, to absorb leap-day calendar drift):
     extrapolated using the constant hazard rate implied by the 3-year PD
-    (implied_annual_hazard_from_yr3). THIS PORTION IS A MODEL, NOT AGENCY
-    DATA -- no Russian rating agency publishes cumulative default
-    probabilities past a 3-year horizon (checked all four: Эксперт РА, АКРА,
-    НКР, НРА). Any caller surfacing a survival/PD figure computed from t>3
-    must label it as an approximation, the same way RECOVERY_RATE and the
-    YTM sanity cap are already labeled as assumptions rather than facts.
+    (implied_annual_hazard_from_yr3). Any caller surfacing a survival/PD
+    figure computed from t>1 must label it as an approximation, the same way
+    RECOVERY_RATE/LGD and the YTM sanity cap are already labeled as
+    assumptions rather than facts.
     """
     if t_years < 0:
         raise ValueError("t_years must be >= 0")

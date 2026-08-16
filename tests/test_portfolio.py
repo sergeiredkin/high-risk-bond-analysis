@@ -106,12 +106,12 @@ def test_bond_aey_price_effect_direction():
 
 
 def test_pd_adjusted_aey_known_rating_hand_computed():
-    # ruBB: yr1 PD = 0.03056 (compute/default_probs.py). Hand-computed:
-    # (1 - 0.03056) * 0.20 - 0.03056 * (1 - 0.35) = 0.174024.
+    # ruBB: yr1 PD = 0.0460 (Эксперт РА Таблица 7, 01.07.2026). Hand-computed:
+    # (1 - 0.0460) * 0.20 - 0.0460 * 0.934 = 0.147836.
     result = portfolio.pd_adjusted_aey(0.20, "ruBB")
-    expected = (1 - 0.03056) * 0.20 - 0.03056 * (1 - default_probs.RECOVERY_RATE)
+    expected = (1 - 0.0460) * 0.20 - 0.0460 * default_probs.LGD
     assert abs(result - expected) < 1e-9
-    assert abs(result - 0.174024) < 1e-6
+    assert abs(result - 0.147836) < 1e-6
 
 
 def test_pd_adjusted_aey_unrated_bond_returns_none():
@@ -161,15 +161,15 @@ def test_aey_risk_decomposition_matches_pd_adjusted_aey():
 
 
 def test_aey_risk_decomposition_known_rating_hand_computed():
-    # ruBB: yr1 PD = 0.03056. p_survive/p_default must sum to 1, and the
+    # ruBB: yr1 PD = 0.0460. p_survive/p_default must sum to 1, and the
     # blended value must hand-match the same computation as the
     # pd_adjusted_aey test above.
     result = portfolio.aey_risk_decomposition(0.20, "ruBB")
-    assert abs(result["p_default"] - 0.03056) < 1e-9
-    assert abs(result["p_survive"] - (1 - 0.03056)) < 1e-9
+    assert abs(result["p_default"] - 0.0460) < 1e-9
+    assert abs(result["p_survive"] - (1 - 0.0460)) < 1e-9
     assert abs(result["return_if_survive"] - 0.20) < 1e-12
-    assert abs(result["return_if_default"] - (-(1 - default_probs.RECOVERY_RATE))) < 1e-12
-    assert abs(result["expected_value"] - 0.174024) < 1e-6
+    assert abs(result["return_if_default"] - (-default_probs.LGD)) < 1e-12
+    assert abs(result["expected_value"] - 0.147836) < 1e-6
 
 
 def test_aey_risk_decomposition_unrated_bond_returns_none():

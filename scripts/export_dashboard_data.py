@@ -24,7 +24,7 @@ sys.path.insert(0, "src")
 
 from hybond.classify_utils import queue_bucket  # noqa: E402
 from hybond.compute.default_probs import (  # noqa: E402
-    DEFAULT_PROBS, RATING_ORDER, RECOVERY_RATE, implied_fair_spread_bp, lookup)
+    DEFAULT_PROBS, LGD, RATING_ORDER, RECOVERY_RATE, implied_fair_spread_bp, lookup)
 from hybond.compute import inflection  # noqa: E402
 from hybond.store import db  # noqa: E402
 from hybond import portfolio  # noqa: E402
@@ -323,7 +323,7 @@ def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str]) ->
         # exclusion applied explicitly or they'd silently un-exclude the
         # signal on the PD axis while the bp axis stays correctly excluded.
         pd_rating = lookup(rating)["yr1"] if (rating and not signal_excluded) else None
-        pd_market = ((g_spread_bp / 10000.0) / (1 - RECOVERY_RATE)
+        pd_market = ((g_spread_bp / 10000.0) / LGD
                      if (g_spread_bp is not None and not signal_excluded) else None)
         pd_gap = (pd_market - pd_rating) if (pd_market is not None and pd_rating is not None) else None
         mod_dur = round(r["duration_moex"] / 365.0, 2) if r["duration_moex"] else None
@@ -986,6 +986,17 @@ def main() -> None:
         "day1_snap_date": report.get("snap_date"),
         "day2_snap_date": issuers[0]["snap_date"] if issuers else None,
         "queue_count": queue_count_val,
+        # PD/LGD Recalibration task (2026-08-16): dashboard-visible provenance
+        # for the PD table + LGD assumption everything AEY-adjacent derives
+        # from -- see default_probs.py's module docstring for the full
+        # source/methodology notes this summarises.
+        "pd_table_meta": {
+            "source": "Эксперт РА",
+            "dated": "2026-07-01",
+            "applied_on": "2026-08-16",
+            "lgd": round(LGD, 3),
+            "recovery_rate": RECOVERY_RATE,
+        },
         "spread_screen_day1": report.get("spread_screen", []),
         "maturity_wall": report.get("maturity_wall", []),
         "redemptions_by_issuer": report.get("redemptions_by_issuer", {}),

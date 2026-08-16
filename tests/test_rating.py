@@ -124,7 +124,7 @@ def test_factlist_pulls_default_prob_from_rating_table(tmp_path):
 
     fl = build_factlist(con, ISSUER, "2026-07-25", flags=[],
                         stat_warming_up=True).to_json()
-    assert fl["default_prob_1yr"] == 0.03056
+    assert fl["default_prob_1yr"] == 0.0460
     assert fl["implied_fair_spread_bp"] is not None
     assert fl["mispricing_bp"] is not None
     con.close()

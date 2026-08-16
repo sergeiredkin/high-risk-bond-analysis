@@ -262,7 +262,7 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
     # outstanding, not just the specific one or two SECIDs we happen to hold
     # (e.g. all of Самолёт's/ВУШ's/МГКЛ's series should flag, not just the
     # tracked bond).
-    watchlist_inns = {r["issuer_id"] for r in con.execute("SELECT issuer_id FROM issuer")}
+    watchlist_inns = {r["issuer_id"] for r in con.execute("SELECT issuer_id FROM issuer WHERE active=1")}
     liquidity_since = (snap_date - timedelta(days=LIQUIDITY_LOOKBACK_DAYS)).isoformat()
 
     total_pulled = len(master_rows)
