@@ -215,6 +215,134 @@ def cmd_market_notes_queue(_args) -> int:
     return 0
 
 
+def cmd_auto_classify(args) -> int:
+    from .classify_ollama import MODEL, classify_filing, needs_review
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    db.init_market_note(con)
+
+    # --limit is a COMBINED budget across both queues, not per-queue -- each
+    # real classification call measured at 52-77s (see classify_ollama.py),
+    # so a per-queue limit could silently double a cron run's worst-case
+    # duration (e.g. --limit 30 -> up to 60 calls -> up to ~77 min, longer
+    # than the hourly window this is meant to fit inside).
+    filings = ([] if args.source == "market_note" else
+               db.get_auto_classify_queue(con, limit=args.limit, priority_only=args.priority_only))
+    remaining = None if args.limit is None else max(0, args.limit - len(filings))
+    notes = ([] if args.source == "filing" else
+             db.get_auto_classify_market_notes(con, limit=remaining, priority_only=args.priority_only))
+
+    stats = {"processed": 0, "classified": 0, "skipped_noise": 0,
+             "skipped_confidence": 0, "failed": 0, "needs_review": 0}
+
+    for filing in filings:
+        stats["processed"] += 1
+        result = classify_filing(title=filing["title"], url=filing["url"],
+                                  issuer_name=filing["issuer_name"])
+        if result is None:
+            stats["failed"] += 1
+            continue
+        if result["confidence"] < 0.65:
+            print(f"Low confidence ({result['confidence']:.2f}) — skipping: {filing['title']}")
+            stats["skipped_confidence"] += 1
+            continue
+
+        review = needs_review(result["severity"], result["confidence"])
+        if not args.dry_run:
+            db.insert_event(
+                con, issuer_id=filing["issuer_id"], occurred=filing["published"],
+                category=result["category"], severity=result["severity"],
+                summary=result["summary"], source_url=filing["url"],
+                classified_by=f"ollama:{MODEL}", confidence=result["confidence"],
+                needs_review=1 if review else 0)
+            db.mark_classified(con, filing["body_hash"])
+
+        if result["severity"] == "noise":
+            stats["skipped_noise"] += 1
+        else:
+            stats["classified"] += 1
+        if review:
+            stats["needs_review"] += 1
+
+    for note in notes:
+        stats["processed"] += 1
+        result = classify_filing(title=note["title"], url=note["url"],
+                                  issuer_name=note["issuer_name"] or "неизвестный эмитент")
+        if result is None:
+            stats["failed"] += 1
+            continue
+        if result["confidence"] < 0.65:
+            print(f"Low confidence ({result['confidence']:.2f}) — skipping: {note['title']}")
+            stats["skipped_confidence"] += 1
+            continue
+
+        # market_note has no classified_by/needs_review columns (Part 1 only
+        # extended `event`) -- set_market_note_classification() writes the
+        # three columns it does have; confidence still gates the write above.
+        if not args.dry_run:
+            db.set_market_note_classification(
+                con, note["note_id"], severity=result["severity"],
+                category=result["category"], confidence=result["confidence"])
+
+        if result["severity"] == "noise":
+            stats["skipped_noise"] += 1
+        else:
+            stats["classified"] += 1
+        if needs_review(result["severity"], result["confidence"]):
+            stats["needs_review"] += 1
+
+    con.commit()
+    con.close()
+
+    print(f"Processed: {stats['processed']}")
+    print(f"Classified: {stats['classified']} events written")
+    print(f"Noise (skipped): {stats['skipped_noise']}")
+    print(f"Low confidence (skipped): {stats['skipped_confidence']}")
+    print(f"Failed (API error): {stats['failed']}")
+    print(f"Needs review: {stats['needs_review']}")
+    return 0
+
+
+def cmd_review_queue(args) -> int:
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    rows = db.events_needing_review(con, limit=args.limit)
+
+    if not rows:
+        print("Нет событий, требующих проверки.")
+        con.close()
+        return 0
+
+    print(f"=== ТРЕБУЮТ ПРОВЕРКИ ({len(rows)} событий) ===\n")
+    for i, r in enumerate(rows, 1):
+        print(f"[{i}] {r['occurred']} | {r['issuer_name']}")
+        print(f"    Категория: {r['category']} | Severity: {r['severity']} | "
+              f"Confidence: {r['confidence']:.2f}" if r["confidence"] is not None
+              else f"    Категория: {r['category']} | Severity: {r['severity']} | Confidence: н/д")
+        print(f"    Резюме: {r['summary']}")
+        print(f"    URL: {r['source_url']}")
+        answer = input("    Действие: [a]ccepted / [e]dit / [s]kip > ").strip().lower()
+        if answer == "a":
+            db.resolve_event_review(con, r["event_id"])
+            con.commit()
+            print("    -> принято.\n")
+        elif answer == "e":
+            new_cat = input(f"    Категория [{r['category']}]: ").strip() or None
+            new_sev = input(f"    Severity [{r['severity']}]: ").strip() or None
+            db.resolve_event_review(con, r["event_id"], category=new_cat, severity=new_sev)
+            con.commit()
+            print("    -> обновлено.\n")
+        else:
+            print("    -> пропущено (останется в очереди).\n")
+
+    con.close()
+    return 0
+
+
 def cmd_fill_price_impact(_args) -> int:
     from .store import db
     con = db.connect()
@@ -706,6 +834,24 @@ def main(argv=None) -> int:
     pmq = sub.add_parser("market-notes-queue",
                           help="Show market_note rows awaiting classification")
     pmq.set_defaults(func=cmd_market_notes_queue)
+
+    pac = sub.add_parser("auto-classify",
+                          help="Classify unclassified filings/market_notes via local Ollama "
+                               "(qwen3.5:latest) -- automated stand-in for hy-event-classify")
+    pac.add_argument("--limit", type=int, default=None,
+                      help="max filings+market_notes to process this run (default: no limit)")
+    pac.add_argument("--dry-run", action="store_true",
+                      help="classify and print stats but do not write to the DB")
+    pac.add_argument("--priority-only", action="store_true",
+                      help="only process rows classify_utils.queue_bucket() marks 'priority'")
+    pac.add_argument("--source", choices=["filing", "market_note"], default=None,
+                      help="restrict to one queue (default: both)")
+    pac.set_defaults(func=cmd_auto_classify)
+
+    prq = sub.add_parser("review-queue",
+                          help="Interactively review event rows Ollama flagged needs_review=1")
+    prq.add_argument("--limit", type=int, default=None)
+    prq.set_defaults(func=cmd_review_queue)
 
     pfpi = sub.add_parser("fill-price-impact",
                            help="Backfill event.price_before_bp/price_after_*_bp from "

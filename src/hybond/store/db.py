@@ -11,6 +11,8 @@ import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from ..classify_utils import queue_bucket
+
 DB_PATH = Path("data/db/hybond.sqlite")
 
 SCHEMA = """
@@ -161,6 +163,15 @@ def init_db(con: sqlite3.Connection) -> None:
             con.execute(f"ALTER TABLE event ADD COLUMN {col} REAL")
     if "price_impact_filled_on" not in event_cols:
         con.execute("ALTER TABLE event ADD COLUMN price_impact_filled_on TEXT")
+    # event: Ollama auto-classification (classify_ollama.py) provenance --
+    # all nullable, existing (manually-classified) rows stay NULL rather than
+    # being backfilled with a fabricated 'manual' value.
+    if "classified_by" not in event_cols:
+        con.execute("ALTER TABLE event ADD COLUMN classified_by TEXT")
+    if "confidence" not in event_cols:
+        con.execute("ALTER TABLE event ADD COLUMN confidence REAL")
+    if "needs_review" not in event_cols:
+        con.execute("ALTER TABLE event ADD COLUMN needs_review INTEGER DEFAULT 0")
     # issuer: active flag, defaults to 1 so every existing row is treated as
     # active on retrofit -- lets an issuer be marked inactive (e.g. delisted,
     # matured out, or a defaulted name being wound down) without deleting its
@@ -483,14 +494,29 @@ CREATE TABLE IF NOT EXISTS market_note (
 
 def init_market_note(con) -> None:
     con.executescript(MARKET_NOTE_SCHEMA)
+    # MOEX Listing/CBR Press RSS task (2026-08-17): feed_url tracks which RSS
+    # feed a row came from (multiple feeds can share the same `source`
+    # value... actually each source maps 1:1 to a feed here, but the column
+    # exists so a future multi-feed source doesn't need another migration).
+    # Same retrofit pattern init_db() already uses for spread_snapshot/bond/
+    # event -- PRAGMA table_info + conditional ALTER TABLE, not a bare
+    # try/except (grepped before writing; no try/except-swallow migration
+    # exists anywhere in this file). Existing rows get NULL, not backfilled.
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(market_note)")}
+    if "feed_url" not in cols:
+        con.execute("ALTER TABLE market_note ADD COLUMN feed_url TEXT")
     con.commit()
 
 
 def insert_market_note(con, **f) -> bool:
     """Returns True if a new row was actually inserted, False if body_hash
-    already existed (dedup) -- callers use this to report a 'new' count."""
+    already existed (dedup) -- callers use this to report a 'new' count.
+    feed_url defaults to None (same optional-kwarg pattern as
+    insert_spread_snapshot's yield_source) so existing callers that don't
+    pass it keep working unchanged."""
+    f.setdefault("feed_url", None)
     cols = ("source,issuer_id,occurred,headline,summary,url,severity,"
-            "category,confidence,fetched_on,body_hash")
+            "category,confidence,fetched_on,body_hash,feed_url")
     placeholders = ",".join(f":{c}" for c in cols.split(","))
     cur = con.execute(
         f"INSERT OR IGNORE INTO market_note({cols}) VALUES({placeholders})", f)
@@ -519,10 +545,95 @@ def set_market_note_classification(
 
 
 def insert_event(con, **f) -> int:
+    """classified_by/confidence/needs_review are optional (default None/None/0)
+    -- existing callers (manual classification, skip_noise_filings()) that
+    don't pass them keep working unchanged, same optional-kwarg pattern as
+    upsert_bond's issue_size fields."""
+    f.setdefault("classified_by", None)
+    f.setdefault("confidence", None)
+    f.setdefault("needs_review", 0)
     cur = con.execute(
-        "INSERT INTO event(issuer_id,occurred,category,severity,summary,source_url) "
-        "VALUES(:issuer_id,:occurred,:category,:severity,:summary,:source_url)", f)
+        "INSERT INTO event(issuer_id,occurred,category,severity,summary,source_url,"
+        "classified_by,confidence,needs_review) "
+        "VALUES(:issuer_id,:occurred,:category,:severity,:summary,:source_url,"
+        ":classified_by,:confidence,:needs_review)", f)
     return cur.lastrowid
+
+
+# --- Ollama auto-classification (classify_ollama.py / `hybond auto-classify`) --
+
+def get_auto_classify_queue(con, limit: int | None = None, priority_only: bool = False) -> list[dict]:
+    """Unclassified filings, joined to issuer for issuer_name, ordered priority
+    (via classify_utils.queue_bucket -- same substring patterns the manual
+    `hybond queue` display already uses) before normal. Noise-bucketed filings
+    are NOT excluded here -- they still need classify_filing() to run so a
+    real (low-severity) event gets recorded, same as manual classification
+    would; queue_bucket is only used for ORDERING, not filtering, except when
+    priority_only is set."""
+    rows = con.execute(
+        "SELECT f.body_hash, f.issuer_id, i.name AS issuer_name, f.title, f.url, "
+        "f.published FROM filing f JOIN issuer i ON i.issuer_id = f.issuer_id "
+        "WHERE f.classified = 0 ORDER BY f.published DESC"
+    ).fetchall()
+    buckets = [(r, queue_bucket(r["title"])) for r in rows]
+    if priority_only:
+        buckets = [(r, b) for r, b in buckets if b == "priority"]
+    else:
+        order = {"priority": 0, "normal": 1, "noise": 2}
+        buckets.sort(key=lambda rb: order[rb[1]])
+    out = [dict(r) for r, _ in buckets]
+    return out[:limit] if limit is not None else out
+
+
+def get_auto_classify_market_notes(con, limit: int | None = None, priority_only: bool = False) -> list[dict]:
+    """Same queue shape as get_auto_classify_queue() but for market_note --
+    unclassified marker is `severity IS NULL` (not a `classified` flag column,
+    which market_note doesn't have), and the date field is `occurred` (not
+    `published`). Field names in the returned dicts are normalised to match
+    get_auto_classify_queue()'s (title/url/published/issuer_name) so the CLI
+    loop can treat both queues uniformly; body_hash is replaced by note_id
+    since market_note's write-back path (set_market_note_classification) is
+    keyed by note_id, not body_hash."""
+    rows = con.execute(
+        "SELECT n.note_id, n.issuer_id, i.name AS issuer_name, n.headline AS title, "
+        "n.url, n.occurred AS published FROM market_note n "
+        "LEFT JOIN issuer i ON i.issuer_id = n.issuer_id "
+        "WHERE n.severity IS NULL ORDER BY n.occurred DESC"
+    ).fetchall()
+    buckets = [(r, queue_bucket(r["title"], source=None)) for r in rows]
+    if priority_only:
+        buckets = [(r, b) for r, b in buckets if b == "priority"]
+    else:
+        order = {"priority": 0, "normal": 1, "noise": 2}
+        buckets.sort(key=lambda rb: order[rb[1]])
+    out = [dict(r) for r, _ in buckets]
+    return out[:limit] if limit is not None else out
+
+
+def events_needing_review(con, limit: int | None = None) -> list:
+    q = ("SELECT e.*, i.name AS issuer_name FROM event e "
+         "JOIN issuer i ON i.issuer_id = e.issuer_id "
+         "WHERE e.needs_review = 1 ORDER BY e.occurred DESC")
+    if limit is not None:
+        q += f" LIMIT {int(limit)}"
+    return con.execute(q).fetchall()
+
+
+def resolve_event_review(con, event_id: int, category: str | None = None,
+                          severity: str | None = None) -> None:
+    """`hybond review-queue`'s [a]ccept/[e]dit actions: always clears
+    needs_review; category/severity are only updated when the operator
+    actually edited them (edit action), left untouched on plain accept."""
+    if category is not None or severity is not None:
+        sets, args = [], []
+        if category is not None:
+            sets.append("category=?"); args.append(category)
+        if severity is not None:
+            sets.append("severity=?"); args.append(severity)
+        args.append(event_id)
+        con.execute(f"UPDATE event SET {', '.join(sets)}, needs_review=0 WHERE event_id=?", args)
+    else:
+        con.execute("UPDATE event SET needs_review=0 WHERE event_id=?", (event_id,))
 
 
 def events_since(con, issuer_id: str, since_date: str) -> list:
