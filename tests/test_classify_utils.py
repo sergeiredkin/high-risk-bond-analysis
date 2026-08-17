@@ -66,3 +66,81 @@ def test_empty_or_none_title_is_normal():
     assert queue_bucket("") == "normal"
     assert queue_bucket(None) == "normal"
     assert not is_likely_noise("")
+
+
+# ---- MOEX Listing / CBR Press source-specific patterns (2026-08-17) ------
+# Titles below are copied VERBATIM from live fetches of both feeds
+# (https://moex.com/export/news.aspx?cat=104, https://www.cbr.ru/rss/RssPress)
+# pulled while building this task -- not invented examples. Real MOEX/CBR
+# titles use inflected (genitive/prepositional/accusative) case forms, NOT
+# the nominative/short-form phrasing a first guess reaches for -- e.g. real
+# "О приостановке торгов" vs a naive "остановка торгов" guess, which is NOT
+# a substring match. See classify_utils.py's own note on this.
+
+def test_source_none_or_unrecognized_keeps_azipi_patterns_unchanged():
+    # Existing AZIPI behaviour must be byte-identical whether source is
+    # omitted, None, or some other value -- only 'moex_listing'/'cbr_press'
+    # switch pattern lists.
+    title = "Выплаченные доходы по эмиссионным ценным бумагам эмитента"
+    assert queue_bucket(title) == queue_bucket(title, source=None) == "noise"
+    assert queue_bucket(title, source="azipi") == "noise"
+    assert queue_bucket(title, source="smartlab_news") == "noise"
+
+
+def test_moex_priority_real_titles():
+    assert queue_bucket(
+        "О приостановке торгов ценными бумагами", source="moex_listing") == "priority"
+    assert queue_bucket(
+        "Об исключении ценных бумаг из Списка ценных бумаг, допущенных к торгам, "
+        "и о прекращении торгов ценными бумагами", source="moex_listing") == "priority"
+    assert queue_bucket(
+        "О признании выпусков облигаций несостоявшимися, об аннулировании регистрации "
+        "выпусков, об исключении их из Списка ценных бумаг, допущенных к торгам",
+        source="moex_listing") == "priority"
+    assert queue_bucket(
+        "О выявленном несоответствии ценных бумаг", source="moex_listing") == "priority"
+
+
+def test_moex_noise_real_titles():
+    assert queue_bucket('О начале торгов ценными бумагами "17" августа  2026 года',
+                         source="moex_listing") == "noise"
+    assert queue_bucket(
+        "О регистрации выпуска биржевых облигаций, о включении его в Список ценных "
+        "бумаг, допущенных к торгам, и о присвоении указанным биржевым облигациям "
+        "регистрационного номера", source="moex_listing") == "noise"
+    assert queue_bucket("Итоги выпуска биржевых облигаций", source="moex_listing") == "noise"
+    assert queue_bucket(
+        "Об оставлении ценных бумаг в Списке ценных бумаг, допущенных к торгам",
+        source="moex_listing") == "noise"
+
+
+def test_moex_naive_nominative_form_would_not_match_confirming_case_sensitivity_matters():
+    # The literal short-form phrasing a first guess would use ("остановка
+    # торгов", "исключен из списка") does NOT appear in real MOEX titles --
+    # documenting why the patterns use the inflected forms instead.
+    assert "остановка торгов" not in "о приостановке торгов ценными бумагами"
+    assert "исключен из списка" not in (
+        "об исключении ценных бумаг из списка ценных бумаг, допущенных к торгам, "
+        "и о прекращении торгов ценными бумагами")
+
+
+def test_cbr_priority_real_title():
+    assert queue_bucket(
+        "Банк России принял решение снизить ключевую ставку на 25 б.п., "
+        "до 14,00% годовых (24.07.2026)", source="cbr_press") == "priority"
+
+
+def test_cbr_noise_real_title():
+    assert queue_bucket(
+        "Результаты мониторинга максимальных процентных ставок кредитных "
+        "организаций (12.08.2026)", source="cbr_press") == "noise"
+
+
+def test_cbr_normal_when_neither_matches_real_title():
+    # Confirmed against the live feed: an insider-trading enforcement item
+    # matches neither list (falls through to 'normal', not silently buried
+    # as noise or auto-flagged priority without a matching pattern).
+    assert queue_bucket(
+        "Установлены факты неправомерного использования инсайдерской информации "
+        "при совершении сделок с обыкновенными акциями ПАО «Софтлайн» на торгах "
+        "ПАО Московская Биржа (22.07.2026)", source="cbr_press") == "normal"

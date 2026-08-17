@@ -161,13 +161,25 @@ def run_scrape(
 
 
 def run_market_notes(snap_date: date | None = None) -> dict:
-    """Ingest smart-lab.ru's general news RSS feed (scrape/smartlab_news.py)
-    into `market_note` -- secondary business-news signal, distinct from the
-    `filing`/`event` tables (regulatory disclosures). Matching is by name
-    against the whole feed, not per-issuer requests -- one fetch covers the
-    watchlist. severity/category are left NULL: classifying this source is a
-    separate, later step (hy-event-classify doesn't yet have a market_note
-    input path), this only ingests + dedupes."""
+    """Ingest all market-wide RSS feeds into `market_note` -- secondary
+    business-news/announcement signal, distinct from the `filing`/`event`
+    tables (regulatory disclosures). severity/category are left NULL:
+    classifying this source is a separate, later step (hy-event-classify
+    doesn't yet have a market_note input path), this only ingests + dedupes.
+
+    Three feeds as of the MOEX Listing/CBR Press task (2026-08-17):
+      - smart-lab.ru general news (scrape/smartlab_news.py) -- issuer-name-
+        matched against NEWS_ALIASES; items with no match are dropped (its
+        own existing behaviour, unchanged).
+      - MOEX Listing + CBR Press (scrape/rss_generic.py) -- market-wide, no
+        issuer match attempted (see that module's docstring for why: CBR
+        press releases essentially never name a single watchlist issuer).
+    Each feed is fetched independently -- one feed failing (network error,
+    malformed XML) does not block the others; per-feed errors are collected
+    under result['feeds'][source]['error'] as well as folded into the
+    top-level 'error' string for backward compatibility with existing
+    callers (cmd_market_notes) that only checked the aggregate."""
+    from .scrape import rss_generic as rg
     from .scrape import smartlab_news as sln
     snap_date = snap_date or date.today()
     backend = ed.HttpBackend()
@@ -176,26 +188,59 @@ def run_market_notes(snap_date: date | None = None) -> dict:
     db.init_db(con)
     db.init_market_note(con)
 
-    result = {"snap_date": snap_date.isoformat(), "parsed": 0, "new": 0, "error": None}
+    result = {"snap_date": snap_date.isoformat(), "parsed": 0, "new": 0,
+              "error": None, "feeds": {}}
+    errors = []
+
+    # --- smart-lab.ru general news: existing issuer-matched behaviour ------
+    feed_result = {"parsed": 0, "new": 0, "error": None}
     try:
         xml_text = sln.fetch_feed(backend)
         notes = sln.parse_feed(xml_text)
+        feed_result["parsed"] = len(notes)
+        for n in notes:
+            inserted = db.insert_market_note(
+                con, source=sln.SOURCE_MARKER, issuer_id=n.issuer_id,
+                occurred=n.occurred, headline=n.headline, summary=n.summary,
+                url=n.url, severity=None, category=None, confidence=None,
+                fetched_on=snap_date.isoformat(), body_hash=n.body_hash,
+                feed_url=sln.FEED_URL)
+            if inserted:
+                feed_result["new"] += 1
+        con.commit()
     except Exception as e:  # noqa: BLE001
-        con.close()
-        result["error"] = str(e)
-        return result
+        feed_result["error"] = str(e)
+        errors.append(f"{sln.SOURCE_MARKER}: {e}")
+    result["feeds"][sln.SOURCE_MARKER] = feed_result
+    result["parsed"] += feed_result["parsed"]
+    result["new"] += feed_result["new"]
 
-    result["parsed"] = len(notes)
-    for n in notes:
-        inserted = db.insert_market_note(
-            con, source=sln.SOURCE_MARKER, issuer_id=n.issuer_id,
-            occurred=n.occurred, headline=n.headline, summary=n.summary,
-            url=n.url, severity=None, category=None, confidence=None,
-            fetched_on=snap_date.isoformat(), body_hash=n.body_hash)
-        if inserted:
-            result["new"] += 1
-    con.commit()
+    # --- MOEX Listing + CBR Press: market-wide, no issuer gate ------------
+    for cfg in (rg.MOEX_LISTING_FEED, rg.CBR_PRESS_FEED):
+        feed_result = {"parsed": 0, "new": 0, "error": None}
+        try:
+            xml_text = rg.fetch_feed(backend, cfg)
+            notes = rg.parse_feed(xml_text)
+            feed_result["parsed"] = len(notes)
+            for n in notes:
+                inserted = db.insert_market_note(
+                    con, source=cfg.source, issuer_id=n.issuer_id,
+                    occurred=n.occurred, headline=n.headline, summary=n.summary,
+                    url=n.url, severity=None, category=None, confidence=None,
+                    fetched_on=snap_date.isoformat(), body_hash=n.body_hash,
+                    feed_url=cfg.feed_url)
+                if inserted:
+                    feed_result["new"] += 1
+            con.commit()
+        except Exception as e:  # noqa: BLE001
+            feed_result["error"] = str(e)
+            errors.append(f"{cfg.source}: {e}")
+        result["feeds"][cfg.source] = feed_result
+        result["parsed"] += feed_result["parsed"]
+        result["new"] += feed_result["new"]
+
     con.close()
+    result["error"] = "; ".join(errors) if errors else None
     return result
 
 
@@ -207,7 +252,10 @@ def market_note_queue_view() -> dict:
 
     Bucketed by classify_utils.queue_bucket() against the headline, same
     noise/priority pre-filter classify_queue_view() applies to filings below
-    -- a DISPLAY split only, nothing here is written back to the DB."""
+    -- a DISPLAY split only, nothing here is written back to the DB.
+    Source-aware as of the MOEX Listing/CBR Press task (2026-08-17):
+    queue_bucket() takes the row's own `source` so moex_listing/cbr_press
+    rows use their own pattern lists instead of the AZIPI-oriented default."""
     con = db.connect()
     db.init_db(con)
     db.init_market_note(con)
@@ -221,7 +269,7 @@ def market_note_queue_view() -> dict:
 
     priority, normal, noise = [], [], []
     for r in rows:
-        bucket = queue_bucket(r["headline"])
+        bucket = queue_bucket(r["headline"], source=r["source"])
         (priority if bucket == "priority" else noise if bucket == "noise" else normal).append(r)
 
     return {

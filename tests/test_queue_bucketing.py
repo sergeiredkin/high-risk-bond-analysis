@@ -65,3 +65,27 @@ def test_market_note_queue_view_buckets(tmp_path, monkeypatch):
     assert view["priority_count"] == 1
     assert view["noise_count"] == 1
     assert view["normal_count"] == 1
+
+
+def test_market_note_queue_view_uses_source_specific_patterns(tmp_path, monkeypatch):
+    # A MOEX title that's noise under MOEX_LISTING_NOISE_PATTERNS but would
+    # be 'normal' under the default AZIPI patterns (no overlap in the two
+    # lists) -- confirms market_note_queue_view() actually passes `source`
+    # through to queue_bucket() rather than always using the AZIPI default.
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "bucket_mn2.sqlite")
+    con = db.connect()
+    db.init_db(con)
+    db.init_market_note(con)
+    db.insert_market_note(
+        con, source="moex_listing", issuer_id=None,
+        occurred="2026-08-17T09:00:00+03:00",
+        headline="Итоги выпуска биржевых облигаций",
+        summary=None, url="http://x", severity=None, category=None,
+        confidence=None, fetched_on="2026-08-17", body_hash="mx1",
+        feed_url="https://moex.com/export/news.aspx?cat=104")
+    con.commit()
+    con.close()
+
+    view = scrape_pipeline.market_note_queue_view()
+    assert view["noise_count"] == 1
+    assert view["priority_count"] == 0

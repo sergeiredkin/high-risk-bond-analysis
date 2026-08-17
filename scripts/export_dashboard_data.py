@@ -29,14 +29,44 @@ from hybond.compute import inflection  # noqa: E402
 from hybond.store import db  # noqa: E402
 from hybond import portfolio  # noqa: E402
 from hybond import promote  # noqa: E402
+from hybond import spravka_parser  # noqa: E402
 from hybond.universe_pipeline import VDO_MIN_VOLUME  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 FACTLIST_DIR = ROOT / "data" / "factlists"
 OUT_PATH = ROOT / "data" / "dashboard_data.json"
+SPRAVKA_MD_PATH = ROOT / "spravka_vdo.md"
 
 # Rating tiers the market map draws fair-value overlay lines for (spec: AA/A/BBB/BB).
 FAIR_VALUE_TIERS = ["ruAA", "ruA", "ruBBB", "ruBB"]
+
+# Sector Labels task (2026-08-17): Russian display names for issuer.sector.
+# Built from `SELECT DISTINCT sector FROM issuer` against the live DB, not
+# a guessed taxonomy -- see the task's own audit note for the discrepancy
+# with an earlier proposed key set. sectorLabel() in the dashboard JS falls
+# back to the raw string for any value not covered here.
+SECTOR_LABELS_RU = {
+    "agriculture": "Агросектор",
+    "commercial_real_estate": "Коммерческая недвижимость",
+    "construction": "Строительство",
+    "construction_materials": "Стройматериалы",
+    "debt_collection": "Коллекторы",
+    "forestry_paper": "Лес и бумага",
+    "fuel_retail": "Топливный ретейл",
+    "general_industrial": "Пром. производство",
+    "gold_mining": "Золотодобыча",
+    "holding_diversified": "Диверсифицированный холдинг",
+    "industrial": "Промышленность",
+    "leasing": "Лизинг",
+    "logistics": "Логистика",
+    "metals": "Металлургия",
+    "microfinance": "МФО",
+    "mobility_tech": "Мобильность/технологии",
+    "pawnshop_resale": "Ломбарды/скупка",
+    "real_estate": "Недвижимость",
+    "technology": "Технологии",
+    "trading": "Торговля",
+}
 
 
 def latest_factlists() -> dict[str, dict]:
@@ -99,6 +129,42 @@ def spread_history_by_secid(con) -> dict[str, list[dict]]:
             "ytm_pct": round(r["ytm"] * 100, 2) if r["ytm"] is not None else None,
         })
     return out
+
+
+def spread_history_by_issuer(con, active_watchlist_issuer_ids, today: str) -> tuple[dict, dict]:
+    """Вотчлист Restructure task (2026-08-16): daily G-spread history per
+    active watchlist issuer, for the Рынок tab's new "Динамика G-спреда"
+    delta table + "История G-спреда" chart. Distinct from
+    spread_history_by_secid() above (per-bond, unfiltered, unbounded) --
+    this is per-ISSUER, capped to 90 days, and picks one representative
+    bond per issuer (highest average traded volume, from price_snapshot --
+    spread_snapshot itself has no volume column) so multi-bond issuers
+    don't show overlapping/conflicting spread lines.
+    """
+    history: dict[str, list[dict]] = {}
+    labels: dict[str, str] = {}
+    issuer_names = {r["issuer_id"]: r["name"] for r in con.execute("SELECT issuer_id, name FROM issuer")}
+    for issuer_id in active_watchlist_issuer_ids:
+        rep = con.execute(
+            "SELECT b.secid, AVG(ps.volume) avg_vol FROM bond b "
+            "JOIN price_snapshot ps ON ps.secid = b.secid "
+            "WHERE b.issuer_id = ? GROUP BY b.secid ORDER BY avg_vol DESC LIMIT 1",
+            [issuer_id],
+        ).fetchone()
+        if not rep:
+            continue
+        rows = con.execute(
+            "SELECT ss.snap_date, ss.g_spread_bp FROM spread_snapshot ss "
+            "WHERE ss.secid = ? AND ss.snap_date >= date(?, '-90 days') "
+            "AND ss.g_spread_bp IS NOT NULL AND ss.g_spread_bp > 0 "
+            "ORDER BY ss.snap_date ASC",
+            [rep["secid"], today],
+        ).fetchall()
+        if len(rows) >= 2:
+            history[issuer_id] = [{"date": r["snap_date"], "g_spread_bp": r["g_spread_bp"]} for r in rows]
+            name = issuer_names.get(issuer_id, issuer_id)
+            labels[issuer_id] = name if len(name) <= 20 else name[:20]
+    return history, labels
 
 
 def convexity_by_secid(con) -> dict[str, float | None]:
@@ -174,6 +240,41 @@ def full_events_by_issuer(con) -> dict[str, list[dict]]:
     for issuer_id, evs in events_by_issuer.items():
         evs.sort(key=lambda e: e["occurred"] or "", reverse=True)
     return events_by_issuer
+
+
+def market_wide_notes(con) -> list[dict]:
+    """MOEX Listing/CBR Press task (2026-08-17): market_note rows with no
+    issuer_id (moex_listing/cbr_press -- see rss_generic.py's docstring for
+    why these aren't issuer-scoped like smartlab_news). full_events_by_issuer()
+    above structurally can't surface these -- it's keyed by issuer_id (a
+    NULL-keyed bucket in that dict never gets attached to any real issuer in
+    main()'s per-watchlist-issuer loop) AND filters `WHERE severity IS NOT
+    NULL` (these rows are never LLM-classified -- hy-event-classify has no
+    market_note input path yet, per that module's own docstring). Without
+    this separate export, Лента событий has structurally nothing to show
+    for these two feeds regardless of any display-label change.
+
+    `severity` here is a DISPLAY-ONLY pseudo-severity from queue_bucket()
+    (priority->high, normal->medium, noise->low), NOT the real classification
+    column (which stays NULL in the DB, untouched) -- same "display filter
+    only, never written back" contract classify_utils.queue_bucket()'s own
+    docstring already commits to elsewhere in this codebase."""
+    try:
+        rows = con.execute(
+            "SELECT occurred, source, headline, url FROM market_note "
+            "WHERE issuer_id IS NULL ORDER BY occurred DESC LIMIT 200"
+        ).fetchall()
+    except Exception:  # noqa: BLE001 -- market_note may not exist yet
+        return []
+    out = []
+    for r in rows:
+        bucket = queue_bucket(r["headline"], source=r["source"])
+        pseudo_severity = {"priority": "high", "normal": "medium", "noise": "low"}[bucket]
+        out.append({
+            "occurred": r["occurred"], "category": None, "severity": pseudo_severity,
+            "summary": r["headline"], "source": r["source"], "url": r["url"],
+        })
+    return out
 
 
 def expected_returns_by_secid(con) -> dict[str, dict]:
@@ -872,11 +973,14 @@ def main() -> None:
     cbr = cbr_export(con, scenarios)
     fhist = flag_history(con)
     shist = spread_history_by_secid(con)
+    spread_history, spread_history_labels = spread_history_by_issuer(
+        con, list(watchlist.keys()), date.today().isoformat())
     fcounts = filing_counts_by_issuer(con)
     aey_by_secid = universe_aey_by_secid(con, universe["snap_date"])
     convexity_by_secid_map = convexity_by_secid(con)
     mis_delta_by_secid = mispricing_delta_by_secid(con)
     events_full_by_issuer = full_events_by_issuer(con)
+    market_wide = market_wide_notes(con)
     expected_returns = expected_returns_by_secid(con)
 
     issuers = []
@@ -1049,6 +1153,16 @@ def main() -> None:
         "data_notes": notes,
         "known_issuers": known_issuers,
         "company_scan_history": company_scan_history,
+        "spread_history": spread_history,
+        "spread_history_labels": spread_history_labels,
+        "market_wide_notes": market_wide,
+        # Справка tab (2026-08-17): parsed once at build time from
+        # spravka_vdo.md -- see hybond/spravka_parser.py. Dashboard is
+        # self-contained (no runtime fetch), so the whole guide ships in
+        # this JSON. Absent (not an error) if the source file isn't present.
+        "spravka": (spravka_parser.parse(SPRAVKA_MD_PATH.read_text(encoding="utf-8"))
+                    if SPRAVKA_MD_PATH.exists() else None),
+        "sector_labels": SECTOR_LABELS_RU,
     }
     OUT_PATH.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Wrote {OUT_PATH} ({len(issuers)} issuers)")
