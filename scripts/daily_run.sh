@@ -50,13 +50,22 @@ PYTHONPATH=src python -m hybond promote >> "$LOG" 2>&1
 # supplements AZIPI with smart-lab.ru's bonds feed for Interfax-only issuers
 # AZIPI has no coverage for (see scrape/smartlab.py's INTERFAX_ISSUERS map) --
 # was built earlier but never actually wired into this cron pipeline until now.
-PYTHONPATH=src python -m hybond scrape watchlist.json --smartlab >> "$LOG" 2>&1
+# `|| echo ... non-fatal` because this step is a live network fetch
+# (e-disclosure.azipi.ru / smart-lab.ru) -- under `set -e` above, a timeout
+# here would previously abort the whole run before diff/dashboard-rebuild
+# ever executed, even though those later steps don't depend on this one
+# succeeding.
+PYTHONPATH=src python -m hybond scrape watchlist.json --smartlab >> "$LOG" 2>&1 \
+    || echo "scrape step failed (non-fatal)" >> "$LOG"
 
 # market_note: smart-lab.ru's general news feed (RSS) -- distinct secondary
 # source from the bonds-forum --smartlab above (scrape/smartlab_news.py).
 # severity/category stay NULL until the classifier is extended for this
-# source; this step only ingests + dedupes.
-PYTHONPATH=src python -m hybond market-notes >> "$LOG" 2>&1
+# source; this step only ingests + dedupes. Same non-fatal-on-timeout
+# reasoning as the scrape step above -- this hits three live RSS feeds
+# (smart-lab, MOEX listing, CBR press).
+PYTHONPATH=src python -m hybond market-notes >> "$LOG" 2>&1 \
+    || echo "market-notes step failed (non-fatal)" >> "$LOG"
 
 # CBR: check if today has a scheduled document release -- fast no-op unless
 # today is a meeting date, a резюме publication date, or +14 days past an
@@ -71,5 +80,15 @@ check_and_fetch_today()
 
 # Slice 2: change detection + factlists
 PYTHONPATH=src python -m hybond diff --factlist-dir data/factlists >> "$LOG" 2>&1
+
+# Dashboard rebuild -- was MISSING from this script entirely (not a wrong
+# script name; there was no call here at all), which is why the dashboard
+# went stale while every data step above kept completing successfully.
+# export_dashboard_data.py reads the DB and writes data/dashboard_data.json;
+# build_dashboard.py inlines that JSON into dashboard/index.html. Both are
+# local/no-network, so they stay under `set -e` (a real bug here should
+# fail loudly, unlike the network steps above).
+PYTHONPATH=src python scripts/export_dashboard_data.py >> "$LOG" 2>&1
+PYTHONPATH=src python scripts/build_dashboard.py >> "$LOG" 2>&1
 
 echo "=== done $(date) ===" >> "$LOG"
