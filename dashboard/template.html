@@ -173,6 +173,24 @@
     color: var(--text-primary);
   }
   .banner b { color: var(--text-primary); }
+  /* AEY glossary box (Вотчлист/Рынок tabs, below the filter controls) --
+     same visual family as .banner (subtle tint + border) with an added
+     gold left accent per the task's "amber/gold left border" spec. Two
+     instances on the page share one expand/collapse state (localStorage
+     hybond-aey-legend-expanded), toggled together -- see toggleAeyGlossary(). */
+  .aey-glossary {
+    border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; margin-bottom: 14px;
+    border: 1px solid var(--border); border-left: 3px solid var(--gold-primary);
+    background: color-mix(in srgb, var(--gold-primary) 8%, var(--surface-1));
+    color: var(--text-primary);
+  }
+  .aey-glossary-summary { cursor: pointer; user-select: none; }
+  .aey-glossary-arrow { display: inline-block; width: 1em; transition: transform 0.15s ease; }
+  .aey-glossary.expanded .aey-glossary-arrow { transform: rotate(90deg); }
+  .aey-glossary-body { display: none; margin-top: 8px; color: var(--text-secondary); }
+  .aey-glossary.expanded .aey-glossary-body { display: block; }
+  .aey-glossary-body p { margin: 0 0 6px; }
+  .aey-glossary-body p:last-child { margin-bottom: 0; }
   .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
   .stat-tile {
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
@@ -372,6 +390,21 @@
   .pf-growth-table th:first-child, .pf-growth-table td:first-child { text-align: left; }
   .pf-growth-h4 { font-size: 13px; margin: 14px 0 6px; color: var(--text-primary); }
   .pf-growth-delta-cell { font-size: 12px; }
+
+  /* ---- Stress test (Портфель -> Сценарии, below Growth Planner) ---------- */
+  .pf-stress-row { display: flex; align-items: center; gap: 10px; margin: 4px 0 14px; flex-wrap: wrap; }
+  .pf-stress-row label { font-size: 14px; color: var(--text-secondary); }
+  .pf-stress-row select { padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); font-size: 13px; min-width: 220px; }
+  .pf-stress-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; max-width: 420px; }
+  .pf-stress-card-title { font-size: 13.5px; color: var(--text-secondary); margin-bottom: 10px; }
+  .pf-stress-row-line { display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 14px; padding: 4px 0; }
+  .pf-stress-row-line .pf-stress-label { color: var(--text-secondary); }
+  .pf-stress-row-line .pf-stress-val { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .pf-stress-divider { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+  .pf-stress-recovery-note { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
   .pf-pick-table tbody tr.pf-row { cursor: pointer; }
   .pf-pick-table tbody tr.pf-row:hover { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
   .pf-gate-ok { color: var(--good); font-weight: 600; }
@@ -564,6 +597,78 @@
   .pt-value-text { font-size: 15px; line-height: 1.3; }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
+
+  /* ---- Справка tab (2026-08-17) ------------------------------------------
+     No var(--bg-warning) token exists in this codebase (grepped before
+     writing) -- reusing var(--verdict-yellow)/var(--verdict-yellow-bg),
+     the same amber warning token every other verdict surface uses. */
+  .spravka-toc-mobile { display: none; width: 100%; padding: 8px 10px; margin-bottom: 14px;
+    border-radius: 8px; border: 1px solid var(--bg-border); background: var(--bg-surface);
+    color: var(--text-primary); font-size: 14px; }
+  .spravka-layout { display: flex; gap: 24px; align-items: flex-start; }
+  .spravka-toc { width: 25%; flex-shrink: 0; position: sticky; top: 10px;
+    max-height: calc(100vh - 20px); overflow-y: auto; padding-right: 4px; }
+  .spravka-toc-block { margin-bottom: 10px; }
+  .spravka-toc-block-header { display: flex; align-items: center; gap: 6px; cursor: pointer;
+    font-weight: 600; font-size: 13.5px; color: var(--gold-primary); padding: 4px 0; }
+  .spravka-toc-arrow { display: inline-block; transition: transform 0.15s ease; font-size: 11px; }
+  .spravka-toc-block.collapsed .spravka-toc-arrow { transform: rotate(-90deg); }
+  .spravka-toc-block.collapsed .spravka-toc-qlist { display: none; }
+  .spravka-toc-qlist { list-style: none; margin: 2px 0 0; padding: 0; }
+  .spravka-toc-qlist li { margin: 0; }
+  .spravka-toc-qlist a { display: block; padding: 3px 0 3px 10px; font-size: 13px;
+    color: var(--text-secondary); text-decoration: none; border-left: 2px solid transparent;
+    line-height: 1.4; }
+  .spravka-toc-qlist a:hover { color: var(--text-primary); }
+  .spravka-toc-qlist a.active { color: var(--gold-primary); border-left-color: var(--gold-primary);
+    font-weight: 600; }
+  .spravka-content { flex: 1 1 auto; min-width: 0; }
+  .spravka-search { display: flex; align-items: center; gap: 6px; background: var(--bg-surface);
+    border: 1px solid var(--bg-border); border-radius: 8px; padding: 6px 10px; margin-bottom: 4px; }
+  .spravka-search-icon { font-size: 13px; }
+  .spravka-search input { flex: 1; border: none; background: none; outline: none; font-size: 14px;
+    color: var(--text-primary); }
+  .spravka-search button { border: none; background: none; color: var(--text-muted); cursor: pointer;
+    font-size: 16px; line-height: 1; padding: 0 4px; }
+  .spravka-search-status { font-size: 12.5px; color: var(--text-muted); min-height: 16px; margin: 4px 2px 10px; }
+  .spravka-block-header { font-size: 20px; font-weight: 700; color: var(--gold-primary);
+    margin: 34px 0 6px; }
+  .spravka-block-header:first-child { margin-top: 4px; }
+  .spravka-block-range { font-size: 13px; font-weight: 400; color: var(--text-muted); margin-left: 8px; }
+  .spravka-q { scroll-margin-top: 10px; }
+  .spravka-q-title { font-size: 18px; font-weight: 500; margin: 20px 0 8px; color: var(--text-primary); }
+  .spravka-p { font-size: 14px; line-height: 1.7; color: var(--text-secondary); margin: 0 0 10px;
+    white-space: pre-line; }
+  .spravka-formula { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 13px;
+    white-space: pre-wrap; background: var(--surface-1); border-left: 3px solid var(--gold-primary);
+    border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; color: var(--text-primary);
+    line-height: 1.55; overflow-x: auto; }
+  .spravka-table-wrap { overflow-x: auto; margin: 0 0 12px; }
+  .spravka-table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+  .spravka-table th, .spravka-table td { border: 1px solid var(--bg-border); padding: 6px 10px; text-align: left; }
+  .spravka-table th { background: var(--bg-elevated); color: var(--text-primary); font-weight: 600; }
+  .spravka-table td { color: var(--text-secondary); }
+  .spravka-hybond { font-size: 13.5px; line-height: 1.6; color: var(--text-secondary);
+    background: var(--bg-elevated); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; }
+  .spravka-nav-btn { display: inline-block; margin: 6px 6px 0 0; border: 1px solid var(--gold-primary);
+    color: var(--gold-primary); background: none; font-size: 12px; padding: 4px 10px;
+    border-radius: 4px; cursor: pointer; transition: background 0.15s; }
+  .spravka-nav-btn:hover { background: var(--gold-muted); }
+  .spravka-warning { font-size: 13.5px; line-height: 1.6; color: var(--text-primary);
+    background: var(--verdict-yellow-bg); border-left: 3px solid var(--verdict-yellow);
+    border-radius: 6px; padding: 8px 12px; margin: 0 0 12px; }
+  .spravka-hr { border: none; border-top: 1px solid var(--bg-border); margin: 22px 0; }
+  .spravka-footer { color: var(--text-muted); font-size: 12px; text-align: center;
+    border-top: 0.5px solid var(--border); padding-top: 16px; margin-top: 24px; line-height: 1.7; }
+  mark.spravka-hit { background: var(--gold-primary); color: #1a1a1a; border-radius: 2px; padding: 0 1px; }
+  .spravka-q-link { color: var(--text-muted); cursor: pointer; font-size: 11px; vertical-align: super;
+    margin-left: 2px; user-select: none; }
+  .spravka-q-link:hover { color: var(--gold-primary); }
+  @media (max-width: 768px) {
+    .spravka-toc-mobile { display: block; }
+    .spravka-toc { display: none; }
+    .spravka-layout { flex-direction: column; }
+  }
 
   /* ---- universe screener ---- */
   .uni-stats { display: flex; gap: 20px; flex-wrap: wrap; font-size: 14px; color: var(--text-secondary);
@@ -884,28 +989,26 @@
   .bc-tag { font-size: 12px; color: var(--text-secondary); background: var(--bg-elevated);
     border-radius: 6px; padding: 2px 7px; }
 
-  /* ---- Issuer cards (Вотчлист tab) --------------------------------------- */
-  .issuer-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-  .issuer-card { background: var(--bg-surface); border: 1px solid var(--bg-border); border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card); padding: var(--space-4); cursor: pointer;
-    position: relative; transition: var(--transition); } /* was 14px */
-  .issuer-card:hover { border-color: var(--gold-primary); transform: translateY(-2px); box-shadow: var(--shadow-card); }
-  .issuer-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: var(--gold-primary); opacity: 0; transition: opacity 0.2s;
-    border-radius: var(--radius-card) var(--radius-card) 0 0; }
-  .issuer-card:hover::before { opacity: 1; }
-  .ic-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
-  .ic-name { font-weight: 700; font-size: 13px; line-height: 1.3; }
-  .ic-badge { font-size: 15px; flex-shrink: 0; }
-  .ic-sector { font-size: 12px; color: var(--text-secondary); background: var(--bg-elevated);
-    border-radius: 6px; padding: 2px 7px; display: inline-block; margin: 4px 0 8px; }
-  .ic-ytm { font-size: 22px; font-weight: 700; color: var(--gold-primary); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
-  .ic-sub { font-size: 12px; color: var(--text-secondary); margin: 2px 0 8px; }
-  .ic-event { font-size: 12px; border-radius: 6px; padding: 4px 7px; margin-top: 6px; }
-  .ic-event.ic-critical { background: var(--verdict-red-bg); color: var(--verdict-red); }
-  .ic-event.ic-high { background: var(--verdict-yellow-bg); color: var(--verdict-yellow); }
-  .ic-placement { font-size: 12px; border-radius: 6px; padding: 4px 7px; margin-top: 6px;
-    background: var(--gold-muted); color: var(--gold-primary); }
+  /* ---- Issuer collapsed rows (Вотчлист tab, Part 7) ---------------------- */
+  .iw-rows { display: flex; flex-direction: column; gap: 1px; background: var(--bg-border);
+    border: 1px solid var(--bg-border); border-radius: var(--radius-card); overflow: hidden; }
+  .iw-row-wrap { background: var(--bg-surface); }
+  .iw-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer;
+    transition: background 0.15s; }
+  .iw-row:hover { background: var(--bg-elevated); }
+  .iw-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .iw-name { font-weight: 500; font-size: 14px; flex: 1 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .iw-rating { color: var(--text-muted); font-size: 13px; flex-shrink: 0; width: 64px; }
+  .iw-aey { color: #C9A227; font-size: 13px; flex-shrink: 0; width: 60px; text-align: right; }
+  .iw-status { color: var(--text-secondary); font-size: 13px; flex-shrink: 0; width: 140px; text-align: right; }
+  .iw-arrow { flex-shrink: 0; width: 1.2em; text-align: center; color: var(--text-muted); }
+  .iw-detail { display: none; padding: 0 14px 14px; background: var(--bg-surface); }
+  .iw-detail.open { display: block; }
+  @media (max-width: 640px) {
+    .iw-status { display: none; }
+    .iw-rating { width: auto; }
+  }
 
   /* ---- Mobile bottom tab bar --------------------------------------------- */
   .mobile-tab-bar { display: none; }
@@ -1028,6 +1131,7 @@
       <button class="tab-btn" data-tab="market">Рынок</button>
       <button class="tab-btn" data-tab="cbr">ЦБ РФ</button>
       <button class="tab-btn" data-tab="portfolio">Портфель</button>
+      <button class="tab-btn" data-tab="spravka">Справка</button>
     </div>
     <div class="theme-font-controls">
       <button type="button" class="theme-toggle-btn" id="themeToggle" title="Переключить тему" aria-label="Переключить тему"></button>
@@ -1084,53 +1188,6 @@
   <section id="sec-signals-strip">
     <div id="signalsStrip"></div>
   </section>
-  <section id="sec-company-scan">
-    <div class="cs-panel">
-      <div class="cs-panel-head">
-        <span class="cs-panel-icon">🔍</span>
-        <div>
-          <h3>Проверить компанию (не в hybond)</h3>
-          <p class="section-note" style="margin:2px 0 0">Для эмитента, которого ещё нет в базе hybond — живой веб-поиск (агентства, MOEX, суды) по оригинальному промпту <code>bond_screening_prompt_v3.5.1.md</code>, не по данным БД. Результат помечен отдельно от карточек, построенных на данных hybond, и не сохраняется в базу.</p>
-        </div>
-      </div>
-      <div class="cs-subhead">Кандидаты на проверку (авто, из ВДО-скрининга) <span id="csCandidatesCount" class="cs-subhead-count"></span></div>
-      <p class="section-note" style="margin:2px 0 8px">Не в вотчлисте и не в базе hybond, проходит ВДО-скрининг (спред/ликвидность ≤35% YTM), в разумном окне до погашения, и без рейтинга / с рейтингом, требующим проверки. Только выявление — клик по «Проверить» заполняет поле ниже для разового живого запроса в браузере (без сохранения в БД). <b>Для сохранённого результата: попросите Claude Code запустить скилл company-scan для этого эмитента</b> — веб-поиск самим Claude Code, без API-ключа, результат пишется прямо в <code>company_scan_result</code>. Тот же список кандидатов доступен без браузера через <code>hybond scan-candidates-list</code>.</p>
-      <div id="csCandidatesList" class="cs-chip-list"></div>
-
-      <div id="csRescanBlock" style="display:none">
-        <div class="cs-subhead">Требуют повторной проверки <span id="csRescanCount" class="cs-subhead-count"></span></div>
-        <p class="section-note" style="margin:2px 0 8px">Уже проверялись раньше, но данные hybond по эмитенту с тех пор изменились (новый рейтинг НКР/НРА/Эксперт РА, новая раскрытая информация на AZIPI) — старый результат скана мог устареть.</p>
-        <div id="csRescanList" class="cs-chip-list"></div>
-      </div>
-
-      <div class="cs-manual-row">
-        <span class="section-note" style="margin:0">Компании нет в списке выше?</span>
-        <button type="button" class="cs-manual-toggle-btn" id="csManualToggle">Указать вручную</button>
-      </div>
-      <div class="cs-panel-row" id="csManualRow" style="display:none">
-        <input type="text" id="companyScanInput" class="cs-input" placeholder="Название компании или ИНН, напр. «Альфа Дон Транс» или ИНН">
-        <button type="button" class="narrative-btn" id="companyScanBtn">Проверить компанию</button>
-        <button type="button" class="narrative-key-btn" id="companyScanKeyBtn">API-ключ Anthropic</button>
-      </div>
-      <span class="narrative-status" id="companyScanStatus"></span>
-      <div id="companyScanResult"></div>
-
-      <!-- Sohranённые проверки: results stored in company_scan_result, read
-           via DATA.company_scan_history -- rendered from stored markdown/
-           JSON, no API call and no key needed. Distinct from the live
-           browser scan above, which does NOT persist to the DB. Primary
-           write path is now the company-scan Claude Code skill
-           (skills/company-scan/SKILL.md, via `hybond scan-company-store`,
-           no key); the keyed `hybond scan-company`/`scan-candidates` CLI
-           path (src/hybond/company_scan_pipeline.py) still writes the same
-           table and is kept working, but is deprecated in favor of the
-           skill -- see those commands' own --help text. -->
-      <div class="cs-subhead" style="margin-top:18px">Сохранённые проверки (из БД) <span id="csHistoryCount" class="cs-subhead-count"></span></div>
-      <p class="section-note" style="margin:2px 0 8px">Карточка рисуется из уже сохранённых markdown/JSON в <code>company_scan_result</code>, без нового запроса к Anthropic. Записывается скиллом company-scan Claude Code (веб-поиск самим Claude Code, без ключа) — попросите «просканируй компанию X» или «прогони company-scan по кандидатам». Один скан на эмитента (последний) отображается здесь; полная история — прямой запрос к БД.</p>
-      <div id="csHistoryList" class="cs-chip-list"></div>
-      <div id="csHistoryResult"></div>
-    </div>
-  </section>
   <section id="sec-notes"></section>
 
   <section id="sec-stats">
@@ -1138,25 +1195,16 @@
     <div class="stat-row" id="statRow"></div>
   </section>
 
-  <section id="sec-spread">
-    <h2 class="collapsible-h2"><span class="collapse-arrow">▼</span>G-спред скрининг (день 1, реальные данные MOEX/CBR)</h2>
-    <div class="collapsible-body">
-    <p class="section-note">G-спред — надбавка доходности облигации к безрисковой кривой ОФЗ (CBR ZCYC) на сопоставимый срок, в базисных пунктах (100 бп = 1 п.п.). Чем выше спред — тем больше рынок закладывает риска дефолта/реструктуризации в цену. Флоатеры с ещё не зафиксированным следующим купоном исключены из расчёта доходности (см. примечание выше) — поэтому не все облигации из списка наблюдения показаны.</p>
-    <div class="maturity-filter" id="maturityFilter"></div>
-    <div class="card"><div id="spreadChart"></div></div>
-    </div>
-  </section>
-
   <section id="sec-portfolio-rank">
     <h2>Портфельный рейтинг (риск-скорректированный)</h2>
-    <p class="section-note">AEY (Adjusted Expected Yield) — доходность с поправкой на ожидаемый путь ключевой ставки ЦБ (база/стресс/бык) через дюрацию облигации. «AEY (риск)» дополнительно взвешивает базовый сценарий на вероятность дефолта по рейтингу (таблица Эксперт РА) и severity — превращает номинальную доходность в вероятностно-взвешенную ожидаемую. Облигации с YTM ≥ 80% (дистресс-цены, не доходность для ранжирования) исключены; не более 2 выпусков на эмитента. Клик по заголовку столбца — сортировка.</p>
+    <p class="section-note">AEY (Adjusted Expected Yield) — доходность с поправкой на ожидаемый путь ключевой ставки ЦБ (база/стресс/бычий) через дюрацию облигации. «AEY (скорр.)» дополнительно взвешивает базовый сценарий на вероятность дефолта по рейтингу (таблица Эксперт РА) и severity — превращает номинальную доходность в вероятностно-взвешенную ожидаемую. Облигации с YTM ≥ 80% (дистресс-цены, не доходность для ранжирования) исключены; не более 2 выпусков на эмитента. Клик по заголовку столбца — сортировка.</p>
     <div class="candidate-toggle">
       <label><input type="checkbox" id="candidateModeToggle"> Топ-кандидаты (риск/доходность)</label>
       <span id="candidateModeNote" class="section-note" style="margin:0"></span>
     </div>
     <div class="aey-slider-wrap" id="aeySliderWrap" style="display:none">
       <div class="aey-slider-labels">
-        <span>Диапазон AEY (риск): <b id="aeySliderRangeLabel"></b></span>
+        <span>Диапазон <span title="Скорректированная доходность с учётом вероятности дефолта и потерь при дефолте: (1−PD)×AEY − PD×LGD. Отражает ожидаемую доходность после потерь." style="cursor:help">AEY (скорр.)</span>: <b id="aeySliderRangeLabel"></b></span>
         <span class="aey-slider-count" id="aeySliderCount"></span>
       </div>
       <div class="dual-slider">
@@ -1164,6 +1212,20 @@
         <div class="dual-slider-fill" id="aeySliderFill"></div>
         <input type="range" id="aeySliderMin" step="0.1">
         <input type="range" id="aeySliderMax" step="0.1">
+      </div>
+    </div>
+    <div class="aey-glossary" id="aeyGlossaryWatchlist" data-aey-glossary>
+      <div class="aey-glossary-summary" data-aey-glossary-toggle>
+        <span class="aey-glossary-arrow">▶</span>
+        ℹ AEY (база) — доходность до вычета потерь · AEY (скорр.) — с учётом PD×LGD <span data-aey-glossary-label>[развернуть]</span>
+      </div>
+      <div class="aey-glossary-body">
+        <p><b>AEY (база):</b> YTM минус безрисковая ставка ОФЗ, скорректированный на дюрацию и ликвидность.
+        Показывает доходность при условии отсутствия дефолта.</p>
+        <p><b>AEY (скорр.):</b> AEY (база) взвешенный на вероятность выживания: (1−PD)×AEY − PD×LGD.
+        PD — вероятность дефолта за 1 год (Эксперт РА, Таблица 7, 01.07.2026).
+        LGD — потери при дефолте = 0.934 (эмпирические данные ВДО, Федресурс 2022–2026,
+        средний возврат средств инвесторам 6.6 копеек на рубль).</p>
       </div>
     </div>
     <div class="banner" id="aeySourceBanner"></div>
@@ -1189,34 +1251,15 @@
 
   <section id="sec-table">
     <h2>Эмитенты — сводная таблица</h2>
-    <p class="section-note">Клик по строке разворачивает детали: события, тезис, флаги детектора изменений. Сортировка — клик по заголовку столбца. Вердикт — как на вкладке «Рынок», но по эмитенту в целом: худший (наиболее консервативный) из вердиктов всех его выпусков.</p>
-    <div class="market-view-switch">
-      <button type="button" class="mvs-btn" id="iwBtnTable" title="Таблица">☰</button>
-      <button type="button" class="mvs-btn" id="iwBtnCards" title="Карточки">⊞</button>
-    </div>
-    <div id="issuerTableView">
-      <div class="card table-scroll"><table id="issuerTable"></table></div>
-    </div>
-    <div id="issuerCardsView" style="display:none"></div>
-  </section>
-
-  <section id="sec-events">
-    <h2>Лента событий</h2>
-    <div class="banner">Реальные данные: классифицированные материальные факты с e-disclosure.azipi.ru (ручная классификация через навык <code>hy-event-classify</code>, таксономия — <code>skills/hy-event-classify/references/taxonomy.md</code>) плюс вторичные новости Smart-Lab (<code>market_note</code>, помечены отдельно). Показаны только уже классифицированные записи — у большинства эмитентов накопленные filings ещё в очереди на классификацию (<code>hybond queue</code> / <code>hybond market-notes-queue</code>), это стадия конвейера, а не отсутствие данных.</div>
-    <div class="card">
-      <div class="events-filter">
-        <button id="eventsFilterToggle" class="active" data-mode="critical">Только high/critical</button>
-        <span class="events-filter-note" id="eventsFilterNote"></span>
-      </div>
-      <div id="eventsTimeline"></div>
-    </div>
+    <p class="section-note">Клик по строке разворачивает детали: события, тезис, флаги детектора изменений, облигации. Shift+клик — развернуть несколько строк одновременно. Вердикт — как на вкладке «Рынок», но по эмитенту в целом: худший (наиболее консервативный) из вердиктов всех его выпусков.</p>
+    <div id="issuerRowsView"></div>
   </section>
   </div>
 
   <div class="tab-panel" id="tab-market">
     <section id="sec-market">
       <h2>Рынок ВДО — универсум и карта</h2>
-      <p class="section-note">Полный список рублёвых корпоративных облигаций MOEX (не только вотчлист), как таблица-скринер и как scatter-карта — один и тот же отфильтрованный набор бумаг, переключаемый видом ниже. Собрано <code>hybond universe</code> (<code>src/hybond/universe_pipeline.py</code>). Раньше это были две отдельные вкладки с независимыми фильтрами (и «Карта рынка» жила в отдельном самодостаточном файле <code>market_map.html</code>) — объединены, чтобы порог рейтинга/ликвидности, диапазон срока погашения и диапазон AEY (риск) применялись одинаково в обоих представлениях.</p>
+      <p class="section-note">Полный список рублёвых корпоративных облигаций MOEX (не только вотчлист), как таблица-скринер и как scatter-карта — один и тот же отфильтрованный набор бумаг, переключаемый видом ниже. Собрано <code>hybond universe</code> (<code>src/hybond/universe_pipeline.py</code>). Раньше это были две отдельные вкладки с независимыми фильтрами (и «Карта рынка» жила в отдельном самодостаточном файле <code>market_map.html</code>) — объединены, чтобы порог рейтинга/ликвидности, диапазон срока погашения и диапазон AEY (скорр.) применялись одинаково в обоих представлениях.</p>
       <div class="banner" id="marketSnapBanner"></div>
 
       <!-- Market Pulse tiles: unfiltered market-wide snapshot (same numbers
@@ -1270,14 +1313,29 @@
           <div class="uni-checks" id="mMaturityBuckets"></div>
         </div>
         <div class="uni-filter-group" style="grid-column: 1 / -1; max-width: 480px;">
-          <div class="aey-slider-labels"><span>AEY (риск), %: <b id="mAeyRangeLabel"></b></span><span class="aey-slider-count" id="mAeyCount"></span></div>
+          <div class="aey-slider-labels"><span><span title="Скорректированная доходность с учётом вероятности дефолта и потерь при дефолте: (1−PD)×AEY − PD×LGD. Отражает ожидаемую доходность после потерь." style="cursor:help">AEY (скорр.)</span>, %: <b id="mAeyRangeLabel"></b></span><span class="aey-slider-count" id="mAeyCount"></span></div>
           <div class="dual-slider">
             <div class="dual-slider-track"></div>
             <div class="dual-slider-fill" id="mAeyFill"></div>
             <input type="range" id="mAeyMin" step="0.1">
             <input type="range" id="mAeyMax" step="0.1">
           </div>
-          <p class="uni-caveat">Только бумаги с рассчитанным AEY (риск) — это тот же расчёт, что и на вкладке «Вотчлист» (Топ-кандидаты), не отдельная модель. Бумаги без рейтинга/AEY не попадают в диапазон ни при каком положении ползунка — см. счётчик ниже.</p>
+          <p class="uni-caveat">Только бумаги с рассчитанным AEY (скорр.) — это тот же расчёт, что и на вкладке «Вотчлист» (Топ-кандидаты), не отдельная модель. Бумаги без рейтинга/AEY не попадают в диапазон ни при каком положении ползунка — см. счётчик ниже.</p>
+        </div>
+      </div>
+
+      <div class="aey-glossary" id="aeyGlossaryMarket" data-aey-glossary>
+        <div class="aey-glossary-summary" data-aey-glossary-toggle>
+          <span class="aey-glossary-arrow">▶</span>
+          ℹ AEY (база) — доходность до вычета потерь · AEY (скорр.) — с учётом PD×LGD <span data-aey-glossary-label>[развернуть]</span>
+        </div>
+        <div class="aey-glossary-body">
+          <p><b>AEY (база):</b> YTM минус безрисковая ставка ОФЗ, скорректированный на дюрацию и ликвидность.
+          Показывает доходность при условии отсутствия дефолта.</p>
+          <p><b>AEY (скорр.):</b> AEY (база) взвешенный на вероятность выживания: (1−PD)×AEY − PD×LGD.
+          PD — вероятность дефолта за 1 год (Эксперт РА, Таблица 7, 01.07.2026).
+          LGD — потери при дефолте = 0.934 (эмпирические данные ВДО, Федресурс 2022–2026,
+          средний возврат средств инвесторам 6.6 копеек на рубль).</p>
         </div>
       </div>
 
@@ -1449,7 +1507,7 @@
           <div class="time-toggle" id="ofzScenarioToggle">
             <button type="button" class="time-btn active" data-scen="base">Базовый</button>
             <button type="button" class="time-btn" data-scen="stress">Стресс</button>
-            <button type="button" class="time-btn" data-scen="bull">Бык</button>
+            <button type="button" class="time-btn" data-scen="bull">Бычий</button>
             <button type="button" class="time-btn custom-scen" data-scen="custom" id="ofzCustomScenBtn" style="display:none"></button>
           </div>
           <div class="view-toggle" id="ofzHorizonToggle">
@@ -1492,6 +1550,92 @@
         <p class="uni-caveat">Carry = купонный доход за период. Body reeval = переоценка тела облигации по формуле дюрации/выпуклости при заданном сдвиге доходности. Сдвиг применяется ГРАДУИРОВАННО: 40% на горизонте 1 год, 75% на 2 года, 100% на 3 года (доходность не переоценивается мгновенно) — доля от «итогового» сдвига сценария (те же base/stress/bull дельты, что и в AEY-слое вотчлиста, portfolio.get_rate_scenarios). Свой сценарий — исключение: вся дельта применяется на указанную пользователем дату, без градуации. Для ОФЗ-ПК (флоатер) и ОФЗ-ИН (линкер) точная выпуклость не считается (нет полностью известного будущего купона) — используется доходность/дюрация MOEX как прокси, без члена выпуклости. Бумаги с погашением менее чем через 1 год исключены из проекции (см. src/hybond/ofz_pipeline.py).</p>
       </div>
     </section>
+
+    <section id="sec-spread">
+      <h2 class="collapsible-h2"><span class="collapse-arrow">▼</span>G-спред скрининг (день 1, реальные данные MOEX/CBR)</h2>
+      <div class="collapsible-body">
+      <p class="section-note">G-спред — надбавка доходности облигации к безрисковой кривой ОФЗ (CBR ZCYC) на сопоставимый срок, в базисных пунктах (100 бп = 1 п.п.). Чем выше спред — тем больше рынок закладывает риска дефолта/реструктуризации в цену. Флоатеры с ещё не зафиксированным следующим купоном исключены из расчёта доходности (см. примечание выше) — поэтому не все облигации из списка наблюдения показаны.</p>
+      <div class="maturity-filter" id="maturityFilter"></div>
+      <div class="card"><div id="spreadChart"></div></div>
+      </div>
+    </section>
+
+    <section id="sec-aey-heatmap">
+      <h2>Карта доходности — AEY (скорр.) по рейтингу и сроку</h2>
+      <p class="section-note">Средний риск-скорректированный AEY (база) по рейтинговым группам и срокам до погашения — весь текущий универсум или только вотчлист. В отличие от сырой YTM, уже учитывает вероятность дефолта по рейтингу. Ячейки с &lt;2 облигациями показаны как «—» (недостаточно данных для среднего).</p>
+      <label class="uni-toggle" style="margin-bottom:10px"><input type="checkbox" id="aeyHeatmapWatchlistOnly"><span class="uni-toggle-switch"></span>Только вотчлист</label>
+      <div class="card table-scroll"><table id="aeyHeatmapTable"></table></div>
+    </section>
+
+    <section id="sec-spread-delta">
+      <h2>Динамика G-спреда</h2>
+      <p class="section-note">Изменение G-спреда по эмитентам вотчлиста за 7 и 30 дней — расширение (▲, красный) сигнализирует ухудшение восприятия риска рынком, сужение (▼, зелёный) — улучшение. «30 дней назад» показывает «—» для большинства эмитентов, пока история не накопится (данные собираются с конца июля 2026). Клик по заголовку столбца — сортировка.</p>
+      <div class="card table-scroll"><table id="spreadDeltaTable"></table></div>
+    </section>
+
+    <section id="sec-spread-history">
+      <h2>История G-спреда</h2>
+      <p class="section-note">Динамика G-спреда по эмитентам вотчлиста, по дням. По умолчанию показаны 10 эмитентов с наибольшим текущим спредом (наиболее стрессовые).</p>
+      <div class="uni-actions" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div class="time-toggle" id="spreadHistRangeToggle">
+          <button type="button" class="time-btn" data-range="1w">1 нед</button>
+          <button type="button" class="time-btn active" data-range="1m">1 мес</button>
+          <button type="button" class="time-btn" data-range="all">Всё</button>
+        </div>
+      </div>
+      <div class="card" id="spreadHistChartCard">
+        <canvas id="spreadHistChart"></canvas>
+      </div>
+      <div class="legend-row" id="spreadHistLegend" style="margin-top:8px"></div>
+    </section>
+
+    <section id="sec-company-scan">
+      <h2>Проверить кандидата</h2>
+      <div class="cs-panel">
+        <div class="cs-panel-head">
+          <span class="cs-panel-icon">🔍</span>
+          <div>
+            <p class="section-note" style="margin:2px 0 0">Для эмитента, которого ещё нет в базе hybond — живой веб-поиск (агентства, MOEX, суды) по оригинальному промпту <code>bond_screening_prompt_v3.5.1.md</code>, не по данным БД. Результат помечен отдельно от карточек, построенных на данных hybond, и не сохраняется в базу.</p>
+          </div>
+        </div>
+        <div class="cs-subhead">Кандидаты на проверку (авто, из ВДО-скрининга) <span id="csCandidatesCount" class="cs-subhead-count"></span></div>
+        <p class="section-note" style="margin:2px 0 8px">Не в вотчлисте и не в базе hybond, проходит ВДО-скрининг (спред/ликвидность ≤35% YTM), в разумном окне до погашения, и без рейтинга / с рейтингом, требующим проверки. Только выявление — клик по «Проверить» заполняет поле ниже для разового живого запроса в браузере (без сохранения в БД). <b>Для сохранённого результата: попросите Claude Code запустить скилл company-scan для этого эмитента</b> — веб-поиск самим Claude Code, без API-ключа, результат пишется прямо в <code>company_scan_result</code>. Тот же список кандидатов доступен без браузера через <code>hybond scan-candidates-list</code>.</p>
+        <div id="csCandidatesList" class="cs-chip-list"></div>
+
+        <div id="csRescanBlock" style="display:none">
+          <div class="cs-subhead">Требуют повторной проверки <span id="csRescanCount" class="cs-subhead-count"></span></div>
+          <p class="section-note" style="margin:2px 0 8px">Уже проверялись раньше, но данные hybond по эмитенту с тех пор изменились (новый рейтинг НКР/НРА/Эксперт РА, новая раскрытая информация на AZIPI) — старый результат скана мог устареть.</p>
+          <div id="csRescanList" class="cs-chip-list"></div>
+        </div>
+
+        <div class="cs-manual-row">
+          <span class="section-note" style="margin:0">Компании нет в списке выше?</span>
+          <button type="button" class="cs-manual-toggle-btn" id="csManualToggle">Указать вручную</button>
+        </div>
+        <div class="cs-panel-row" id="csManualRow" style="display:none">
+          <input type="text" id="companyScanInput" class="cs-input" placeholder="Название компании или ИНН, напр. «Альфа Дон Транс» или ИНН">
+          <button type="button" class="narrative-btn" id="companyScanBtn">Проверить компанию</button>
+          <button type="button" class="narrative-key-btn" id="companyScanKeyBtn">API-ключ Anthropic</button>
+        </div>
+        <span class="narrative-status" id="companyScanStatus"></span>
+        <div id="companyScanResult"></div>
+
+        <!-- Sohranённые проверки: results stored in company_scan_result, read
+             via DATA.company_scan_history -- rendered from stored markdown/
+             JSON, no API call and no key needed. Distinct from the live
+             browser scan above, which does NOT persist to the DB. Primary
+             write path is now the company-scan Claude Code skill
+             (skills/company-scan/SKILL.md, via `hybond scan-company-store`,
+             no key); the keyed `hybond scan-company`/`scan-candidates` CLI
+             path (src/hybond/company_scan_pipeline.py) still writes the same
+             table and is kept working, but is deprecated in favor of the
+             skill -- see those commands' own --help text. -->
+        <div class="cs-subhead" style="margin-top:18px">Сохранённые проверки (из БД) <span id="csHistoryCount" class="cs-subhead-count"></span></div>
+        <p class="section-note" style="margin:2px 0 8px">Карточка рисуется из уже сохранённых markdown/JSON в <code>company_scan_result</code>, без нового запроса к Anthropic. Записывается скиллом company-scan Claude Code (веб-поиск самим Claude Code, без ключа) — попросите «просканируй компанию X» или «прогони company-scan по кандидатам». Один скан на эмитента (последний) отображается здесь; полная история — прямой запрос к БД.</p>
+        <div id="csHistoryList" class="cs-chip-list"></div>
+        <div id="csHistoryResult"></div>
+      </div>
+    </section>
   </div>
 
   <div class="tab-panel" id="tab-cbr">
@@ -1512,8 +1656,25 @@
         <div class="legend-row" id="cbrChartLegend"></div>
       </div>
 
+      <section id="sec-ofz-curve-shape" style="margin-top:26px">
+        <h2>Форма кривой ОФЗ — спред 10л минус 2л</h2>
+        <div class="card" id="ofzCurveShapeCard"></div>
+      </section>
+
+      <section id="sec-events" style="margin-top:26px">
+        <h2>Лента событий</h2>
+        <div class="banner">Реальные данные: классифицированные материальные факты с e-disclosure.azipi.ru (ручная классификация через навык <code>hy-event-classify</code>, таксономия — <code>skills/hy-event-classify/references/taxonomy.md</code>) плюс вторичные новости Smart-Lab (<code>market_note</code>, помечены отдельно). Показаны только уже классифицированные записи — у большинства эмитентов накопленные filings ещё в очереди на классификацию (<code>hybond queue</code> / <code>hybond market-notes-queue</code>), это стадия конвейера, а не отсутствие данных.</div>
+        <div class="card">
+          <div class="events-filter">
+            <button id="eventsFilterToggle" class="active" data-mode="critical">Только high/critical</button>
+            <span class="events-filter-note" id="eventsFilterNote"></span>
+          </div>
+          <div id="eventsTimeline"></div>
+        </div>
+      </section>
+
       <h2 style="margin-top:26px;">Симулятор ставки</h2>
-      <p class="section-note">«Если ставка к концу 2027 будет X%, ваш ТЕКУЩИЙ портфель (вкладка «Портфель») заработает Y%» — прямой ответ на вопрос перед заседанием ЦБ. Формула та же, что и для AEY база/стресс/бык (<code>portfolio.bond_aey</code>), просто с вашей собственной ставкой и датой вместо прогноза ЦБ.</p>
+      <p class="section-note">«Если ставка к концу 2027 будет X%, ваш ТЕКУЩИЙ портфель (вкладка «Портфель») заработает Y%» — прямой ответ на вопрос перед заседанием ЦБ. Формула та же, что и для AEY база/стресс/бычий (<code>portfolio.bond_aey</code>), просто с вашей собственной ставкой и датой вместо прогноза ЦБ.</p>
       <div class="card" id="cbrSimCard">
         <div class="cbr-sim-refs" id="cbrSimRefs"></div>
         <div class="cbr-sim-slider-row">
@@ -1536,8 +1697,8 @@
       <h2>Портфель</h2>
       <p class="section-note">Ручное построение портфеля из списка наблюдения (текущие ~<span id="pfPoolCount">?</span> выпусков). Отметьте бумаги — по умолчанию равный вес (100% / N), вес каждой позиции можно скорректировать вручную. Не автоматическая оптимизация: выбор бумаг и вес — решение пользователя, инструмент только считает агрегаты для уже выбранной корзины.</p>
       <div class="banner">
-        <b>Явные допущения этой версии.</b> Ожидаемая доходность по сценариям — те же AEY-цифры (база/стресс/бык), что и в «Портфельном рейтинге», взвешенные по доле позиции. Ожидаемое число дефолтов — сумма годовых PD по рейтингу (наивное допущение независимости, БЕЗ корреляции дефолтов между эмитентами — в кризис дефолты кластеризуются, это не учтено). Комиссии, налоги и ребалансировка не моделируются. Лимит на эмитента — макс. 2 выпуска, применяется здесь на уровне уже выбранного портфеля, а не только на этапе отбора кандидатов.
-        «Топ-20 из отфильтрованного пула» сначала применяет фильтр рейтинга (не хуже <span id="pfRatingFloorLabel">?</span>) и фильтр ликвидности (объём ≥ <span id="pfMinVolumeLabel">?</span>) — те же пороги, что и `hybond promote` — <b>пересчитанные по текущему рейтингу</b>, а не сохранённые с момента добавления в вотчлист, и только потом ранжирует по AEY (риск-скорр.). Бумаги вне фильтра остаются в таблице ниже (можно выбрать вручную), но помечены столбцом «Фильтр» и не попадают в кнопку «Топ-20». Столбцы «Премия к ОФЗ» — AEY бумаги минус аннуализированная (÷ на горизонт) carry+roll-down доходность ближайшей по дюрации ОФЗ при базовом сценарии ЦБ; при расхождении дюрации &gt;2 лет сравнение не показывается («—», нет сопоставимой ОФЗ) — грубое приближение, не точный спред одного горизонта.
+        <b>Явные допущения этой версии.</b> Ожидаемая доходность по сценариям — те же AEY-цифры (база/стресс/бычий), что и в «Портфельном рейтинге», взвешенные по доле позиции. Ожидаемое число дефолтов — сумма годовых PD по рейтингу (наивное допущение независимости, БЕЗ корреляции дефолтов между эмитентами — в кризис дефолты кластеризуются, это не учтено). Комиссии, налоги и ребалансировка не моделируются. Лимит на эмитента — макс. 2 выпуска, применяется здесь на уровне уже выбранного портфеля, а не только на этапе отбора кандидатов.
+        «Топ-20 из отфильтрованного пула» сначала применяет фильтр рейтинга (не хуже <span id="pfRatingFloorLabel">?</span>) и фильтр ликвидности (объём ≥ <span id="pfMinVolumeLabel">?</span>) — те же пороги, что и `hybond promote` — <b>пересчитанные по текущему рейтингу</b>, а не сохранённые с момента добавления в вотчлист, и только потом ранжирует по AEY (скорр.). Бумаги вне фильтра остаются в таблице ниже (можно выбрать вручную), но помечены столбцом «Фильтр» и не попадают в кнопку «Топ-20». Столбцы «Премия к ОФЗ» — AEY бумаги минус аннуализированная (÷ на горизонт) carry+roll-down доходность ближайшей по дюрации ОФЗ при базовом сценарии ЦБ; при расхождении дюрации &gt;2 лет сравнение не показывается («—», нет сопоставимой ОФЗ) — грубое приближение, не точный спред одного горизонта.
       </div>
 
       <!-- Sub-tabs: users think in modes (health check / scenarios / cash-flow
@@ -1649,12 +1810,16 @@
         <div class="card table-scroll"><table class="pf-scen-table" id="pfScenTable"></table></div>
 
         <h3 class="pf-h3-sep" style="margin-top:22px">Планировщик роста</h3>
-        <p class="section-note">Три сценария ЦБ, сложенные на 1/2/3 года вперёд от указанного капитала — не прогноз, а диапазон возможных исходов при разных сценариях ставки. Портфельная AEY та же, что и в таблице выше (взвешенная по текущему выбору), без отдельного расчёта.</p>
+        <p class="section-note">Три сценария ЦБ, сложенные на 1/2/3 года вперёд от указанного капитала — не прогноз, а диапазон возможных исходов при разных сценариях ставки. <b>База</b> использует AEY (скорр.) — с поправкой на вероятность дефолта и потери при дефолте (PD×LGD), та же цифра, что и в «Портфельном рейтинге». <b>Стресс/Бычий</b> пока используют AEY (база) без поправки на PD — риск-скорректированные версии этих двух сценариев не считаются в текущей версии hybond (нет отдельного PD-слоя на нестандартный сценарий ставки), поэтому не проставлены здесь во избежание завышенной точности.</p>
         <div class="pf-growth-capital-row">
           <label for="pfGrowthCapital">Стартовый капитал, ₽</label>
           <input type="number" id="pfGrowthCapital" min="10000" step="10000" value="1000000">
         </div>
         <div id="pfGrowthPlanner"></div>
+
+        <h3 class="pf-h3-sep" style="margin-top:22px">Стресс-тест дефолта</h3>
+        <p style="color:var(--text-muted);font-size:13px;margin:0 0 10px">Стресс-тест — что произойдёт с портфелем если один эмитент объявит дефолт</p>
+        <div id="pfStressTest"></div>
 
         <h3 class="pf-h3-sep" style="margin-top:22px">По позициям</h3>
         <p class="section-note">AEY по трём сценариям и премия к ОФЗ, по каждой выбранной позиции — для быстрого сравнения внутри корзины, без веса (см. агрегат выше).</p>
@@ -1693,6 +1858,22 @@
     </section>
   </div>
 
+  <div class="tab-panel" id="tab-spravka">
+    <select class="spravka-toc-mobile" id="spravkaTocMobile"></select>
+    <div class="spravka-layout">
+      <aside class="spravka-toc" id="spravkaToc"></aside>
+      <div class="spravka-content">
+        <div class="spravka-search">
+          <span class="spravka-search-icon">🔍</span>
+          <input type="text" id="spravkaSearchInput" placeholder="Поиск по справочнику...">
+          <button type="button" id="spravkaSearchClear" style="display:none">×</button>
+        </div>
+        <div class="spravka-search-status" id="spravkaSearchStatus"></div>
+        <div id="spravkaBody"></div>
+      </div>
+    </div>
+  </div>
+
   <footer>
     hybond dashboard — сгенерировано <span id="genTime"></span>. Собрано из data/dashboard_data.json (scripts/export_dashboard_data.py).
   </footer>
@@ -1709,6 +1890,7 @@
   <div class="mtb-more-popover" id="mtbMorePopover">
     <button type="button" data-mtab="cbr">🏦 ЦБ РФ</button>
     <button type="button" data-mtab-ofz="1">📄 ОФЗ</button>
+    <button type="button" data-mtab="spravka">📖 Справка</button>
   </div>
 </nav>
 
@@ -1782,6 +1964,28 @@ function applyFontScale(pct) {
 }
 fontSizeSlider.addEventListener('input', () => applyFontScale(+fontSizeSlider.value));
 applyFontScale(parseInt(localStorage.getItem(FONT_SCALE_KEY), 10) || 100);
+
+// AEY glossary box (Вотчлист + Рынок tabs): one shared expand/collapse
+// state across both instances -- toggling either one toggles both, kept in
+// sync via a single localStorage key rather than two independent ones.
+const AEY_GLOSSARY_KEY = 'hybond-aey-legend-expanded';
+function applyAeyGlossaryState(expanded) {
+  document.querySelectorAll('[data-aey-glossary]').forEach(el => {
+    el.classList.toggle('expanded', expanded);
+    const arrow = el.querySelector('[data-aey-glossary-toggle] .aey-glossary-arrow');
+    const label = el.querySelector('[data-aey-glossary-label]');
+    if (arrow) arrow.textContent = expanded ? '▼' : '▶';
+    if (label) label.textContent = expanded ? '[свернуть]' : '[развернуть]';
+  });
+  localStorage.setItem(AEY_GLOSSARY_KEY, expanded ? '1' : '0');
+}
+document.querySelectorAll('[data-aey-glossary-toggle]').forEach(el => {
+  el.addEventListener('click', () => {
+    const isExpanded = el.closest('[data-aey-glossary]').classList.contains('expanded');
+    applyAeyGlossaryState(!isExpanded);
+  });
+});
+applyAeyGlossaryState(localStorage.getItem(AEY_GLOSSARY_KEY) === '1');
 
 const DATA = JSON.parse(document.getElementById('dashboard-data').textContent);
 const NARRATIVE_PROMPT = JSON.parse(document.getElementById('narrative-prompt').textContent);
@@ -1912,6 +2116,52 @@ function promptApiKey() {
 
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+}
+
+// Sector Labels task (2026-08-17): DATA.sector_labels comes from
+// export_dashboard_data.py's SECTOR_LABELS_RU, built off the live DB's
+// actual `SELECT DISTINCT sector FROM issuer` values. Falls back to the
+// raw string for anything not covered (new sector added to the DB before
+// the dict is updated) -- never crashes, never shows blank.
+function sectorLabel(raw) {
+  return (DATA.sector_labels && DATA.sector_labels[raw]) || raw;
+}
+
+// MOEX Listing/CBR Press task (2026-08-17): friendly Russian names for
+// market_note.source values, wherever `source` is displayed in the event
+// feed (Лента событий -- see renderEvents()'s sourceBadge()/issuer-slot
+// use below, and the market-wide-notes merge above it).
+const FEED_SOURCE_LABELS = {
+  smartlab: 'Smart-Lab',
+  smartlab_news: 'Smart-Lab',
+  moex_listing: 'MOEX Листинг',
+  cbr_press: 'ЦБ РФ',
+  azipi: 'АЗИПИ',
+  manual: 'Вручную',
+};
+function feedSourceLabel(source) {
+  return FEED_SOURCE_LABELS[source] || source;
+}
+
+// Справка tab (Part 4): "?" deep-link icon, shared by the 8 specific label
+// sites this task named -- defined early (before any renderer that calls
+// it runs) since renderers execute top-to-bottom as the script loads.
+function spravkaLink(questionId) {
+  return `<sup class="spravka-q-link" title="Что это? →" onclick="event.stopPropagation();gotoTab('spravka',{scrollTo:'q${questionId}'})">?</sup>`;
+}
+
+// AEY label tooltips (AEY Label Clarification task): reuses the existing
+// title="" convention already used throughout this file (see e.g. the
+// disclosure pill, source-badge spans) rather than introducing a second
+// tooltip mechanism -- no new CSS, no new component.
+const AEY_BASE_TOOLTIP = 'Доходность к погашению минус ставка ОФЗ плюс поправка на дюрацию и ликвидность. Без учёта вероятности дефолта.';
+const AEY_RISK_ADJ_TOOLTIP = 'Скорректированная доходность с учётом вероятности дефолта и потерь при дефолте: (1−PD)×AEY − PD×LGD. Отражает ожидаемую доходность после потерь.';
+// title text for a `cols` array's <th data-k>, keyed by the same field name
+// the sortable-table cols arrays already use -- only aey_base_risk_adj_pct
+// carries a tooltip today; other columns render title-free as before.
+const COL_TOOLTIPS = { aey_base_risk_adj_pct: AEY_RISK_ADJ_TOOLTIP, aey_base_pct: AEY_BASE_TOOLTIP };
+function colTitleAttr(k) {
+  return COL_TOOLTIPS[k] ? ` title="${escapeHtml(COL_TOOLTIPS[k])}"` : '';
 }
 
 // ---- Shared empty-state component -----------------------------------
@@ -2561,9 +2811,9 @@ function pillarPanelHtml(iss) {
     <div class="pillar-panel-title">Кредитное здоровье (шесть столпов)${noteIcon}</div>
     <div class="pillar-bars">${bars}</div>
     <div class="pillar-ratios">
-      <span>debt/EBIT: <b>${debtToEbit}</b></span>
+      <span>debt/EBIT${spravkaLink(12)}: <b>${debtToEbit}</b></span>
       <span>current ratio: <b>${currentRatio}</b></span>
-      <span>interest coverage: <b>${interestCoverage}</b></span>
+      <span>interest coverage (ICR)${spravkaLink(13)}: <b>${interestCoverage}</b></span>
     </div>
   </div>`;
 }
@@ -2866,7 +3116,7 @@ function renderVerdictHtml(b, iss) {
       </div>
       <div style="margin-top:6px"><b>Рейтинг:</b> ${iss.rating || '—'}${staleBadge}</div>
       <div style="margin-top:6px"><b>Последнее high/critical событие:</b> ${evt ? `${evt.occurred} · ${humanEventCategory(evt.category)} (${evt.severity})` : 'нет'}</div>
-      <div style="margin-top:6px"><b>Сектор:</b> ${iss.sector || '—'}</div>
+      <div style="margin-top:6px"><b>Сектор:</b> ${iss.sector ? sectorLabel(iss.sector) : '—'}</div>
     </div>
     <div class="layer-3 verdict-l3">
       <div>G-спред: ${b.g_spread_bp != null ? Math.round(b.g_spread_bp) + ' бп' : '—'} ·
@@ -3051,7 +3301,7 @@ function renderReducedBondDetail(b) {
     <table class="detail-mini-table">
       <tr><td>YTM</td><td>${b.ytm_pct != null ? b.ytm_pct.toFixed(1) + '%' : '—'}</td></tr>
       <tr><td>Рейтинг</td><td>${b.rating || 'без рейтинга'}</td></tr>
-      <tr><td>Сектор</td><td>${b.sector || '—'}</td></tr>
+      <tr><td>Сектор</td><td>${b.sector ? sectorLabel(b.sector) : '—'}</td></tr>
       <tr><td>Погашение</td><td>${b.mat_date || '—'}</td></tr>
       <tr><td>G-спред</td><td>${b.g_spread_bp != null ? Math.round(b.g_spread_bp) + ' бп' : '—'}</td></tr>
     </table>
@@ -3289,6 +3539,347 @@ document.getElementById('bondDrawerOverlay').addEventListener('click', (e) => {
   render();
 })();
 
+// ================= AEY (скорр.) heatmap: rating x maturity (Рынок tab) =====
+// Client-side only -- DATA.universe.bonds already carries rating,
+// tenor_yrs, aey_base_risk_adj_pct, g_spread_bp, in_watchlist per bond
+// (scripts/export_dashboard_data.py::_bonds_for_snap_date), no new export
+// needed. Rating tier order below adds 'ruC' (present in the real universe
+// snapshot, between ruCC and 'без рейтинга' per the standard agency scale)
+// on top of the originally-specified list, which omitted it.
+const AEY_HEATMAP_RATING_TIERS = [
+  'ruAAA', 'ruAA+', 'ruAA', 'ruAA-', 'ruA+', 'ruA', 'ruA-',
+  'ruBBB+', 'ruBBB', 'ruBBB-', 'ruBB+', 'ruBB', 'ruBB-',
+  'ruB+', 'ruB', 'ruB-', 'ruCCC', 'ruCC', 'ruC', 'без рейтинга',
+];
+const AEY_HEATMAP_MATURITY_BUCKETS = [
+  { key: 'lt1', label: '&lt; 1г', test: t => t < 1 },
+  { key: '1-2', label: '1–2г', test: t => t >= 1 && t < 2 },
+  { key: '2-3', label: '2–3г', test: t => t >= 2 && t < 3 },
+  { key: '3-5', label: '3–5г', test: t => t >= 3 && t < 5 },
+  { key: 'gt5', label: '&gt; 5г', test: t => t >= 5 },
+];
+
+function aeyHeatmapCells(watchlistOnly) {
+  const bonds = (DATA.universe && DATA.universe.bonds) || [];
+  const cells = {};
+  bonds.forEach(b => {
+    if (watchlistOnly && !b.in_watchlist) return;
+    if (b.aey_base_risk_adj_pct == null || b.tenor_yrs == null) return;
+    const bucket = AEY_HEATMAP_MATURITY_BUCKETS.find(mb => mb.test(b.tenor_yrs));
+    if (!bucket) return;
+    const rating = b.rating || 'без рейтинга';
+    const key = rating + '|' + bucket.key;
+    if (!cells[key]) cells[key] = { sum: 0, count: 0, gsum: 0, gcount: 0 };
+    cells[key].sum += b.aey_base_risk_adj_pct;
+    cells[key].count += 1;
+    if (b.g_spread_bp != null) { cells[key].gsum += b.g_spread_bp; cells[key].gcount += 1; }
+  });
+  return cells;
+}
+
+// Green (low AEY, lower risk) -> yellow (mid) -> red (high AEY, higher risk),
+// scaled to the min/max of the cells actually shown -- honest direction per
+// spec: green = safer/lower yield, red = riskier/higher yield.
+function aeyHeatmapColor(value, min, max) {
+  const GREEN = [46, 204, 113], YELLOW = [241, 196, 15], RED = [231, 76, 60];
+  const lerp = (c1, c2, t) => `rgba(${Math.round(c1[0]+(c2[0]-c1[0])*t)},${Math.round(c1[1]+(c2[1]-c1[1])*t)},${Math.round(c1[2]+(c2[2]-c1[2])*t)},0.15)`;
+  if (max === min) return lerp(YELLOW, YELLOW, 0);
+  const t = (value - min) / (max - min);
+  return t <= 0.5 ? lerp(GREEN, YELLOW, t / 0.5) : lerp(YELLOW, RED, (t - 0.5) / 0.5);
+}
+
+function renderAeyHeatmap() {
+  const watchlistOnly = document.getElementById('aeyHeatmapWatchlistOnly').checked;
+  const cells = aeyHeatmapCells(watchlistOnly);
+  const table = document.getElementById('aeyHeatmapTable');
+  const rowsPresent = AEY_HEATMAP_RATING_TIERS.filter(tier =>
+    AEY_HEATMAP_MATURITY_BUCKETS.some(mb => (cells[tier + '|' + mb.key] || {}).count > 0));
+
+  if (!rowsPresent.length) {
+    table.parentElement.innerHTML = emptyStateHtml({ icon: 'chart', title: 'Нет данных для карты доходности' });
+    return;
+  }
+
+  const validAvgs = [];
+  rowsPresent.forEach(tier => AEY_HEATMAP_MATURITY_BUCKETS.forEach(mb => {
+    const c = cells[tier + '|' + mb.key];
+    if (c && c.count >= 2) validAvgs.push(c.sum / c.count);
+  }));
+  const minV = validAvgs.length ? Math.min(...validAvgs) : 0;
+  const maxV = validAvgs.length ? Math.max(...validAvgs) : 0;
+
+  let html = '<thead><tr><th>Рейтинг</th>' +
+    AEY_HEATMAP_MATURITY_BUCKETS.map(mb => `<th>${mb.label}</th>`).join('') + '</tr></thead><tbody>';
+  rowsPresent.forEach(tier => {
+    html += `<tr><td>${escapeHtml(tier)}</td>`;
+    AEY_HEATMAP_MATURITY_BUCKETS.forEach(mb => {
+      const c = cells[tier + '|' + mb.key];
+      if (!c || c.count < 2) {
+        html += `<td style="text-align:center;color:var(--text-muted)">—</td>`;
+      } else {
+        const avg = c.sum / c.count;
+        const gAvg = c.gcount ? Math.round(c.gsum / c.gcount) : null;
+        const bg = aeyHeatmapColor(avg, minV, maxV);
+        const tip = `${c.count} облигаций · средний G-спред ${gAvg != null ? gAvg : 'н/д'}бп`;
+        html += `<td style="background:${bg};text-align:center" title="${escapeHtml(tip)}">${avg.toFixed(1)}%</td>`;
+      }
+    });
+    html += '</tr>';
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+renderAeyHeatmap();
+document.getElementById('aeyHeatmapWatchlistOnly').addEventListener('change', renderAeyHeatmap);
+
+// ================= G-spread delta table (Рынок tab) ========================
+// DATA.spread_history: issuer_id -> [{date, g_spread_bp}, ...] ASC by date,
+// >=2 points, capped to 90 days, one representative bond per issuer (see
+// scripts/export_dashboard_data.py::spread_history_by_issuer). Deltas/trend
+// computed client-side, nothing precomputed server-side.
+function daysBetweenIso(a, b) {
+  return Math.round((new Date(b) - new Date(a)) / 86400000);
+}
+function findNearestByOffset(rows, targetDate, toleranceDays) {
+  let best = null, bestDiff = Infinity;
+  rows.forEach(r => {
+    const diff = Math.abs(daysBetweenIso(r.date, targetDate));
+    if (diff <= toleranceDays && diff < bestDiff) { best = r; bestDiff = diff; }
+  });
+  return best;
+}
+function spreadDeltaRows() {
+  const hist = DATA.spread_history || {};
+  const labels = DATA.spread_history_labels || {};
+  const issuerByIdMap = new Map((DATA.issuers || []).map(iss => [iss.issuer_id, iss]));
+  return Object.keys(hist).map(issuerId => {
+    const rows = hist[issuerId];
+    const current = rows[rows.length - 1];
+    const curDate = new Date(current.date);
+    const d7 = new Date(curDate); d7.setDate(d7.getDate() - 7);
+    const d30 = new Date(curDate); d30.setDate(d30.getDate() - 30);
+    const p7 = findNearestByOffset(rows.slice(0, -1), d7.toISOString().slice(0, 10), 2);
+    const p30 = findNearestByOffset(rows.slice(0, -1), d30.toISOString().slice(0, 10), 3);
+    const delta7 = p7 ? current.g_spread_bp - p7.g_spread_bp : null;
+    const delta30 = p30 ? current.g_spread_bp - p30.g_spread_bp : null;
+    let trend = null;
+    if (delta7 != null && delta30 != null && Math.sign(delta7) === Math.sign(delta30) && delta7 !== 0) {
+      trend = delta7 > 0 ? 'worse' : 'better';
+    }
+    const iss = issuerByIdMap.get(issuerId);
+    return {
+      issuerId, name: labels[issuerId] || (iss ? iss.name : issuerId),
+      rating: iss ? iss.rating : null,
+      current: current.g_spread_bp, delta7, delta30, trend,
+    };
+  });
+}
+function deltaCellHtml(v) {
+  if (v == null) return '<span style="color:var(--text-muted)">—</span>';
+  const color = v > 0 ? 'var(--verdict-red)' : v < 0 ? 'var(--verdict-green)' : 'var(--text-muted)';
+  const arrow = v > 0 ? '▲' : v < 0 ? '▼' : '';
+  return `<span style="color:${color}">${arrow} ${Math.abs(Math.round(v))}бп</span>`;
+}
+let spreadDeltaSortKey = 'delta7', spreadDeltaSortDir = -1;
+function renderSpreadDeltaTable() {
+  const table = document.getElementById('spreadDeltaTable');
+  const rows = spreadDeltaRows();
+  if (!rows.length) {
+    table.innerHTML = `<tbody><tr><td>${emptyStateHtml({
+      icon: 'chart', title: 'Недостаточно данных — история накапливается',
+    })}</td></tr></tbody>`;
+    return;
+  }
+  const dir = spreadDeltaSortDir, key = spreadDeltaSortKey;
+  rows.sort((a, b) => {
+    const av = a[key], bv = b[key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (key === 'name' || key === 'rating') return dir * String(av).localeCompare(String(bv));
+    return dir * (av - bv);
+  });
+  const cols = [
+    ['name', 'Эмитент'], ['rating', 'Рейтинг'], ['current', 'G-спред сейчас'],
+    ['p7', '7 дней назад'], ['delta7', 'Δ 7д' + spravkaLink(11)], ['p30', '30 дней назад'],
+    ['delta30', 'Δ 30д'], ['trend', 'Тренд'],
+  ];
+  let html = `<thead><tr>${cols.map(([k, l]) =>
+    `<th data-k="${k}">${l}${spreadDeltaSortKey === k ? `<span class="sort-arrow">${dir > 0 ? '▲' : '▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
+  rows.forEach(r => {
+    const rowStyle = r.delta7 != null && r.delta7 > 500 ? ' style="background:rgba(231,76,60,0.08)"' : '';
+    const p7v = r.delta7 != null ? Math.round(r.current - r.delta7) + 'бп' : '—';
+    const p30v = r.delta30 != null ? Math.round(r.current - r.delta30) + 'бп' : '—';
+    const trendHtml = r.trend === 'worse' ? '<span style="color:var(--verdict-red)">▲ Ухудшение</span>'
+      : r.trend === 'better' ? '<span style="color:var(--verdict-green)">▼ Улучшение</span>'
+      : '<span style="color:var(--text-muted)">—</span>';
+    html += `<tr${rowStyle}>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${r.rating || '—'}</td>
+      <td>${Math.round(r.current)}бп</td>
+      <td>${p7v}</td>
+      <td>${deltaCellHtml(r.delta7)}</td>
+      <td>${p30v}</td>
+      <td>${deltaCellHtml(r.delta30)}</td>
+      <td>${trendHtml}</td>
+    </tr>`;
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+  table.querySelectorAll('th').forEach(th => th.addEventListener('click', () => {
+    const k = th.dataset.k === 'p7' ? 'delta7' : th.dataset.k === 'p30' ? 'delta30' : th.dataset.k;
+    if (k === spreadDeltaSortKey) spreadDeltaSortDir *= -1; else { spreadDeltaSortKey = k; spreadDeltaSortDir = -1; }
+    renderSpreadDeltaTable();
+  }));
+}
+renderSpreadDeltaTable();
+
+// ================= G-spread history chart (Рынок tab) =======================
+// Hand-rolled Canvas 2D, same pattern as the ЦБ РФ tab's cbrChart -- this
+// codebase has no charting library loaded anywhere (grepped before writing
+// this; every existing chart is either hand-rolled SVG or raw Canvas 2D), so
+// this reuses the established convention instead of adding a new dependency.
+const SPREAD_HIST_PALETTE = [
+  '#5B9BF5', '#F5A623', '#2ECC71', '#E74C3C', '#9B59B6',
+  '#1ABC9C', '#E67E22', '#3498DB', '#E84393', '#7F8C8D',
+];
+let spreadHistRange = '1m'; // '1w' | '1m' | 'all'
+let spreadHistChecked = null; // Set of issuer_id, populated on first render (top 10)
+
+function spreadHistCutoffDate() {
+  const hist = DATA.spread_history || {};
+  let maxDate = null;
+  Object.values(hist).forEach(rows => rows.forEach(r => { if (!maxDate || r.date > maxDate) maxDate = r.date; }));
+  if (!maxDate) return null;
+  if (spreadHistRange === 'all') return null;
+  const d = new Date(maxDate);
+  d.setDate(d.getDate() - (spreadHistRange === '1w' ? 7 : 30));
+  return d.toISOString().slice(0, 10);
+}
+
+function renderSpreadHistoryChart() {
+  const hist = DATA.spread_history || {};
+  const labels = DATA.spread_history_labels || {};
+  const issuerIds = Object.keys(hist);
+  const card = document.getElementById('spreadHistChartCard');
+  const canvas = document.getElementById('spreadHistChart');
+  const legendEl = document.getElementById('spreadHistLegend');
+
+  if (!issuerIds.length) {
+    card.innerHTML = emptyStateHtml({ icon: 'chart', title: 'Недостаточно данных — история накапливается' });
+    legendEl.innerHTML = '';
+    return;
+  }
+
+  if (!spreadHistChecked) {
+    const byCurrentDesc = issuerIds.slice().sort((a, b) => {
+      const av = hist[a][hist[a].length - 1].g_spread_bp;
+      const bv = hist[b][hist[b].length - 1].g_spread_bp;
+      return bv - av;
+    });
+    spreadHistChecked = new Set(byCurrentDesc.slice(0, 10));
+  }
+
+  const cutoff = spreadHistCutoffDate();
+  const series = issuerIds
+    .filter(id => spreadHistChecked.has(id))
+    .map((id, i) => {
+      const rows = hist[id].filter(r => !cutoff || r.date >= cutoff);
+      return { id, name: labels[id] || id, rows, color: SPREAD_HIST_PALETTE[issuerIds.indexOf(id) % SPREAD_HIST_PALETTE.length] };
+    })
+    .filter(s => s.rows.length >= 2); // sparse-in-range: excluded silently, not an error
+
+  legendEl.innerHTML = issuerIds.filter(id => spreadHistChecked.has(id)).map((id, i) => {
+    const color = SPREAD_HIST_PALETTE[issuerIds.indexOf(id) % SPREAD_HIST_PALETTE.length];
+    return `<label class="legend-item" style="cursor:pointer"><input type="checkbox" data-issuer="${id}" checked style="accent-color:${color}"> <span class="swatch" style="background:${color}"></span>${escapeHtml(labels[id] || id)}</label>`;
+  }).join('') + issuerIds.filter(id => !spreadHistChecked.has(id)).map(id => {
+    const color = SPREAD_HIST_PALETTE[issuerIds.indexOf(id) % SPREAD_HIST_PALETTE.length];
+    return `<label class="legend-item" style="cursor:pointer;opacity:0.5"><input type="checkbox" data-issuer="${id}" style="accent-color:${color}"> <span class="swatch" style="background:${color}"></span>${escapeHtml(labels[id] || id)}</label>`;
+  }).join('');
+
+  legendEl.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) spreadHistChecked.add(cb.dataset.issuer); else spreadHistChecked.delete(cb.dataset.issuer);
+      renderSpreadHistoryChart();
+    });
+  });
+
+  if (!series.length) {
+    card.innerHTML = emptyStateHtml({ icon: 'chart', title: 'Недостаточно данных — история накапливается' });
+    return;
+  }
+  // re-insert canvas (may have been replaced by empty-state HTML previously)
+  if (!document.getElementById('spreadHistChart')) {
+    card.innerHTML = '<canvas id="spreadHistChart"></canvas>';
+  }
+  drawSpreadHistChart(series);
+}
+
+function drawSpreadHistChart(series) {
+  const canvas = document.getElementById('spreadHistChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const W = rect.width || 800, H = 320;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const P = { l: 50, r: 16, t: 16, b: 26 };
+  const plotW = W - P.l - P.r, plotH = H - P.t - P.b;
+
+  const allDates = Array.from(new Set(series.flatMap(s => s.rows.map(r => r.date)))).sort();
+  if (!allDates.length) return;
+  const minD = new Date(allDates[0]).getTime(), maxD = new Date(allDates[allDates.length - 1]).getTime();
+  const span = Math.max(1, maxD - minD);
+  const xFor = dateStr => P.l + ((new Date(dateStr).getTime() - minD) / span) * plotW;
+
+  const allVals = series.flatMap(s => s.rows.map(r => r.g_spread_bp));
+  const yLo = 0, yHi = Math.max(...allVals) * 1.1;
+  const yFor = v => P.t + plotH - (v - yLo) / (yHi - yLo || 1) * plotH;
+
+  const styles = getComputedStyle(document.documentElement);
+  const gridColor = styles.getPropertyValue('--grid').trim() || '#e1e0d9';
+  const textColor = styles.getPropertyValue('--text-secondary').trim() || '#52514e';
+
+  ctx.strokeStyle = gridColor; ctx.fillStyle = textColor; ctx.font = '10px system-ui'; ctx.lineWidth = 1;
+  const NY = 5;
+  for (let i = 0; i <= NY; i++) {
+    const v = yLo + (yHi - yLo) * i / NY, y = yFor(v);
+    ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(P.l + plotW, y); ctx.stroke();
+    ctx.fillText(Math.round(v) + 'бп', 2, y + 3);
+  }
+  const NX = Math.min(6, allDates.length);
+  for (let i = 0; i < NX; i++) {
+    const idx = Math.round(i * (allDates.length - 1) / Math.max(1, NX - 1));
+    const d = allDates[idx];
+    const x = xFor(d);
+    ctx.beginPath(); ctx.moveTo(x, P.t); ctx.lineTo(x, P.t + plotH); ctx.stroke();
+    ctx.fillText(d.slice(5), x - 14, P.t + plotH + 14);
+  }
+
+  series.forEach(s => {
+    ctx.strokeStyle = s.color; ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    s.rows.forEach((r, i) => {
+      const x = xFor(r.date), y = yFor(r.g_spread_bp);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+}
+window.__spreadHistRedraw = () => renderSpreadHistoryChart();
+
+document.querySelectorAll('#spreadHistRangeToggle .time-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#spreadHistRangeToggle .time-btn').forEach(b => b.classList.toggle('active', b === btn));
+    spreadHistRange = btn.dataset.range;
+    renderSpreadHistoryChart();
+  });
+});
+renderSpreadHistoryChart();
+
 // ================= Portfolio rank table (watchlist, risk-adjusted AEY) =====
 (function renderPortfolioRank() {
   const banner = document.getElementById('aeySourceBanner');
@@ -3419,7 +4010,7 @@ document.getElementById('bondDrawerOverlay').addEventListener('click', (e) => {
     ['issuer', 'Эмитент'], ['secid', 'SECID'], ['rating', 'Рейтинг'],
     ['ytm_pct', 'YTM%'], ['mispricing_bp', 'Мисценка'],
     ['aey_base_pct', 'AEY база'], ['aey_stress_pct', 'AEY стресс'],
-    ['aey_bull_pct', 'AEY бык'], ['aey_base_risk_adj_pct', 'AEY (риск)'],
+    ['aey_bull_pct', 'AEY бычий'], ['aey_base_risk_adj_pct', 'AEY (скорр.)' + spravkaLink(42)],
     ['last_event_date', 'Посл. critical/high'], ['rating_needs_verification', 'Рейтинг подтверждён'],
   ];
 
@@ -3442,7 +4033,7 @@ document.getElementById('bondDrawerOverlay').addEventListener('click', (e) => {
       return sortDir * (av - bv);
     });
     let html = `<thead><tr>${cols.map(([k, l]) =>
-      `<th data-k="${k}">${l}${sortKey===k ? `<span class="sort-arrow">${sortDir>0?'▲':'▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
+      `<th data-k="${k}"${colTitleAttr(k)}>${l}${sortKey===k ? `<span class="sort-arrow">${sortDir>0?'▲':'▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
     if (!sorted.length) {
       html += `<tr><td colspan="${cols.length}"><div class="uni-empty">Нет данных — запустите <code>hybond universe</code> и пересоберите дашборд.</div></td></tr>`;
     }
@@ -3520,7 +4111,7 @@ document.getElementById('bondDrawerOverlay').addEventListener('click', (e) => {
     const th = DATA.promotion_thresholds || {};
     note.textContent = `рейтинг ≥ ${th.rating_floor}, объём ≥ ${th.min_volume}, ` +
       `макс. ${th.per_issuer_cap}/эмитент — фиксированные пороги, те же что и \`hybond promote\`; ` +
-      `ползунок ниже дополнительно сужает список по AEY (риск).`;
+      `ползунок ниже дополнительно сужает список по AEY (скорр.).`;
   }
 
   function updateSliderFillVisual() {
@@ -3738,99 +4329,95 @@ function renderSignalsStrip() {
     row.addEventListener('click', () => openBondDrawer(row.dataset.secid));
   });
   const more = document.getElementById('ssMoreLink');
-  if (more) more.addEventListener('click', () => gotoTab('watchlist', { scrollTo: 'sec-events' }));
+  if (more) more.addEventListener('click', () => gotoTab('cbr', { scrollTo: 'sec-events' }));
 }
 renderSignalsStrip();
 
-// ================= Issuer table =================
-let sortKey = 'g_spread', sortDir = -1;
-function issuerMetric(iss) {
-  const priced = iss.bonds.filter(b => b.g_spread_bp !== null);
-  const g = priced.length ? Math.max(...priced.map(b => b.g_spread_bp)) : null;
-  const ytm = priced.length ? priced.find(b => b.g_spread_bp === g)?.ytm_pct : null;
-  const pillarAvg = iss.six_pillars && Object.keys(iss.six_pillars).length
-    ? ['score_leverage','score_liquidity','score_refinancing','score_operations']
-        .map(k => iss.six_pillars[k]).filter(v => v !== null && v !== undefined)
-    : [];
-  const avgScore = pillarAvg.length ? Math.round(pillarAvg.reduce((s,v)=>s+v,0)/pillarAvg.length) : null;
-  return { g, ytm, avgScore };
+// ================= Issuer collapsed rows (Вотчлист) ========================
+// Part 7: replaces the old table/card-toggle pair with a single compact
+// collapsed-row list. Expand panel reuses renderIssuerDetail() verbatim --
+// same pillar scores/events/thesis/bonds content the old table's
+// expandable rows already showed, just a different collapsed default.
+function issuerStatusLine(iss) {
+  const evt = lastCriticalHigh(iss);
+  if (evt && (evt.severity === 'critical' || evt.severity === 'high')) {
+    return `Флаг: ${humanEventCategory(evt.category)}`;
+  }
+  const rd = iss.rating_detail;
+  if ((rd && rd.is_stale === true) || iss.rating_needs_verification) return 'Рейтинг устарел';
+  const v = issuerWorstVerdict(iss);
+  if (!v || v.level === 'gray') return 'Нет данных';
+  return 'В норме';
 }
-function renderTable() {
+const VERDICT_DOT_COLOR = { green: 'var(--verdict-green)', yellow: 'var(--verdict-yellow)',
+  red: 'var(--verdict-red)', gray: 'var(--verdict-grey)' };
+const WATCHLIST_EXPANDED_KEY = 'hybond-watchlist-expanded-issuer';
+
+function renderIssuerRows() {
+  const el = document.getElementById('issuerRowsView');
   if (!DATA.issuers.length) {
-    // Valid inside a <table> only as a cell -- a bare <div> would be
-    // foster-parented out of the table by the HTML parser, same reason the
-    // Рынок table's empty row wraps its empty-state in <tr><td>.
-    document.getElementById('issuerTable').innerHTML =
-      `<tbody><tr><td>${emptyStateHtml({
-        icon: 'star', title: 'Вотчлист пуст', subtitle: 'Добавьте эмитентов для отслеживания',
-      })}</td></tr></tbody>`;
+    el.innerHTML = emptyStateHtml({
+      icon: 'star', title: 'Вотчлист пуст', subtitle: 'Добавьте эмитентов для отслеживания',
+    });
     return;
   }
-  const rows = DATA.issuers.map(iss => ({ iss, m: issuerMetric(iss), v: issuerWorstVerdict(iss) }));
-  const dir = sortDir;
-  rows.sort((a, b) => {
-    let av, bv;
-    if (sortKey === 'name') { av = a.iss.name; bv = b.iss.name; return dir * av.localeCompare(bv); }
-    if (sortKey === 'tier') { av = a.iss.risk_tier; bv = b.iss.risk_tier; return dir * av.localeCompare(bv); }
-    if (sortKey === 'g_spread') { av = a.m.g ?? -1; bv = b.m.g ?? -1; }
-    else if (sortKey === 'score') { av = a.m.avgScore ?? -1; bv = b.m.avgScore ?? -1; }
-    else if (sortKey === 'events') { av = a.iss.events.length; bv = b.iss.events.length; }
-    else if (sortKey === 'verdict') { av = a.v ? VERDICT_SEVERITY[a.v.level] : -1; bv = b.v ? VERDICT_SEVERITY[b.v.level] : -1; }
-    return dir * (av - bv);
+  const lastExpanded = localStorage.getItem(WATCHLIST_EXPANDED_KEY);
+  el.innerHTML = `<div class="iw-rows">${DATA.issuers.map(iss => {
+    const v = issuerWorstVerdict(iss);
+    const bond = issuerBestBond(iss);
+    const dotColor = VERDICT_DOT_COLOR[v ? v.level : 'gray'];
+    const aey = bond && bond.aey_base_risk_adj_pct != null ? `${bond.aey_base_risk_adj_pct.toFixed(1)}%` : '—';
+    const status = issuerStatusLine(iss);
+    const isOpen = lastExpanded === iss.issuer_id;
+    return `<div class="iw-row-wrap${isOpen ? ' iw-open' : ''}" data-issuer="${iss.issuer_id}">
+      <div class="iw-row">
+        <span class="iw-dot" style="background:${dotColor}" title="${v ? v.label : 'Недостаточно данных'}"></span>
+        <span class="iw-name">${escapeHtml(iss.name)}</span>
+        <span class="iw-rating">${iss.rating || '—'}</span>
+        <span class="iw-aey" title="${escapeHtml(AEY_RISK_ADJ_TOOLTIP)}" style="cursor:help">${aey}</span>
+        <span class="iw-status">${status}</span>
+        <span class="iw-arrow">${isOpen ? '▼' : '▶'}</span>
+      </div>
+      <div class="iw-detail${isOpen ? ' open' : ''}"></div>
+    </div>`;
+  }).join('')}</div>`;
+
+  const wraps = el.querySelectorAll('.iw-row-wrap');
+  wraps.forEach(wrap => {
+    const issuerId = wrap.dataset.issuer;
+    const iss = DATA.issuers.find(i => i.issuer_id === issuerId);
+    const detail = wrap.querySelector('.iw-detail');
+    if (wrap.classList.contains('iw-open')) detail.innerHTML = renderIssuerDetail(iss);
+
+    wrap.querySelector('.iw-row').addEventListener('click', (e) => {
+      const open = wrap.classList.contains('iw-open');
+      if (!e.shiftKey) {
+        // Collapse every other open row -- only one open at a time unless
+        // Shift is held (see Shift-click branch below).
+        wraps.forEach(w => {
+          if (w !== wrap) {
+            w.classList.remove('iw-open');
+            w.querySelector('.iw-arrow').textContent = '▶';
+            w.querySelector('.iw-detail').classList.remove('open');
+          }
+        });
+      }
+      if (open) {
+        wrap.classList.remove('iw-open');
+        wrap.querySelector('.iw-arrow').textContent = '▶';
+        detail.classList.remove('open');
+      } else {
+        detail.innerHTML = renderIssuerDetail(iss);
+        wrap.classList.add('iw-open');
+        wrap.querySelector('.iw-arrow').textContent = '▼';
+        detail.classList.add('open');
+        localStorage.setItem(WATCHLIST_EXPANDED_KEY, issuerId);
+      }
+    });
   });
-
-  const cols = [
-    ['name', 'Эмитент'], ['verdict', 'Вердикт'], ['tier', 'Тир'], ['g_spread', 'G-спред'],
-    ['score', 'Балл (ø)'], ['filings', 'Filings (реал.)'], ['events', 'Событий'], ['thesis', 'Тезис'],
-  ];
-  let html = `<thead><tr>${cols.map(([k,l]) =>
-    `<th data-k="${k}">${l}${sortKey===k ? `<span class="sort-arrow">${dir>0?'▲':'▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
-
-  rows.forEach(({iss, m, v}, idx) => {
-    const pillarBars = ['score_leverage','score_liquidity','score_refinancing','score_operations'].map((k,i) => {
-      const v = iss.six_pillars ? iss.six_pillars[k] : null;
-      const colors = ['var(--series-1)','var(--series-2)','var(--series-3)','var(--series-4)'];
-      const h = v !== null && v !== undefined ? Math.max(2, v/100*18) : 2;
-      return `<div class="seg" style="height:${h}px;background:${v!=null?colors[i]:'var(--grid)'}"></div>`;
-    }).join('');
-
-    const fc = iss.filing_counts || {total: 0, classified: 0};
-    const hasSynthEvent = (iss.events||[]).some(e => (e.summary||'').includes('SYNTHETIC'));
-    const allRealEvents = iss.events.length && !hasSynthEvent;
-    html += `<tr class="issuer-row" data-idx="${idx}">
-      <td>${iss.name}<div style="color:var(--text-muted);font-size:13px">${iss.sector||''}</div></td>
-      <td>${v ? `${v.emoji} <span style="color:var(--text-muted);font-size:13px">${v.label}</span>` : '—'}</td>
-      <td>${tierBadge(iss.risk_tier)}<div style="color:var(--text-muted);font-size:13px;margin-top:3px">${iss.rating||''}</div></td>
-      <td>${m.g!==null ? Math.round(m.g)+' бп' : '<span style="color:var(--text-muted)">нет цены</span>'}${m.ytm!=null?`<div style="color:var(--text-muted);font-size:13px">YTM ${m.ytm}%</div>`:''}</td>
-      <td><div class="pillar-mini">${pillarBars}</div></td>
-      <td>${fc.total ? `${fc.total}<div style="color:var(--text-muted);font-size:13px">${fc.classified} классиф.</div>` : '<span style="color:var(--text-muted)">нет на AZIPI</span>'}</td>
-      <td>${iss.events.length}${hasSynthEvent ? '<span class="synthetic-tag">демо</span>' : (allRealEvents ? '<span class="synthetic-tag" style="color:var(--good);border-color:var(--good)">реал.</span>' : '')}</td>
-      <td>${thesisBadge(iss.thesis ? iss.thesis.status : null)}</td>
-    </tr>
-    <tr class="detail-row" data-idx="${idx}"><td colspan="${cols.length}"><div class="detail-inner" id="detail-${idx}"></div></td></tr>`;
-  });
-  html += '</tbody>';
-  const table = document.getElementById('issuerTable');
-  table.innerHTML = html;
-
-  table.querySelectorAll('th').forEach(th => th.addEventListener('click', () => {
-    const k = th.dataset.k;
-    if (k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = -1; }
-    renderTable();
-  }));
-
-  table.querySelectorAll('tr.issuer-row').forEach(tr => tr.addEventListener('click', () => {
-    const idx = tr.dataset.idx;
-    const detail = document.getElementById('detail-' + idx);
-    const open = detail.classList.contains('open');
-    table.querySelectorAll('.detail-inner.open').forEach(d => d.classList.remove('open'));
-    if (!open) {
-      const { iss } = rows[idx];
-      detail.innerHTML = renderIssuerDetail(iss);
-      detail.classList.add('open');
-    }
-  }));
 }
+renderIssuerRows();
+
 function renderIssuerDetail(iss) {
   let html = '';
   if (iss.note) html += `<p style="margin:0 0 10px;color:var(--text-secondary)">${iss.note}</p>`;
@@ -3862,7 +4449,7 @@ function renderIssuerDetail(iss) {
   if (iss.bonds && iss.bonds.length) {
     html += `<div style="margin-top:10px"><b>Облигации</b><table style="margin-top:6px"><thead><tr>
       <th>SECID</th><th>Погашение</th><th>Купон, %</th><th>G-спред</th><th>YTM</th>
-      <th>Мисценка</th><th>AEY (риск)</th><th>Размещение</th></tr></thead><tbody>` +
+      <th>Мисценка</th><th title="${escapeHtml(AEY_RISK_ADJ_TOOLTIP)}" style="cursor:help">AEY (скорр.)</th><th>Размещение</th></tr></thead><tbody>` +
       iss.bonds.map(b => {
         const est = b.yield_source === 'moex';
         const gcell = b.g_spread_bp!=null
@@ -3884,76 +4471,6 @@ function renderIssuerDetail(iss) {
   return html || '<span style="color:var(--text-muted)">Нет дополнительных данных.</span>';
 }
 
-// Card view (same ≡/⊞ pattern as Рынок's card toggle, independent
-// localStorage key so the two tabs' view preferences don't collide).
-// Verdict badge is the WORST across all of the issuer's bonds
-// (issuerWorstVerdict); the other fields (YTM/rating/AEY) come from the
-// single best-ranked bond (issuerBestBond) -- see those functions' own
-// comments for why the two use different bond selections.
-function renderIssuerCards() {
-  const el = document.getElementById('issuerCardsView');
-  if (!DATA.issuers.length) {
-    el.innerHTML = emptyStateHtml({
-      icon: 'star', title: 'Вотчлист пуст', subtitle: 'Добавьте эмитентов для отслеживания',
-    });
-    return;
-  }
-  el.innerHTML = `<div class="issuer-cards-grid">${DATA.issuers.map(iss => {
-    const v = issuerWorstVerdict(iss);
-    const bond = issuerBestBond(iss);
-    const evt = lastCriticalHigh(iss);
-    const eventHtml = evt ? (() => {
-      const days = daysBetween(evt.occurred, iss.snap_date || DATA.day2_snap_date);
-      const cls = evt.severity === 'critical' ? 'ic-critical' : 'ic-high';
-      const badge = evt.severity === 'critical' ? '🔴' : '🟡';
-      return `<div class="ic-event ${cls}">${badge} ${humanEventCategory(evt.category)}${days != null ? `, ${days} дн. назад` : ''}</div>`;
-    })() : '';
-    // Placement warning: any bond less than half placed AND stalled (same
-    // b.is_placement_stalled flag the bond drawer/issuer table already use).
-    const stalledBond = (iss.bonds || []).find(b =>
-      b.placement_pct != null && b.placement_pct < 50 && b.is_placement_stalled);
-    const placementHtml = stalledBond
-      ? `<div class="ic-placement">⚠ Размещение застряло: ${stalledBond.placement_pct.toFixed(1)}% (${escapeHtml(stalledBond.short_name || stalledBond.secid)})</div>`
-      : '';
-    return `<div class="issuer-card"${bond ? ` data-secid="${bond.secid}"` : ''}>
-      <div class="ic-top">
-        <div class="ic-name">${escapeHtml(iss.name)}</div>
-        <span class="ic-badge" title="${v ? v.label : 'Недостаточно данных'}">${v ? v.emoji : '⚪'}</span>
-      </div>
-      <span class="ic-sector">${escapeHtml(iss.sector || '—')}</span>
-      <div class="ic-ytm">${bond && bond.ytm_pct != null ? bond.ytm_pct.toFixed(1) + '%' : '—'}</div>
-      <div class="ic-sub">${iss.rating || 'нет рейтинга'}${bond && bond.aey_base_risk_adj_pct != null ? ` · AEY(риск) ${bond.aey_base_risk_adj_pct.toFixed(1)}%` : ''}</div>
-      ${eventHtml}${placementHtml}
-    </div>`;
-  }).join('')}</div>`;
-  el.querySelectorAll('.issuer-card[data-secid]').forEach(card => {
-    card.addEventListener('click', () => openBondDrawer(card.dataset.secid));
-  });
-}
-
-const WATCHLIST_SUBVIEW_KEY = 'hybond-watchlist-subview';
-let issuerSubView = localStorage.getItem(WATCHLIST_SUBVIEW_KEY) || (window.innerWidth < 768 ? 'cards' : 'table');
-
-function applyIssuerSubViewDisplay() {
-  document.getElementById('issuerTableView').style.display = issuerSubView === 'table' ? '' : 'none';
-  document.getElementById('issuerCardsView').style.display = issuerSubView === 'cards' ? '' : 'none';
-  document.getElementById('iwBtnTable').classList.toggle('active', issuerSubView === 'table');
-  document.getElementById('iwBtnCards').classList.toggle('active', issuerSubView === 'cards');
-}
-function renderIssuerActive() {
-  if (issuerSubView === 'cards') renderIssuerCards(); else renderTable();
-}
-document.getElementById('iwBtnTable').addEventListener('click', () => {
-  issuerSubView = 'table'; localStorage.setItem(WATCHLIST_SUBVIEW_KEY, 'table');
-  applyIssuerSubViewDisplay(); renderIssuerActive();
-});
-document.getElementById('iwBtnCards').addEventListener('click', () => {
-  issuerSubView = 'cards'; localStorage.setItem(WATCHLIST_SUBVIEW_KEY, 'cards');
-  applyIssuerSubViewDisplay(); renderIssuerActive();
-});
-applyIssuerSubViewDisplay();
-renderIssuerActive();
-
 // ================= Events timeline =================
 // Notification panel: pools `event` (primary, AZIPI-classified filings) and
 // `market_note` (secondary, e.g. Smart-Lab news) into one feed per issuer,
@@ -3969,13 +4486,23 @@ renderIssuerActive();
     (iss.events || []).forEach(e => all.push({ ...e, issuer: iss.name }));
     (iss.market_notes || []).forEach(e => all.push({ ...e, issuer: iss.name }));
   });
+  // MOEX Listing/CBR Press task (2026-08-17): DATA.market_wide_notes --
+  // issuer_id IS NULL market_note rows (rate decisions, listing/delisting
+  // notices) that full_events_by_issuer()/the per-issuer loop above can
+  // structurally never attach to any issuer (see market_wide_notes()'s own
+  // docstring in export_dashboard_data.py). Merged in here as their own
+  // pseudo-"issuer" slot (the feed's friendly name) rather than left out of
+  // Лента событий entirely.
+  (DATA.market_wide_notes || []).forEach(e => all.push({
+    ...e, issuer: feedSourceLabel(e.source), category: e.category || 'рыночная новость',
+  }));
   all.sort((a, b) => (b.occurred || '').localeCompare(a.occurred || '') || (SEV_ORDER(b.severity) - SEV_ORDER(a.severity)));
 
   let mode = 'critical'; // 'critical' (default) | 'all'
 
   function sourceBadge(e) {
     if (e.source === 'event' || !e.source) return '';
-    return '<span class="source-badge secondary">по данным Smart-Lab</span>';
+    return `<span class="source-badge secondary">по данным ${escapeHtml(feedSourceLabel(e.source))}</span>`;
   }
 
   function render() {
@@ -4043,6 +4570,7 @@ function gotoTab(tab, opts) {
   // panel actually becomes visible, not just at page load.
   if (tab === 'cbr' && window.__cbrRedraw) window.__cbrRedraw();
   if (tab === 'market' && window.__marketMapRedraw) window.__marketMapRedraw();
+  if (tab === 'market' && window.__spreadHistRedraw) window.__spreadHistRedraw();
   if (opts && opts.instrument) {
     const instBtn = document.querySelector(`#marketInstrumentToggle .view-btn[data-instrument="${opts.instrument}"]`);
     if (instBtn) instBtn.click();
@@ -4146,7 +4674,7 @@ function queueIndicatorHtml() {
 }
 function wireQueueIndicatorClicks(root) {
   root.querySelectorAll('.queue-indicator').forEach(el => {
-    el.addEventListener('click', () => gotoTab('watchlist', { scrollTo: 'sec-events' }));
+    el.addEventListener('click', () => gotoTab('cbr', { scrollTo: 'sec-events' }));
   });
 }
 function renderQueueIndicator() {
@@ -4195,7 +4723,7 @@ function renderHomeHero() {
     { value: pulse.avgG != null ? fmtBp(pulse.avgG, heroMobile) : '—',
       label: 'Средний G-спред', tab: 'market' },
     { value: String(pulse.flagsToday), cls: pulse.flagsToday > 0 ? 'pt-bad' : 'pt-good',
-      label: 'Флаги', tab: 'watchlist', opts: { scrollTo: 'sec-events' } },
+      label: 'Флаги', tab: 'cbr', opts: { scrollTo: 'sec-events' } },
     { value: pulse.placementOpen ? 'Открыт' : 'Закрыт', cls: pulse.placementOpen ? 'pt-good' : 'pt-bad',
       label: 'Рынок размещений', tab: 'watchlist' },
   ];
@@ -4279,12 +4807,12 @@ function renderHomePortfolioCol() {
   const summary = window.__pfHomeSummary ? window.__pfHomeSummary() : null;
   if (!summary) { el.innerHTML = emptyStateHtml({ icon: 'chart', title: 'Нет данных портфеля' }); return; }
   const aeyHtml = summary.aeyBase != null
-    ? `<div class="home-issuer-name">AEY (база): ${summary.aeyBase >= 0 ? '+' : ''}${summary.aeyBase.toFixed(1)}%</div>` : '';
+    ? `<div class="home-issuer-name"><span title="${escapeHtml(AEY_BASE_TOOLTIP)}" style="cursor:help">AEY (база)</span>${spravkaLink(4)}: ${summary.aeyBase >= 0 ? '+' : ''}${summary.aeyBase.toFixed(1)}%</div>` : '';
   const presetHtml = summary.activePresetLabel
     ? `<span class="pf-preset-badge">${escapeHtml(summary.activePresetLabel)}</span>` : '';
   const barsHtml = summary.sectorTop4.length ? summary.sectorTop4.map(s => `
     <div class="home-sector-bar-row">
-      <span class="home-sector-bar-label">${escapeHtml(s.sector)}</span>
+      <span class="home-sector-bar-label">${escapeHtml(sectorLabel(s.sector))}</span>
       <span class="home-sector-bar-track"><span class="home-sector-bar-fill" style="width:${Math.min(100, s.pct).toFixed(1)}%"></span></span>
       <span>${s.pct.toFixed(1)}%</span>
     </div>`).join('') : '';
@@ -4302,7 +4830,7 @@ const HOME_ACTION_ICONS = {
 function renderHomeActions() {
   const tiles = [
     { icon: 'search', label: 'Проверить компанию', desc: 'Эмитент вне вотчлиста',
-      action: () => gotoTab('watchlist', { scrollTo: 'sec-company-scan' }) },
+      action: () => gotoTab('market', { scrollTo: 'sec-company-scan' }) },
     { icon: 'scatter', label: 'Карта рынка', desc: 'Scatter-график по всей вселенной',
       action: () => { gotoTab('market'); const btn = document.querySelector('#marketViewToggle .view-btn[data-view="map"]'); if (btn) btn.click(); } },
     { icon: 'bank', label: 'ЦБ РФ и ОФЗ', desc: 'Траектория ставки, ОФЗ carry',
@@ -4328,7 +4856,7 @@ function renderHomeScreen() {
   renderHomeActions();
 }
 document.getElementById('homeColWatchlistHeader').addEventListener('click', () => gotoTab('watchlist'));
-document.getElementById('homeColEventsHeader').addEventListener('click', () => gotoTab('watchlist', { scrollTo: 'sec-events' }));
+document.getElementById('homeColEventsHeader').addEventListener('click', () => gotoTab('cbr', { scrollTo: 'sec-events' }));
 document.getElementById('homeColPortfolioHeader').addEventListener('click', () => gotoTab('portfolio'));
 
 // ================= Ticker bar + Market Pulse (shared data) ===============
@@ -4427,10 +4955,10 @@ function renderTicker() {
   items.push({ html: `Avg G-спред ВДО <b>${pulse.avgG != null ? fmtBp(pulse.avgG, tickerMobile) : '—'}</b>`, tab: 'market' });
   items.push({
     html: `Флаги сегодня <b>${pulse.flagsToday}</b>${pulse.flagsToday > 0 ? ' 🔴' : ''}`,
-    tab: 'watchlist', opts: { scrollTo: 'sec-events' }, extraClass: pulse.flagsToday > 0 ? 'has-flags' : '', flags: true,
+    tab: 'cbr', opts: { scrollTo: 'sec-events' }, extraClass: pulse.flagsToday > 0 ? 'has-flags' : '', flags: true,
   });
   if (hybondPortfolioAey) {
-    items.push({ html: `AEY портфеля (база) <b>${hybondPortfolioAey.pct >= 0 ? '+' : ''}${hybondPortfolioAey.pct.toFixed(1)}%</b>`, tab: 'portfolio' });
+    items.push({ html: `<span title="${escapeHtml(AEY_BASE_TOOLTIP)}">AEY портфеля (база)</span> <b>${hybondPortfolioAey.pct >= 0 ? '+' : ''}${hybondPortfolioAey.pct.toFixed(1)}%</b>`, tab: 'portfolio' });
   }
   if (pulse.ofz10y) {
     items.push({ html: `ОФЗ 10Y <b>${pulse.ofz10y.ytm_pct != null ? pulse.ofz10y.ytm_pct.toFixed(2) + '%' : '—'}</b>`, tab: 'market', opts: { instrument: 'ofz' } });
@@ -4497,7 +5025,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       { value: pulse.avgG != null ? fmtBp(pulse.avgG, pulseTilesMobile) : '—', cls: '',
         label: 'Средний G-спред ВДО', subHtml: gDeltaHtml, tab: 'market' },
       { value: String(pulse.flagsToday), cls: pulse.flagsToday > 0 ? 'pt-bad' : 'pt-good',
-        label: 'Флаги (высокие/критичные)', sub: 'сегодня', tab: 'watchlist', opts: { scrollTo: 'sec-events' } },
+        label: 'Флаги (высокие/критичные)', sub: 'сегодня', tab: 'cbr', opts: { scrollTo: 'sec-events' } },
       { value: pulse.placementOpen ? 'Открыт' : 'Закрыт', cls: pulse.placementOpen ? 'pt-good' : 'pt-bad',
         label: 'Рынок размещений', sub: 'по вотчлисту (37 эмитентов) — полного рынка размещений в этом экспорте нет', tab: 'watchlist' },
     ];
@@ -4701,8 +5229,8 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
 
   const cols = [
     ['emitent_title', 'Эмитент'], ['secid', 'SECID'], ['ytm_pct', 'YTM%'],
-    ['g_spread_bp', 'G-спред'], ['implied_fair_spread_bp', 'Справ.спред'],
-    ['mispricing_bp', 'Мисценка'], ['aey_base_risk_adj_pct', 'AEY (риск)'], ['duration_yrs', 'Дюрация'],
+    ['g_spread_bp', 'G-спред' + spravkaLink(5)], ['implied_fair_spread_bp', 'Справ.спред'],
+    ['mispricing_bp', 'Мисценка'], ['aey_base_risk_adj_pct', 'AEY (скорр.)' + spravkaLink(42)], ['duration_yrs', 'Дюрация' + spravkaLink(7)],
     ['mat_date', 'Погашение'], ['offer_date', 'Оферта'], ['volume', 'Объём(млн₽)'],
     ['num_trades', 'Сделок'], ['rating', 'Рейтинг'], ['list_level', 'Уровень'], ['star', '★'],
   ];
@@ -4726,7 +5254,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     const shown = sorted.slice(0, MAX_RENDER);
 
     let html = `<thead><tr>${cols.map(([k, l]) =>
-      `<th data-k="${k}">${l}${sortKey===k ? `<span class="sort-arrow">${sortDir>0?'▲':'▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
+      `<th data-k="${k}"${colTitleAttr(k)}>${l}${sortKey===k ? `<span class="sort-arrow">${sortDir>0?'▲':'▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
     if (!shown.length) {
       html += `<tr><td colspan="${cols.length}">${emptyStateHtml({
         icon: 'search', title: 'Нет облигаций по заданным фильтрам',
@@ -4814,7 +5342,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
         <div class="bc-secid">${b.secid}</div>
         <div class="bc-ytm">${b.ytm_pct != null ? b.ytm_pct.toFixed(1) + '%' : '—'}</div>
         <div class="bc-sub">${b.duration_yrs != null ? b.duration_yrs.toFixed(2) + 'л' : '—'} · ${b.rating || 'нет рейтинга'}</div>
-        <div class="bc-tags"><span class="bc-tag">${b.sector || '—'}</span><span class="bc-tag">${b.mat_date || '—'}</span></div>
+        <div class="bc-tags"><span class="bc-tag">${b.sector ? sectorLabel(b.sector) : '—'}</span><span class="bc-tag">${b.mat_date || '—'}</span></div>
       </div>`;
     }).join('')}</div>`;
     wrap.querySelectorAll('.bond-card').forEach(card => card.addEventListener('click', () => {
@@ -5256,7 +5784,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       items = [['rgb(40,190,70)','AAA/AA'], ['rgb(120,160,70)','A'], ['rgb(190,130,70)','BBB'], ['rgb(200,70,70)','BB и ниже']];
     } else if (mmState.color === 'sector') {
       const sectors = [...new Set((bucket(timeKey).bonds || []).map(b => b.sector).filter(Boolean))].slice(0, 8);
-      items = sectors.map(s => [sectorColor(s), s]);
+      items = sectors.map(s => [sectorColor(s), sectorLabel(s)]);
     } else if (mmState.color === 'liquidity') {
       items = [['rgb(160,160,160)','мало сделок'], ['rgb(40,120,220)','активно торгуется']];
     }
@@ -5288,7 +5816,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     const fv = mmState.fFair ? fairValueDeltaBp(b) : null; // extends the tooltip below only while the overlay is active
     showTip(e, `
       <b>${b.short_name || b.emitent_title || b.secid}</b>
-      <span class="muted">${b.sector || '—'} · ${b.rating || 'без рейтинга'}</span>
+      <span class="muted">${b.sector ? sectorLabel(b.sector) : '—'} · ${b.rating || 'без рейтинга'}</span>
       <div style="margin-top:6px">YTM: ${b.ytm_pct != null ? b.ytm_pct.toFixed(1) + '%' : '—'} &nbsp; G-спред: ${b.g_spread_bp != null ? Math.round(b.g_spread_bp) + 'бп' : '—'}</div>
       <div>Недооценка: ${b.signal_excluded ? 'н/д (сигнал исключён)' : b.mispricing_bp != null ? (b.mispricing_bp > 0 ? '+' : '') + Math.round(b.mispricing_bp) + 'бп' : 'н/д'}</div>
       <div>Мод. дюрация: ${b.mod_dur != null ? b.mod_dur.toFixed(2) + ' лет' : '—'}</div>
@@ -5296,7 +5824,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
         ? `Выше справедливой на +${Math.round(fv.deltaBp)}бп`
         : `Ниже справедливой на −${Math.round(Math.abs(fv.deltaBp))}бп`}</div>` : ''}
       ${pdR !== null || pdM !== null ? `
-      <div class="pd-row"><span class="pd-label">PD (рейтинг)</span>
+      <div class="pd-row"><span class="pd-label">PD (рейтинг)${spravkaLink(42)}</span>
         <span class="pd-bar-track"><span class="pd-bar-fill" style="width:${pdR!=null?Math.min(100,pdR/maxBar*100):0}%;background:#2a78d6"></span></span>
         <span class="pd-val">${pdR!=null?pdR.toFixed(1)+'%':'—'}</span></div>
       <div class="pd-row"><span class="pd-label">PD (рынок)</span>
@@ -5505,7 +6033,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
   const fallbackTag = OFZ.is_fallback
     ? ` <span class="source-badge secondary" title="Нет завершённого анализа заседания ЦБ — используются консервативные дефолтные дельты">⚠ fallback</span>` : '';
   banner.innerHTML = `<b>Снимок на ${OFZ.snap_date}.</b> ${OFZ.bonds.length} бумаг ОФЗ (ПД/ПК/ИН/АД), реальные данные MOEX (доски TQOB/SPOB). ` +
-    `Сценарии ЦБ (заседание ${scen.source_meeting || '—'}): база ${((scen.base||0)*100).toFixed(2)}%, стресс ${((scen.stress||0)*100).toFixed(2)}%, бык ${((scen.bull||0)*100).toFixed(2)}%${fallbackTag}.`;
+    `Сценарии ЦБ (заседание ${scen.source_meeting || '—'}): база ${((scen.base||0)*100).toFixed(2)}%, стресс ${((scen.stress||0)*100).toFixed(2)}%, бычий ${((scen.bull||0)*100).toFixed(2)}%${fallbackTag}.`;
 
   let state = { scen: 'base', horizon: 1, sortKey: 'tenor_yrs', sortDir: 1, custom: null };
   let bonds = OFZ.bonds; // replaced wholesale by a real refresh, never mutated in place piecemeal
@@ -5594,7 +6122,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
     const [y, m, d] = iso.split('-');
     return `${d}.${m}.${y}`;
   }
-  const SCEN_PROVENANCE_LABEL = { base: 'Базовый', stress: 'Стресс', bull: 'Бык' };
+  const SCEN_PROVENANCE_LABEL = { base: 'Базовый', stress: 'Стресс', bull: 'Бычий' };
   const SCEN_REFERENCE_FIELD = { base: 'cbr_2027', stress: 'cbr_2026', bull: 'cbr_2029' };
   const SCEN_REFERENCE_LABEL = { base: 'средняя ставка 2027', stress: 'верхняя граница 2026', bull: 'средняя ставка 2029' };
   function renderProvenance() {
@@ -6184,7 +6712,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
   function renderSimRefs() {
     const rs = CBR.rate_scenarios || {};
     const cur = CBR.current_rate;
-    const refs = [['stress', 'Стресс', rs.stress_annual_bp], ['base', 'База', rs.base_annual_bp], ['bull', 'Бык', rs.bull_annual_bp]];
+    const refs = [['stress', 'Стресс', rs.stress_annual_bp], ['base', 'База', rs.base_annual_bp], ['bull', 'Бычий', rs.bull_annual_bp]];
     const html = refs.map(([, label, bp]) => {
       if (bp == null || cur == null) return `<span class="cbr-sim-ref">${label} (ЦБ): —</span>`;
       return `<span class="cbr-sim-ref"><span class="swatch"></span>${label} (ЦБ): <b>${fmtRate(cur + bp / 100)}</b></span>`;
@@ -6313,6 +6841,46 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
   // stale if it's already visible when the user changes their selection.
   window.__renderRateSimulator = renderSimResult;
 })();
+
+// ================= OFZ curve shape: 10Y-2Y spread (ЦБ РФ tab) ==============
+// DATA.ofz.bonds carries tenor_yrs/ytm_pct per secid for the latest snap_date
+// only (ofz_snapshot table's schema supports a (secid, snap_date) history,
+// but as of this task only one snap_date has ever been written -- `hybond
+// ofz` has only run once). No historical time-series exists yet, so this
+// renders the single-current-value display per the task's own fallback
+// spec, not a chart; a chart becomes the right next step once enough
+// distinct snap_dates accumulate. Bonds with ytm_pct <= 0 are excluded --
+// several OFZ rows in the snapshot have no trade/yield data (ytm=0
+// placeholder), not a real market yield.
+function ofzCurveShapeBonds() {
+  const bonds = ((DATA.ofz && DATA.ofz.bonds) || [])
+    .filter(b => b.tenor_yrs != null && b.ytm_pct != null && b.ytm_pct > 0);
+  if (!bonds.length) return null;
+  const closest = target => bonds.reduce((best, b) =>
+    Math.abs(b.tenor_yrs - target) < Math.abs(best.tenor_yrs - target) ? b : best);
+  return { b2: closest(2), b10: closest(10) };
+}
+
+function renderOfzCurveShape() {
+  const card = document.getElementById('ofzCurveShapeCard');
+  const picked = ofzCurveShapeBonds();
+  if (!picked) {
+    card.innerHTML = emptyStateHtml({ icon: 'chart', title: 'Нет данных ОФЗ' });
+    return;
+  }
+  const { b2, b10 } = picked;
+  const spread = b10.ytm_pct - b2.ytm_pct;
+  const normal = spread >= 0;
+  const color = normal ? 'var(--verdict-green)' : 'var(--verdict-red)';
+  card.innerHTML = `
+    <div style="font-size:15px;font-weight:600;margin-bottom:8px">Форма кривой ОФЗ сегодня</div>
+    <div style="font-size:14px;margin-bottom:6px">10л: ${b10.ytm_pct.toFixed(2)}% — 2л: ${b2.ytm_pct.toFixed(2)}% = Спред: <b style="color:${color}">${spread >= 0 ? '+' : ''}${spread.toFixed(2)}пп</b></div>
+    <div style="font-weight:700;color:${color};font-size:14px">${normal ? 'Нормальная кривая ▲' : 'Инвертированная кривая ▼'}</div>
+    <p class="section-note" style="margin-top:10px">Положительный спред — нормальная кривая, рынок ожидает снижения ставок. Отрицательный спред — инверсия, исторически предшествует экономическому стрессу.</p>
+    <p class="section-note" style="margin-top:4px;font-size:12px">Ближайшие по сроку выпуски: ${escapeHtml(b2.short_name || b2.secid)} (${b2.tenor_yrs.toFixed(2)}л) и ${escapeHtml(b10.short_name || b10.secid)} (${b10.tenor_yrs.toFixed(2)}л).</p>
+  `;
+}
+renderOfzCurveShape();
 
 // ================= Portfolio construction tab =====================
 // First, honest version: equal-weight default over a user-picked subset of
@@ -6465,7 +7033,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
 
   // Same closest-OFZ carry_rolldown data as ofzPremiumPp above, generalised
   // to any of the three CBR scenarios (not just base) -- the Growth
-  // Planner's OFZ-alternative table needs стресс/база/бык at each horizon,
+  // Planner's OFZ-alternative table needs стресс/база/бычий at each horizon,
   // the same three scenario keys the ЦБ РФ tab's rate simulator (and this
   // tab's own pfScenTable) already key by. Annualised the same way
   // ofzPremiumPp is (total_return_pct / horizonYears): a cumulative multi-
@@ -6646,7 +7214,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
     }
     const rank = gatedRankBySecid.get(r.secid);
     if (rank && rank <= DEFAULT_TOP_N) {
-      return `Прошёл фильтр рейтинга/ликвидности, доходность (AEY, риск-скорр.) — место ${rank} в топ-${DEFAULT_TOP_N} отфильтрованного пула.`;
+      return `Прошёл фильтр рейтинга/ликвидности, доходность (AEY, скорр.) — место ${rank} в топ-${DEFAULT_TOP_N} отфильтрованного пула.`;
     }
     return `Прошёл фильтр рейтинга/ликвидности, но по доходности вне топ-${DEFAULT_TOP_N} отфильтрованного пула (место ${rank ?? '—'}) — в портфеле по ручному выбору.`;
   }
@@ -6754,7 +7322,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
         : 'нет high/critical событий в истории эмитента';
     return `<div class="pf-rationale-block">
       <div><b>Обоснование:</b> ${rationaleSentence(r)}</div>
-      <div style="margin-top:6px"><b>Рейтинг:</b> ${r.rating || '—'}${staleBadge} · <b>Сектор:</b> ${r.sector}</div>
+      <div style="margin-top:6px"><b>Рейтинг:</b> ${r.rating || '—'}${staleBadge} · <b>Сектор:</b> ${sectorLabel(r.sector)}</div>
       <div style="margin-top:4px"><b>Последнее high/critical событие:</b> ${evtHtml}</div>
     </div>`;
   }
@@ -6764,7 +7332,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
     const table = document.getElementById('pfPickTable');
     table.innerHTML = `<thead><tr>
         <th></th><th>Эмитент</th><th>Выпуск</th><th>Сектор</th><th>Рейтинг</th>
-        <th>YTM %</th><th>AEY база %</th><th>AEY (риск) %</th><th>PD 1г %</th>
+        <th>YTM %</th><th title="${escapeHtml(AEY_BASE_TOOLTIP)}" style="cursor:help">AEY база %</th><th title="${escapeHtml(AEY_RISK_ADJ_TOOLTIP)}" style="cursor:help">AEY (скорр.) %</th><th>PD 1г %</th>
         <th>Премия к ОФЗ 1г, пп</th><th>Премия к ОФЗ 2г, пп</th><th>Фильтр</th><th>Вес %</th>
       </tr></thead><tbody>` +
       pool.map(r => {
@@ -6775,7 +7343,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
           <td><input type="checkbox" class="pf-check" data-secid="${r.secid}" ${isOn ? 'checked' : ''} ${atCap ? 'disabled title="Лимит 2 выпуска на эмитента уже достигнут"' : ''}></td>
           <td>${r.issuer}${isOn && r.last_event ? `<span class="pf-event-warn" title="${escapeHtml(r.last_event.occurred + ' · ' + r.last_event.category + ' (' + r.last_event.severity + ') — ' + r.last_event.summary)}">⚠</span>` : ''}</td>
           <td>${r.short_name}</td>
-          <td>${r.sector}</td>
+          <td>${sectorLabel(r.sector)}</td>
           <td>${r.rating || '—'}</td>
           <td>${r.ytm_pct != null ? r.ytm_pct.toFixed(1) : '—'}</td>
           <td>${r.aey_base_pct != null ? r.aey_base_pct.toFixed(1) : '—'}</td>
@@ -6908,11 +7476,11 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
         const badge = tier ? `<span class="pf-sector-badge ${tier}">${pct >= SECTOR_CRITICAL_PCT ? 'высокая концентрация' : 'выше нормы'}</span>` : '';
         const note = SECTOR_NOTES[sector];
         return `<div class="pf-concentration-row"><div class="pf-concentration-main">
-            <span>${sector}${badge}</span>
+            <span>${sectorLabel(sector)}${badge}</span>
             <span class="pf-concentration-bar"><span class="pf-concentration-fill ${tier}" style="width:${Math.min(100, pct).toFixed(1)}%"></span></span>
             <span>${pct.toFixed(1)}%</span>
           </div>
-          ${note ? `<span class="pf-sector-note">${sector}: ${note}</span>` : ''}
+          ${note ? `<span class="pf-sector-note">${sectorLabel(sector)}: ${note}</span>` : ''}
         </div>`;
       }).join('');
     }
@@ -7049,9 +7617,9 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
       const color = sectorColor(it.sector);
       const rw = Math.max(it.w - 2, 0).toFixed(1), rh = Math.max(it.h - 2, 0).toFixed(1);
       svg += `<rect x="${it.x.toFixed(1)}" y="${it.y.toFixed(1)}" width="${rw}" height="${rh}" fill="${color}" rx="3">` +
-        `<title>${escapeHtml(it.sector)}: ${it.pct.toFixed(1)}%</title></rect>`;
+        `<title>${escapeHtml(sectorLabel(it.sector))}: ${it.pct.toFixed(1)}%</title></rect>`;
       if (it.w > 55 && it.h > 26) {
-        svg += `<text x="${(it.x+6).toFixed(1)}" y="${(it.y+16).toFixed(1)}" font-size="13" font-weight="600" fill="#fff">${escapeHtml(it.sector)}</text>`;
+        svg += `<text x="${(it.x+6).toFixed(1)}" y="${(it.y+16).toFixed(1)}" font-size="13" font-weight="600" fill="#fff">${escapeHtml(sectorLabel(it.sector))}</text>`;
         svg += `<text x="${(it.x+6).toFixed(1)}" y="${(it.y+30).toFixed(1)}" font-size="13" fill="#fff">${it.pct.toFixed(1)}%</text>`;
       }
     });
@@ -7109,9 +7677,10 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
       lastPortfolioScen = null;
       lastPortfolioSumW = sumW;
       renderGrowthPlanner();
+      renderStressTest();
       return;
     }
-    const scen = { base: 0, stress: 0, bull: 0 };
+    const scen = { base: 0, stress: 0, bull: 0, baseRiskAdj: 0 };
     selected.forEach((w, secid) => {
       const r = poolBySecid.get(secid);
       if (!r) return;
@@ -7119,8 +7688,14 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
       scen.base += frac * (r.aey_base_pct ?? 0);
       scen.stress += frac * (r.aey_stress_pct ?? 0);
       scen.bull += frac * (r.aey_bull_pct ?? 0);
+      // Growth Planner fix (2026-08-17): risk-adjusted AEY only exists for
+      // the base scenario in this codebase (portfolio.pd_adjusted_aey is
+      // never computed against stress/bull -- grepped before writing,
+      // confirmed no aey_stress_risk_adj_pct/aey_bull_risk_adj_pct field
+      // exists anywhere). Stress/bull stay raw; see renderGrowthPlanner().
+      scen.baseRiskAdj += frac * (r.aey_base_risk_adj_pct ?? 0);
     });
-    const vals = [['Стресс', scen.stress], ['База', scen.base], ['Бык', scen.bull]];
+    const vals = [['Стресс', scen.stress], ['База', scen.base], ['Бычий', scen.bull]];
     const best = Math.max(...vals.map(v => v[1]));
     const worst = Math.min(...vals.map(v => v[1]));
     table.innerHTML = `<thead><tr><th>Сценарий</th><th>Портфельная ожид. доходность (взвеш. AEY), %</th></tr></thead><tbody>` +
@@ -7132,6 +7707,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
     lastPortfolioScen = scen;
     lastPortfolioSumW = sumW;
     renderGrowthPlanner();
+    renderStressTest();
   }
 
   function fmtRub(v) {
@@ -7169,13 +7745,19 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
     const SCEN_DEFS = [
       ['stress', 'Стресс', 'var(--verdict-red)'],
       ['base', 'База', 'var(--text-primary)'],
-      ['bull', 'Бык', 'var(--verdict-green)'],
+      ['bull', 'Бычий', 'var(--verdict-green)'],
     ];
     const HORIZONS = [1, 2, 3];
 
     const pfRows = SCEN_DEFS.map(([key, label, color]) => {
-      const aey = lastPortfolioScen[key];
-      return { key, label, color, aey, cells: HORIZONS.map(h => capital * Math.pow(1 + aey / 100, h)) };
+      // Base compounds on the risk-adjusted (PD/LGD) AEY, not raw -- see
+      // scen.baseRiskAdj's own comment in renderScenarios(). Stress/bull
+      // have no risk-adjusted equivalent in the data, so they stay raw;
+      // the "(скорр.)" suffix below only appears on the base row, so the
+      // label itself discloses which numbers are adjusted and which aren't.
+      const aey = key === 'base' ? lastPortfolioScen.baseRiskAdj : lastPortfolioScen[key];
+      const displayLabel = key === 'base' ? `${label} (скорр.)` : label;
+      return { key, label: displayLabel, color, aey, cells: HORIZONS.map(h => capital * Math.pow(1 + aey / 100, h)) };
     });
     const ofzRows = match ? SCEN_DEFS.map(([key, label, color]) => ({
       key, label, color,
@@ -7223,6 +7805,93 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
     }
 
     el.innerHTML = html;
+  }
+
+  // ---- Стресс-тест дефолта: "what if issuer X defaults" -- pure client-
+  // side scenario, no new data. Grepped before writing: getCurrentPortfolio
+  // Positions()/getPortfolioAEY()/target.weight/target.aey_risk_adj (the
+  // task's suggested names) don't exist anywhere in this file -- the real
+  // state is the `selected` Map (secid -> weight%) + `poolBySecid` (secid ->
+  // row, with `issuer_id`/`issuer`/`aey_base_risk_adj_pct`), and the
+  // portfolio's current weighted risk-adjusted AEY is lastPortfolioScen.
+  // baseRiskAdj (added for Part 2 above) -- reusing it here instead of a
+  // second weighted-average implementation.
+  const LGD_STRESS = 0.934, RECOVERY_STRESS = 0.066;
+
+  function stressTestDefault(issuerId) {
+    if (!lastPortfolioScen || !selected.size || lastPortfolioSumW <= 0) return null;
+    let issuerFracW = 0, issuerAeyContrib = 0, issuerName = null;
+    selected.forEach((w, secid) => {
+      const r = poolBySecid.get(secid);
+      if (!r || r.issuer_id !== issuerId) return;
+      issuerName = r.issuer;
+      const frac = w / lastPortfolioSumW;
+      issuerFracW += frac;
+      issuerAeyContrib += frac * (r.aey_base_risk_adj_pct ?? 0);
+    });
+    if (issuerFracW <= 0) return null;
+
+    const aeyBefore = lastPortfolioScen.baseRiskAdj; // %, weighted risk-adjusted base AEY -- same figure the Growth Planner's "База (скорр.)" row uses
+    const capitalLossFrac = issuerFracW * LGD_STRESS; // fraction of portfolio capital lost
+    const survivingAey = (1 - issuerFracW) > 0
+      ? (aeyBefore - issuerAeyContrib) / (1 - issuerFracW) : 0; // weighted AEY of surviving positions alone, rescaled to 100%
+    const recoveryPctPoints = issuerFracW * RECOVERY_STRESS * 100; // one-off recovery, same %-point scale as AEY
+    const aeyAfter = (survivingAey * (1 - issuerFracW)) + recoveryPctPoints;
+
+    return {
+      issuer: issuerName, issuerId, weight: issuerFracW,
+      capitalLoss: capitalLossFrac, aeyBefore, aeyAfter, aeyDelta: aeyAfter - aeyBefore,
+      recovery: RECOVERY_STRESS, lgd: LGD_STRESS,
+    };
+  }
+
+  let stressSelectedIssuer = null;
+
+  function renderStressTest() {
+    const el = document.getElementById('pfStressTest');
+    if (!selected.size) {
+      el.innerHTML = emptyStateHtml({ icon: 'chart', title: 'Выберите позиции в Портфеле для расчёта' });
+      return;
+    }
+    // Distinct issuers currently in the selection (an issuer can hold up to
+    // PF_PER_ISSUER_CAP secids -- default is one dropdown entry per issuer,
+    // not per bond, since a default affects the whole issuer at once).
+    const issuersInPortfolio = new Map(); // issuer_id -> issuer name
+    selected.forEach((w, secid) => {
+      const r = poolBySecid.get(secid);
+      if (r) issuersInPortfolio.set(r.issuer_id, r.issuer);
+    });
+    const issuerList = Array.from(issuersInPortfolio.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+    if (stressSelectedIssuer && !issuersInPortfolio.has(stressSelectedIssuer)) stressSelectedIssuer = null;
+    if (!stressSelectedIssuer && issuerList.length) stressSelectedIssuer = issuerList[0][0];
+
+    const selectHtml = `<div class="pf-stress-row">
+      <label for="pfStressIssuer">Смоделировать дефолт:</label>
+      <select id="pfStressIssuer">${issuerList.map(([id, name]) =>
+        `<option value="${escapeHtml(id)}"${id === stressSelectedIssuer ? ' selected' : ''}>${escapeHtml(name)}</option>`).join('')}</select>
+    </div>`;
+
+    const result = stressSelectedIssuer ? stressTestDefault(stressSelectedIssuer) : null;
+    let resultHtml = '';
+    if (result) {
+      resultHtml = `<div class="pf-stress-card">
+        <div class="pf-stress-card-title">При дефолте <b>${escapeHtml(result.issuer)}</b> (вес ${(result.weight * 100).toFixed(1)}%):</div>
+        <div class="pf-stress-row-line"><span class="pf-stress-label">Потеря капитала</span><span class="pf-stress-val" style="color:var(--verdict-red)">−${(result.capitalLoss * 100).toFixed(1)}%</span></div>
+        <div class="pf-stress-row-line"><span class="pf-stress-label">AEY (скорр.) портфеля до</span><span class="pf-stress-val">${result.aeyBefore >= 0 ? '+' : ''}${result.aeyBefore.toFixed(1)}%</span></div>
+        <div class="pf-stress-row-line"><span class="pf-stress-label">AEY (скорр.) портфеля после</span><span class="pf-stress-val">${result.aeyAfter >= 0 ? '+' : ''}${result.aeyAfter.toFixed(1)}%</span></div>
+        <div class="pf-stress-row-line"><span class="pf-stress-label">Изменение AEY</span><span class="pf-stress-val" style="color:var(--verdict-red)">${result.aeyDelta.toFixed(1)}пп</span></div>
+        <hr class="pf-stress-divider">
+        <div class="pf-stress-row-line"><span class="pf-stress-label" style="color:var(--text-muted)">Возврат при дефолте</span><span class="pf-stress-val" style="color:var(--text-muted)">~${(result.recovery * 100).toFixed(1)}%</span></div>
+        <div class="pf-stress-recovery-note">LGD = ${result.lgd.toFixed(3)} (Федресурс, 2022–2026) — эмпирическая константа, не прогноз для этого конкретного эмитента.</div>
+      </div>`;
+    }
+
+    el.innerHTML = selectHtml + resultHtml;
+    const sel = document.getElementById('pfStressIssuer');
+    if (sel) sel.addEventListener('change', () => {
+      stressSelectedIssuer = sel.value;
+      renderStressTest();
+    });
   }
 
   // Portfolio-level OFZ premium (Task): weighted-average AEY(base) minus
@@ -7438,7 +8107,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
       .sort((a, b) => (b.aey_base_risk_adj_pct ?? -Infinity) - (a.aey_base_risk_adj_pct ?? -Infinity));
     const pct = v => v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(1)}%` : '—';
     const pp = v => v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(1)}пп` : '—';
-    table.innerHTML = `<thead><tr><th>Эмитент</th><th>Выпуск</th><th>AEY стресс</th><th>AEY база</th><th>AEY бык</th><th>Премия к ОФЗ 1г</th><th>Премия к ОФЗ 2г</th></tr></thead><tbody>` +
+    table.innerHTML = `<thead><tr><th>Эмитент</th><th>Выпуск</th><th title="${escapeHtml(AEY_BASE_TOOLTIP)} Расчёт при стресс-сценарии ставки ЦБ." style="cursor:help">AEY стресс</th><th title="${escapeHtml(AEY_BASE_TOOLTIP)}" style="cursor:help">AEY база</th><th title="${escapeHtml(AEY_BASE_TOOLTIP)} Расчёт при бычьем сценарии ставки ЦБ." style="cursor:help">AEY бычий</th><th>Премия к ОФЗ 1г</th><th>Премия к ОФЗ 2г</th></tr></thead><tbody>` +
       rows.map(r => `<tr>
         <td>${escapeHtml(r.issuer)}</td>
         <td class="cell-meta">${escapeHtml(r.short_name)}</td>
@@ -7844,6 +8513,227 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
     renderAll();
   }
 })();
+
+// ================= Справка tab (2026-08-17) =================================
+// Renders DATA.spravka (parsed at build time from spravka_vdo.md by
+// hybond/spravka_parser.py -- see that module's docstring for the "В
+// hybond →" nav-button extraction logic). Pure frontend rendering here:
+// TOC (desktop sticky sidebar + mobile <select>), question content,
+// scroll-spy active highlighting, collapsible TOC blocks with localStorage
+// persistence, in-page search.
+const SPRAVKA_TOC_STATE_KEY = 'hybond-spravka-toc-state';
+
+function spravkaBtnLabel(rawLabel) {
+  return rawLabel.startsWith('Вкладка ') ? rawLabel.slice('Вкладка '.length) : rawLabel;
+}
+
+function spravkaSegmentHtml(seg) {
+  if (seg.type === 'p') return `<p class="spravka-p">${seg.html}</p>`;
+  if (seg.type === 'formula') return `<div class="spravka-formula">${escapeHtml(seg.text)}</div>`;
+  if (seg.type === 'table') {
+    const [head, ...body] = seg.rows;
+    return `<div class="spravka-table-wrap"><table class="spravka-table">
+      <thead><tr>${head.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
+      <tbody>${body.map(row => `<tr>${row.map(c => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>`;
+  }
+  if (seg.type === 'warning') return `<div class="spravka-warning">${seg.html}</div>`;
+  if (seg.type === 'hybond') {
+    const btns = (seg.buttons || []).map(b =>
+      `<button type="button" class="spravka-nav-btn" data-tab="${escapeHtml(b.tab)}" data-opts='${escapeHtml(JSON.stringify(b.opts || {}))}'>В hybond → ${escapeHtml(spravkaBtnLabel(b.label))}</button>`
+    ).join('');
+    return `<div class="spravka-hybond">${seg.html}${btns ? `<div>${btns}</div>` : ''}</div>`;
+  }
+  return '';
+}
+
+function spravkaNavigate(tab, opts) {
+  if (tab === 'home') { showHomeScreen(); return; }
+  if (opts.mapView) {
+    gotoTab(tab);
+    requestAnimationFrame(() => {
+      const btn = document.querySelector('#marketViewToggle .view-btn[data-view="map"]');
+      if (btn) btn.click();
+    });
+    return;
+  }
+  const gotoOpts = {};
+  if (opts.scrollTo) gotoOpts.scrollTo = opts.scrollTo;
+  if (opts.pftab) gotoOpts.pftab = opts.pftab;
+  gotoTab(tab, gotoOpts);
+}
+
+function renderSpravka() {
+  const spravka = DATA.spravka;
+  const tocEl = document.getElementById('spravkaToc');
+  const tocMobileEl = document.getElementById('spravkaTocMobile');
+  const bodyEl = document.getElementById('spravkaBody');
+  if (!spravka || !spravka.blocks || !spravka.blocks.length) {
+    tocEl.innerHTML = '';
+    tocMobileEl.innerHTML = '';
+    bodyEl.innerHTML = emptyStateHtml({
+      icon: 'star', title: 'Справочник недоступен',
+      subtitle: 'spravka_vdo.md не найден на момент сборки дашборда.',
+    });
+    return;
+  }
+
+  let tocState = {};
+  try { tocState = JSON.parse(localStorage.getItem(SPRAVKA_TOC_STATE_KEY) || '{}'); } catch (e) { tocState = {}; }
+
+  // ---- TOC (desktop sidebar) ----
+  tocEl.innerHTML = spravka.blocks.map(b => {
+    const collapsed = tocState[b.n] === true;
+    const qItems = b.questions.map(q =>
+      `<li><a href="#${q.anchor}" data-q="${q.anchor}">Q${q.id}. ${escapeHtml(q.title.length > 44 ? q.title.slice(0, 44) + '…' : q.title)}</a></li>`
+    ).join('');
+    return `<div class="spravka-toc-block${collapsed ? ' collapsed' : ''}" data-block="${b.n}">
+      <div class="spravka-toc-block-header"><span class="spravka-toc-arrow">▼</span>Блок ${b.n}</div>
+      <ul class="spravka-toc-qlist">${qItems}</ul>
+    </div>`;
+  }).join('');
+
+  tocEl.querySelectorAll('.spravka-toc-block-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const block = header.closest('.spravka-toc-block');
+      const n = block.dataset.block;
+      const nowCollapsed = !block.classList.contains('collapsed');
+      block.classList.toggle('collapsed', nowCollapsed);
+      tocState[n] = nowCollapsed;
+      localStorage.setItem(SPRAVKA_TOC_STATE_KEY, JSON.stringify(tocState));
+    });
+  });
+
+  tocEl.querySelectorAll('a[data-q]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = document.getElementById(a.dataset.q);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  // ---- TOC (mobile dropdown) ----
+  tocMobileEl.innerHTML = `<option value="">— Перейти к вопросу —</option>` +
+    spravka.blocks.map(b => `<optgroup label="Блок ${b.n}">${
+      b.questions.map(q => `<option value="${q.anchor}">Q${q.id}. ${escapeHtml(q.title.length > 50 ? q.title.slice(0, 50) + '…' : q.title)}</option>`).join('')
+    }</optgroup>`).join('');
+  tocMobileEl.addEventListener('change', () => {
+    if (!tocMobileEl.value) return;
+    const target = document.getElementById(tocMobileEl.value);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // ---- Content ----
+  let html = '';
+  spravka.blocks.forEach(b => {
+    html += `<div class="spravka-block-header" id="spravka-block-${b.n}">Блок ${b.n} — ${escapeHtml(b.title)}<span class="spravka-block-range">${escapeHtml(b.range)}</span></div>`;
+    b.questions.forEach(q => {
+      html += `<div class="spravka-q" id="${q.anchor}" data-anchor="${q.anchor}">
+        <h3 class="spravka-q-title">Q${q.id}. ${escapeHtml(q.title)}</h3>
+        ${q.segments.map(spravkaSegmentHtml).join('')}
+      </div><hr class="spravka-hr">`;
+    });
+  });
+  html += `<div class="spravka-footer">
+    PD: Эксперт РА, Таблица 7, 01.07.2026 · LGD: 0.934 (Федресурс, 2022–2026)<br>
+    hybond не является инвестиционной рекомендацией. Решения принимаются инвестором самостоятельно.
+  </div>`;
+  bodyEl.innerHTML = html;
+
+  bodyEl.querySelectorAll('.spravka-nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      let opts = {};
+      try { opts = JSON.parse(btn.dataset.opts || '{}'); } catch (e) { opts = {}; }
+      spravkaNavigate(btn.dataset.tab, opts);
+    });
+  });
+
+  // ---- Scroll-spy: highlight the TOC entry for the question nearest the
+  // top of the viewport as the user scrolls the right panel. ----
+  const qEls = Array.from(bodyEl.querySelectorAll('.spravka-q'));
+  if (qEls.length && window.IntersectionObserver) {
+    let currentActive = null;
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const anchor = entry.target.dataset.anchor;
+          if (anchor !== currentActive) {
+            currentActive = anchor;
+            tocEl.querySelectorAll('a[data-q]').forEach(a =>
+              a.classList.toggle('active', a.dataset.q === anchor));
+          }
+        }
+      });
+    }, { root: null, rootMargin: '-10% 0px -75% 0px', threshold: 0 });
+    qEls.forEach(el => observer.observe(el));
+  }
+
+  // ---- Search (Part 5) ----
+  const searchInput = document.getElementById('spravkaSearchInput');
+  const searchClear = document.getElementById('spravkaSearchClear');
+  const searchStatus = document.getElementById('spravkaSearchStatus');
+  let searchTimer = null;
+
+  function clearHighlights() {
+    bodyEl.querySelectorAll('mark.spravka-hit').forEach(m => {
+      const parent = m.parentNode;
+      parent.replaceChild(document.createTextNode(m.textContent), m);
+      parent.normalize();
+    });
+  }
+
+  function runSearch(query) {
+    clearHighlights();
+    if (!query) { searchStatus.textContent = ''; searchClear.style.display = 'none'; return; }
+    searchClear.style.display = '';
+    const q = query.toLowerCase();
+    const marks = [];
+    const walker = document.createTreeWalker(bodyEl, NodeFilter.SHOW_TEXT, {
+      acceptNode: node => node.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+    });
+    const textNodes = [];
+    let n;
+    while ((n = walker.nextNode())) textNodes.push(n);
+    textNodes.forEach(node => {
+      const text = node.nodeValue;
+      const lower = text.toLowerCase();
+      if (lower.indexOf(q) === -1) return;
+      const frag = document.createDocumentFragment();
+      let last = 0, idx = lower.indexOf(q);
+      while (idx !== -1) {
+        frag.appendChild(document.createTextNode(text.slice(last, idx)));
+        const mark = document.createElement('mark');
+        mark.className = 'spravka-hit';
+        mark.textContent = text.slice(idx, idx + query.length);
+        frag.appendChild(mark);
+        marks.push(mark);
+        last = idx + query.length;
+        idx = lower.indexOf(q, last);
+      }
+      frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    });
+    if (!marks.length) {
+      searchStatus.textContent = 'Ничего не найдено';
+    } else {
+      searchStatus.textContent = `Найдено: ${marks.length}`;
+      marks[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    const val = searchInput.value.trim();
+    searchTimer = setTimeout(() => runSearch(val), 300);
+  });
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    clearHighlights();
+    searchStatus.textContent = '';
+    searchClear.style.display = 'none';
+  });
+}
+renderSpravka();
 
 // ================= Home screen: initial view decision ======================
 // Runs last (after portfolioTab()'s IIFE above), so window.__pfApplyPreset /
