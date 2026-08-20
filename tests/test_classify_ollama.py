@@ -11,7 +11,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from hybond.classify_ollama import (  # noqa: E402
-    VALID_CATEGORIES, VALID_SEVERITIES, classify_filing, needs_review,
+    VALID_CATEGORIES, VALID_SEVERITIES, classify_filing, classify_filings_batch, needs_review,
 )
 
 
@@ -153,3 +153,96 @@ def test_needs_review_noise_low_confidence_still_false():
 def test_needs_review_high_confidence_non_critical_false():
     assert needs_review("low", 0.90) is False
     assert needs_review("medium", 0.85) is False
+
+
+# ---- classify_filings_batch (Sub-task A: batch prompting throughput fix) ---
+
+def _filing(title="Купон не выплачен", url="http://x", issuer_name="Тест ОАО"):
+    return {"title": title, "url": url, "issuer_name": issuer_name}
+
+
+def test_batch_empty_list_returns_empty_no_network_call():
+    with patch("hybond.classify_ollama.requests.post") as mock_post:
+        result = classify_filings_batch([])
+    assert result == []
+    mock_post.assert_not_called()
+
+
+def test_batch_valid_array_response_parsed_in_order():
+    body = ('[{"category": "coupon_event", "severity": "critical", '
+            '"confidence": 0.92, "summary": "Пропуск купона"},'
+            '{"category": "routine", "severity": "noise", '
+            '"confidence": 0.99, "summary": "Плановое раскрытие"}]')
+    filings = [_filing(title="A"), _filing(title="B")]
+    with patch("hybond.classify_ollama.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(body)
+        results = classify_filings_batch(filings)
+    assert len(results) == 2
+    assert results[0]["category"] == "coupon_event"
+    assert results[1]["category"] == "routine"
+    # one round-trip for the whole batch, not one per filing
+    assert mock_post.call_count == 1
+
+
+def test_batch_markdown_fenced_response_stripped():
+    body = ('```json\n[{"category": "routine", "severity": "noise", '
+            '"confidence": 0.99, "summary": "Плановое раскрытие"}]\n```')
+    with patch("hybond.classify_ollama.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(body)
+        results = classify_filings_batch([_filing()])
+    assert results[0]["category"] == "routine"
+
+
+def test_batch_one_bad_item_does_not_discard_rest():
+    body = ('[{"category": "coupon_event", "severity": "critical", '
+            '"confidence": 0.92, "summary": "Пропуск купона"},'
+            '{"category": "not_a_real_category", "severity": "high", '
+            '"confidence": 0.9, "summary": "Плохой элемент"}]')
+    filings = [_filing(title="Good"), _filing(title="Bad")]
+    with patch("hybond.classify_ollama.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(body)
+        results = classify_filings_batch(filings)
+    assert results[0] is not None
+    assert results[0]["category"] == "coupon_event"
+    assert results[1] is None  # invalid category -- stays unclassified, not discarded silently
+
+
+def test_batch_fewer_items_returned_than_requested_pads_with_none():
+    body = ('[{"category": "coupon_event", "severity": "critical", '
+            '"confidence": 0.92, "summary": "Пропуск купона"}]')
+    filings = [_filing(title="A"), _filing(title="B"), _filing(title="C")]
+    with patch("hybond.classify_ollama.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(body)
+        results = classify_filings_batch(filings)
+    assert len(results) == 3
+    assert results[0] is not None
+    assert results[1] is None
+    assert results[2] is None
+
+
+def test_batch_non_array_response_fails_whole_batch():
+    body = '{"category": "coupon_event", "severity": "critical", "confidence": 0.92, "summary": "x"}'
+    filings = [_filing(title="A"), _filing(title="B")]
+    with patch("hybond.classify_ollama.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(body)
+        results = classify_filings_batch(filings)
+    assert results == [None, None]
+
+
+def test_batch_timeout_returns_none_for_every_item():
+    filings = [_filing(title="A"), _filing(title="B"), _filing(title="C")]
+    with patch("hybond.classify_ollama.requests.post") as mock_post:
+        mock_post.side_effect = requests.exceptions.Timeout()
+        results = classify_filings_batch(filings)
+    assert results == [None, None, None]
+
+
+def test_batch_prompt_includes_all_titles():
+    body = '[]'
+    filings = [_filing(title="Уникальный заголовок раз"), _filing(title="Уникальный заголовок два")]
+    with patch("hybond.classify_ollama.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(body)
+        classify_filings_batch(filings)
+    sent_prompt = mock_post.call_args.kwargs["json"]["prompt"]
+    assert "Уникальный заголовок раз" in sent_prompt
+    assert "Уникальный заголовок два" in sent_prompt

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
@@ -215,6 +216,13 @@ def cmd_market_notes_queue(_args) -> int:
     return 0
 
 
+AUTO_CLASSIFY_BATCH_SIZE = 5
+
+
+def _chunked(items: list, size: int) -> list[list]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
 def cmd_auto_classify(args) -> int:
     from .classify_ollama import MODEL, classify_filing, needs_review
     from .store import db
@@ -237,61 +245,93 @@ def cmd_auto_classify(args) -> int:
     stats = {"processed": 0, "classified": 0, "skipped_noise": 0,
              "skipped_confidence": 0, "failed": 0, "needs_review": 0}
 
-    for filing in filings:
-        stats["processed"] += 1
-        result = classify_filing(title=filing["title"], url=filing["url"],
-                                  issuer_name=filing["issuer_name"])
-        if result is None:
-            stats["failed"] += 1
-            continue
-        if result["confidence"] < 0.65:
-            print(f"Low confidence ({result['confidence']:.2f}) — skipping: {filing['title']}")
-            stats["skipped_confidence"] += 1
-            continue
+    # NOT batched via classify_filings_batch (classify_ollama.py) -- tried
+    # it live against this machine's real Ollama/qwen3.5 build (2026-08-20)
+    # and it does not work: `think: False` does not actually suppress the
+    # model's reasoning chain (same finding classify_filing()'s 120s timeout
+    # comment already notes for a single item), and batching multiple items
+    # multiplies that reasoning cost instead of amortizing it -- two live
+    # batch calls (2 and 5 items, num_predict up to 4000) both came back
+    # with done_reason='length' and an EMPTY response after ~75s, i.e. worse
+    # than baseline (75s for zero classifications vs 52-77s for one).
+    # classify_filings_batch() is kept in the codebase, unit-tested, for a
+    # future model/build where this might actually work -- just not wired
+    # in here until it's been shown to work for real.
+    #
+    # Previously this connection held one uncommitted transaction open for
+    # the ENTIRE run (a single con.commit() at the end) -- with 52-77s/call
+    # latency that meant the write lock stayed held for up to ~38 minutes on
+    # a --limit 30 run, the actual cause of the "database is locked" errors
+    # other hybond commands hit repeatedly against this cron. Committing
+    # every AUTO_CLASSIFY_BATCH_SIZE items (and yielding briefly) shrinks
+    # that to milliseconds per batch; WAL mode (db.connect()) means readers
+    # don't even need to wait for that, but writer-vs-writer collisions
+    # still do -- both independently real and verified live.
+    for batch in _chunked(filings, AUTO_CLASSIFY_BATCH_SIZE):
+        for filing in batch:
+            stats["processed"] += 1
+            result = classify_filing(title=filing["title"], url=filing["url"],
+                                      issuer_name=filing["issuer_name"])
+            if result is None:
+                stats["failed"] += 1
+                continue
+            if result["confidence"] < 0.65:
+                print(f"Low confidence ({result['confidence']:.2f}) — skipping: {filing['title']}")
+                stats["skipped_confidence"] += 1
+                continue
 
-        review = needs_review(result["severity"], result["confidence"])
+            review = needs_review(result["severity"], result["confidence"])
+            if not args.dry_run:
+                db.insert_event(
+                    con, issuer_id=filing["issuer_id"], occurred=filing["published"],
+                    category=result["category"], severity=result["severity"],
+                    summary=result["summary"], source_url=filing["url"],
+                    classified_by=f"ollama:{MODEL}", confidence=result["confidence"],
+                    needs_review=1 if review else 0)
+                db.mark_classified(con, filing["body_hash"])
+
+            if result["severity"] == "noise":
+                stats["skipped_noise"] += 1
+            else:
+                stats["classified"] += 1
+            if review:
+                stats["needs_review"] += 1
         if not args.dry_run:
-            db.insert_event(
-                con, issuer_id=filing["issuer_id"], occurred=filing["published"],
-                category=result["category"], severity=result["severity"],
-                summary=result["summary"], source_url=filing["url"],
-                classified_by=f"ollama:{MODEL}", confidence=result["confidence"],
-                needs_review=1 if review else 0)
-            db.mark_classified(con, filing["body_hash"])
+            con.commit()
+            time.sleep(0.1)
 
-        if result["severity"] == "noise":
-            stats["skipped_noise"] += 1
-        else:
-            stats["classified"] += 1
-        if review:
-            stats["needs_review"] += 1
+    for batch in _chunked(notes, AUTO_CLASSIFY_BATCH_SIZE):
+        for note in batch:
+            stats["processed"] += 1
+            result = classify_filing(title=note["title"], url=note["url"],
+                                      issuer_name=note["issuer_name"] or "неизвестный эмитент")
+            if result is None:
+                stats["failed"] += 1
+                continue
+            if result["confidence"] < 0.65:
+                print(f"Low confidence ({result['confidence']:.2f}) — skipping: {note['title']}")
+                stats["skipped_confidence"] += 1
+                continue
 
-    for note in notes:
-        stats["processed"] += 1
-        result = classify_filing(title=note["title"], url=note["url"],
-                                  issuer_name=note["issuer_name"] or "неизвестный эмитент")
-        if result is None:
-            stats["failed"] += 1
-            continue
-        if result["confidence"] < 0.65:
-            print(f"Low confidence ({result['confidence']:.2f}) — skipping: {note['title']}")
-            stats["skipped_confidence"] += 1
-            continue
+            review = needs_review(result["severity"], result["confidence"])
+            # market_note has no classified_by/needs_review columns (Part 1
+            # only extended `event`) -- set_market_note_classification()
+            # writes the three columns it does have; confidence still gates
+            # the write above.
+            if not args.dry_run:
+                db.set_market_note_classification(
+                    con, note["note_id"], severity=result["severity"],
+                    category=result["category"], confidence=result["confidence"])
 
-        # market_note has no classified_by/needs_review columns (Part 1 only
-        # extended `event`) -- set_market_note_classification() writes the
-        # three columns it does have; confidence still gates the write above.
+            if result["severity"] == "noise":
+                stats["skipped_noise"] += 1
+            else:
+                stats["classified"] += 1
+            if review:
+                stats["needs_review"] += 1
         if not args.dry_run:
-            db.set_market_note_classification(
-                con, note["note_id"], severity=result["severity"],
-                category=result["category"], confidence=result["confidence"])
-
-        if result["severity"] == "noise":
-            stats["skipped_noise"] += 1
-        else:
-            stats["classified"] += 1
-        if needs_review(result["severity"], result["confidence"]):
-            stats["needs_review"] += 1
+            con.commit()
+            time.sleep(0.1)
 
     con.commit()
     con.close()
@@ -443,12 +483,60 @@ def cmd_vdo_screen(args) -> int:
     return 0
 
 
+TIER_LABELS = {1: "активный мониторинг", 2: "пассивный мониторинг"}
+
+
 def cmd_promote(args) -> int:
     from . import promote
     from .store import db
     con = db.connect()
     db.init_db(con)
     db.init_universe(con)
+    db.init_manual_candidate(con)
+
+    if getattr(args, "confirm", None):
+        # manual_candidate -> real issuer row, at the given tier. Requires
+        # the ИНН to already be flagged via `promote --inn/--name` -- this
+        # command doesn't invent a name out of thin air.
+        row = con.execute("SELECT inn, name, note FROM manual_candidate WHERE inn=?",
+                           (args.confirm,)).fetchone()
+        if row is None:
+            print(f"ИНН {args.confirm} не найден в manual_candidate -- "
+                  f"сначала выполните `hybond promote --inn {args.confirm} --name ...`",
+                  file=sys.stderr)
+            con.close()
+            return 1
+        try:
+            db.add_issuer_at_tier(con, row["inn"], row["name"],
+                                   watchlist_tier=args.tier, notes=row["note"])
+        except ValueError as e:
+            print(str(e), file=sys.stderr)
+            con.close()
+            return 1
+        con.execute("DELETE FROM manual_candidate WHERE inn=?", (row["inn"],))
+        con.commit()
+        con.close()
+        print(f"ИНН {row['inn']} добавлен в вотчлист "
+              f"(tier={args.tier} — {TIER_LABELS[args.tier]})", file=sys.stderr)
+        return 0
+
+    if args.inn or args.name:
+        # Manual-flag mode: log one issuer for promotion-report visibility.
+        # Does NOT run the universe screen and does NOT touch watchlist.json
+        # -- issuers found via company-scan (e.g. ТЕХНО Лизинг) have no
+        # universe_snapshot row to rank in the first place.
+        if not (args.inn and args.name):
+            print("--inn and --name must be given together", file=sys.stderr)
+            con.close()
+            return 1
+        db.add_manual_candidate(con, args.inn, args.name, note=args.note)
+        con.commit()
+        con.close()
+        print(f"Flagged {args.name} (ИНН {args.inn}) as a manual promotion "
+              f"candidate -- will appear in the next `hybond promote` report "
+              f"until it's actually added to the watchlist.", file=sys.stderr)
+        return 0
+
     kwargs = {}
     if args.rating_floor is not None:
         kwargs["rating_floor"] = args.rating_floor
@@ -459,6 +547,7 @@ def cmd_promote(args) -> int:
     if args.target is not None:
         kwargs["target_after_cap"] = args.target
     report = promote.promote_candidates(con, **kwargs)
+    report["manual_candidates"] = db.list_manual_candidates(con)
     con.close()
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
@@ -488,7 +577,39 @@ def cmd_promote(args) -> int:
         gsp = r.get("g_spread_bp")
         gsp_s = f"{gsp:.0f}bp" if gsp is not None else "—"
         print(f"  {name:<40} {r['secid']:<14} {gsp_s}", file=sys.stderr)
+
+    print(f"\n{len(report['manual_candidates'])} manually-flagged candidate(s) "
+          f"(via `hybond promote --inn/--name`, not in universe_snapshot):",
+          file=sys.stderr)
+    for r in report["manual_candidates"]:
+        note = f" -- {r['note']}" if r.get("note") else ""
+        print(f"  {r['name']} (ИНН {r['inn']}, flagged {r['added_at'][:10]}){note}",
+              file=sys.stderr)
     return 0
+
+
+def _cmd_watchlist_tier_change(args, to_tier: int) -> int:
+    from .store import db
+    con = db.connect()
+    db.init_db(con)
+    try:
+        result = db.set_watchlist_tier(con, args.inn, to_tier, reason=args.reason)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        con.close()
+        return 1
+    con.commit()
+    con.close()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_watchlist_demote(args) -> int:
+    return _cmd_watchlist_tier_change(args, to_tier=2)
+
+
+def cmd_watchlist_promote(args) -> int:
+    return _cmd_watchlist_tier_change(args, to_tier=args.tier)
 
 
 def cmd_discover(args) -> int:
@@ -635,6 +756,31 @@ def cmd_scan_candidates_list(args) -> int:
     con.close()
     print(json.dumps(todo, ensure_ascii=False, indent=2))
     print(f"\n{len(todo)} due for a scan (new candidates + rescan-due).", file=sys.stderr)
+    return 0
+
+
+def cmd_scan_company_decide(args) -> int:
+    """Record the user's own follow-up call (promote/hold/avoid + why) on one
+    already-stored company_scan_result row, by its `id`. Distinct from the
+    scan's own issuer_quality/bond_suitability verdict -- that's the model's
+    assessment; this is what the user actually decided to do about it."""
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    db.init_company_scan(con)
+    try:
+        db.set_company_scan_decision(con, args.id, args.decision, args.reason)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        con.close()
+        return 1
+    con.commit()
+    row = con.execute(
+        "SELECT id, inn, issuer_name, decision, decision_reason, decision_at "
+        "FROM company_scan_result WHERE id=?", (args.id,)).fetchone()
+    con.close()
+    print(json.dumps(dict(row), ensure_ascii=False, indent=2))
     return 0
 
 
@@ -893,7 +1039,38 @@ def main(argv=None) -> int:
                      help="max bonds per issuer after ranking (default 2)")
     ppr.add_argument("--target", type=int, default=None,
                      help="final candidate list size after capping (default 25)")
+    ppr.add_argument("--inn", default=None,
+                     help="manually flag one issuer (by ИНН) for the promotion report -- "
+                          "for issuers with no universe_snapshot row (e.g. found via "
+                          "company-scan), not a watchlist change. Requires --name.")
+    ppr.add_argument("--name", default=None,
+                     help="issuer name to go with --inn")
+    ppr.add_argument("--note", default=None,
+                     help="optional free-text note to store with --inn/--name")
+    ppr.add_argument("--confirm", metavar="INN", default=None,
+                     help="promote a manual_candidate (flagged via --inn/--name) "
+                          "into a real issuer row at the given --tier; removes "
+                          "the ИНН from manual_candidate")
+    ppr.add_argument("--tier", type=int, choices=(1, 2), default=2,
+                     help="watchlist tier for --confirm (default: 2, passive "
+                          "monitoring -- tier=1 active monitoring requires "
+                          "explicitly passing --tier 1)")
     ppr.set_defaults(func=cmd_promote)
+    pwd = sub.add_parser("watchlist-demote",
+                          help="Move an existing tier=1 issuer to tier=2 "
+                               "(passive monitoring), logged to watchlist_tier_log")
+    pwd.add_argument("inn")
+    pwd.add_argument("--reason", required=True, help="free-text reason for the demotion")
+    pwd.set_defaults(func=cmd_watchlist_demote)
+    pwp = sub.add_parser("watchlist-promote",
+                          help="Move an existing tier=2 issuer to tier=1 "
+                               "(active watchlist), logged to watchlist_tier_log")
+    pwp.add_argument("inn")
+    pwp.add_argument("--tier", type=int, choices=(1,), default=1,
+                      help="target tier (only 1 is meaningful here -- use "
+                           "watchlist-demote to go the other way)")
+    pwp.add_argument("--reason", required=True, help="free-text reason for the promotion")
+    pwp.set_defaults(func=cmd_watchlist_promote)
     pdis = sub.add_parser("discover",
                           help="On-demand audit: MOEX-discovered bonds vs. watchlist.json "
                                "coverage, per issuer (manual tool, not part of daily_run.sh)")
@@ -950,6 +1127,14 @@ def main(argv=None) -> int:
                       help="free-text provenance tag stored in the `model` column "
                            "(default: claude-code-skill)")
     pscs.set_defaults(func=cmd_scan_company_store)
+    pscd = sub.add_parser("scan-company-decide",
+                           help="Record the user's promote/hold/avoid call on one "
+                                "company_scan_result row, with a reason")
+    pscd.add_argument("id", type=int, help="company_scan_result.id to mark")
+    pscd.add_argument("--decision", required=True, choices=sorted(("promote", "hold", "avoid")),
+                       help="what the user decided to do about this scan result")
+    pscd.add_argument("--reason", required=True, help="free-text reason for the decision")
+    pscd.set_defaults(func=cmd_scan_company_decide)
     pc = sub.add_parser("cbr", help="CBR key-rate meeting tracker")
     pc.add_argument("--fetch", metavar="YYYY-MM-DD",
                     help="fetch/backfill all available documents for one meeting date")

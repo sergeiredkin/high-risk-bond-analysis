@@ -112,13 +112,7 @@ def classify_filing(title: str, url: str, issuer_name: str) -> dict | None:
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
-        result = json.loads(raw)
-        assert result["category"] in VALID_CATEGORIES
-        assert result["severity"] in VALID_SEVERITIES
-        assert 0.0 <= float(result["confidence"]) <= 1.0
-        assert isinstance(result["summary"], str) and len(result["summary"]) > 5
-        result["confidence"] = float(result["confidence"])
-        return result
+        return _validate_result(json.loads(raw))
     except requests.exceptions.Timeout:
         logger.warning("Ollama timeout (120s) — skipping: %s", title)
         return None
@@ -128,6 +122,132 @@ def classify_filing(title: str, url: str, issuer_name: str) -> dict | None:
     except (KeyError, json.JSONDecodeError, AssertionError, ValueError, IndexError) as e:
         logger.warning("Ollama response invalid (%s) — skipping: %s", e, title)
         return None
+
+
+BATCH_PROMPT_TEMPLATE = """/no_think
+Ты — аналитик российского рынка высокодоходных облигаций (ВДО). Классифицируй КАЖДОЕ из перечисленных ниже раскрытий информации по таксономии режимов дефолта российских ВДО-эмитентов.
+
+Раскрытия:
+{items_block}
+
+Категории (ровно одна на раскрытие, самая существенная, если раскрытие затрагивает несколько):
+- reporting_delay: задержка/непредоставление отчётности РСБУ/МСФО, пропущенные сроки раскрытия
+- coupon_event: установление/пересмотр ставки купона, выплата купона, ПРОПУСК купона, технический дефолт по купону
+- offer_put_call: оферта (put), колл, изменение графика амортизации
+- covenant: нарушение ковенанта, waiver, кросс-дефолт
+- rating_action: присвоение/изменение/отзыв кредитного рейтинга (АКРА/Эксперт РА/НКР/НРА)
+- governance: смена гендиректора/финдиректора/совета директоров, смена аудитора, сделки со связанными сторонами, смена бенефициара, судебные иски к эмитенту
+- insolvency: банкротство, реструктуризация, мораторий, арест имущества, взыскание
+- operations: остановка производства, потеря крупного клиента/контракта, продажа активов, санкции против эмитента
+- capital_action: новый выпуск облигаций, банковское финансирование, взнос в капитал, объявление/изменение дивидендов
+- routine: плановые раскрытия без кредитного содержания — списки аффилированных лиц, уведомления об ОСА, стандартная квартальная отчётность, подтверждающая ожидания
+
+Правила severity (critical > high > medium > low > noise):
+- noise: ТОЛЬКО для category=routine, и для планового купона, выплаченного по графику
+- low: повышение рейтинга, благоприятный контракт
+- medium: обычная ротация совета директоров, снижение прогноза (guidance), типовое capital_action (новый выпуск, финансирование)
+- high: понижение рейтинга/негативный прогноз, отставка аудитора, внезапный уход финдиректора, waiver по ковенанту, крупный дивиденд у закредитованного эмитента, оферта/put, потеря ключевого клиента, санкции
+- critical: пропуск купона/технический дефолт, нарушение ковенанта/кросс-дефолт, банкротство/реструктуризация/арест имущества, многоступенчатое понижение или отзыв рейтинга, крупный судебный иск, непонятная/повторная задержка отчётности
+
+Верни ТОЛЬКО валидный JSON-массив, ровно {n} элементов, в ТОМ ЖЕ порядке, что и раскрытия выше, без комментариев и markdown:
+[
+  {{"category": "<...>", "severity": "<noise|low|medium|high|critical>", "confidence": <0.0-1.0>, "summary": "<одно предложение на русском>"}},
+  ...
+]
+"""
+
+
+def _validate_result(result: dict) -> dict:
+    """Shared per-item validation -- same rules classify_filing() applies,
+    factored out so classify_filings_batch() can apply them to each array
+    element independently (one malformed item must not discard the batch)."""
+    assert result["category"] in VALID_CATEGORIES
+    assert result["severity"] in VALID_SEVERITIES
+    assert 0.0 <= float(result["confidence"]) <= 1.0
+    assert isinstance(result["summary"], str) and len(result["summary"]) > 5
+    result["confidence"] = float(result["confidence"])
+    return result
+
+
+def classify_filings_batch(filings: list[dict]) -> list[dict | None]:
+    """Classify multiple filings in a single Ollama call -- the theory being
+    one round-trip instead of len(filings) would cut wall-clock time, since
+    52-77s of real inference latency per call (not token count) is what
+    dominates a single classify_filing() call (see its timeout comment).
+
+    MEASURED AND NOT CURRENTLY VIABLE on this machine's real Ollama/qwen3.5
+    build (2026-08-20): two live batch calls (2 items, then 5 items, up to
+    num_predict=4000) both came back with done_reason='length' and an EMPTY
+    response after ~75s -- `think: False` does not actually suppress the
+    model's reasoning chain for a single item either (see classify_filing()'s
+    comment), and batching multiple items multiplies that reasoning cost
+    instead of amortizing it, so the model exhausts its output budget before
+    emitting any of the requested JSON array. Net effect: worse than
+    baseline (75s for zero classifications vs 52-77s for one).
+    cmd_auto_classify does NOT call this function as a result -- it stays
+    single-item (classify_filing per filing, batched only for DB-commit
+    cadence). Kept here, unit-tested, in case a future model/Ollama build
+    handles `think: False` properly and this becomes viable -- re-measure
+    live before wiring it back into production, don't just re-enable it.
+
+    `filings`: list of dicts with title/url/issuer_name keys (the same
+    shape get_auto_classify_queue()/get_auto_classify_market_notes() rows
+    already have). Returns a list the same length as `filings`, each entry
+    either a validated result dict or None (that item failed -- stays
+    unclassified for manual/later review, exactly like classify_filing()'s
+    single-item None case; one bad item in the array does not discard the
+    rest of the batch).
+    """
+    if not filings:
+        return []
+    items_block = "\n".join(
+        f"{i}. Эмитент: {f['issuer_name']}\n   Заголовок: {f['title']}\n   Источник: {f.get('url') or ''}"
+        for i, f in enumerate(filings, start=1))
+    prompt = BATCH_PROMPT_TEMPLATE.format(items_block=items_block, n=len(filings))
+
+    payload = {
+        "model": MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": 0.1, "top_k": 20, "top_p": 0.95, "think": False},
+    }
+
+    try:
+        # Same 120s-per-call budget as classify_filing() -- a batch call is
+        # one round-trip, not len(filings) of them, so this is NOT scaled up
+        # by batch size; if a larger batch genuinely needs longer than a
+        # single-item call, that's exactly the signal that batch size is too
+        # big and should come back down, not that the timeout should grow.
+        resp = requests.post(OLLAMA_URL, json=payload, timeout=120)
+        resp.raise_for_status()
+        raw = resp.json()["response"].strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        parsed = json.loads(raw)
+        assert isinstance(parsed, list)
+    except requests.exceptions.Timeout:
+        logger.warning("Ollama batch timeout (120s) — skipping %d filing(s)", len(filings))
+        return [None] * len(filings)
+    except requests.exceptions.RequestException as e:
+        logger.warning("Ollama batch request failed (%s) — skipping %d filing(s)", e, len(filings))
+        return [None] * len(filings)
+    except (KeyError, json.JSONDecodeError, AssertionError, ValueError, IndexError) as e:
+        logger.warning("Ollama batch response invalid (%s) — skipping %d filing(s)", e, len(filings))
+        return [None] * len(filings)
+
+    out: list[dict | None] = []
+    for i in range(len(filings)):
+        if i >= len(parsed):
+            out.append(None)  # model returned fewer items than asked -- pad with None
+            continue
+        try:
+            out.append(_validate_result(dict(parsed[i])))
+        except (KeyError, AssertionError, ValueError, TypeError) as e:
+            logger.warning("Batch item %d invalid (%s) — skipping: %s", i, e, filings[i].get("title"))
+            out.append(None)
+    return out
 
 
 def needs_review(severity: str, confidence: float) -> bool:

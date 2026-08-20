@@ -23,16 +23,23 @@ def load_watchlist(path: Path) -> dict:
 
 
 def run_financials(
-    watchlist_path: Path,
+    watchlist_path: Path | None,
     api_key: str | None = None,
     snap_date: date | None = None,
 ) -> dict:
+    """Issuer scope is `issuer` WHERE watchlist_tier IN (1, 2), matching
+    pipeline.py's daily loop -- see the Watchlist Tier System follow-up
+    task, 2026-08-20. watchlist.json (when present) is read only as a
+    fallback enrichment source for `name`, since `issuer.name` is always
+    authoritative once set."""
     snap_date = snap_date or date.today()
     api_key = api_key or os.environ.get("PARSER_API_KEY")
     if not api_key:
         return {"error": "no PARSER_API_KEY set and none passed; "
                          "financials backend needs a key (200/mo free tier)"}
-    wl = load_watchlist(watchlist_path)
+    wl = {}
+    if watchlist_path is not None and Path(watchlist_path).exists():
+        wl = load_watchlist(watchlist_path)
     backend = nalog.ParserApiBackend(api_key)
 
     con = db.connect()
@@ -41,9 +48,10 @@ def run_financials(
 
     summary = {"snap_date": snap_date.isoformat(), "issuers": {}, "errors": {}}
 
-    for issuer_id, v in wl.items():
-        if issuer_id.startswith("_"):
-            continue
+    issuer_rows = db.list_issuers_by_tier(con, (1, 2))
+    for row in issuer_rows:
+        issuer_id, sector = row["issuer_id"], row["sector"]
+        v = wl.get(issuer_id, {})
         # issuer_id is the ИНН by convention
         try:
             rec = nalog.fetch_financials(issuer_id, backend)
@@ -54,8 +62,8 @@ def run_financials(
             summary["errors"][issuer_id] = "no financials found on ГИР БО"
             continue
 
-        db.upsert_issuer(con, issuer_id, v.get("name", rec.org_name or issuer_id),
-                        v.get("sector"))
+        db.upsert_issuer(con, issuer_id, v.get("name", rec.org_name or row["name"] or issuer_id),
+                        sector or v.get("sector"))
         db.upsert_financials(
             con, issuer_id=issuer_id, period=rec.period,
             fetched_on=snap_date.isoformat(),
@@ -74,7 +82,7 @@ def run_financials(
         # not a separate line -- debt_to_ebit/interest_coverage are computed
         # from that same zero and read as misleadingly clean. Flag it rather
         # than ship a leverage score that looks great for the wrong reason.
-        if v.get("sector") == "leasing" and pil.inputs.interest_expense == 0:
+        if (sector or v.get("sector")) == "leasing" and pil.inputs.interest_expense == 0:
             pj["sector_note"] = (
                 "Лизинговая компания: РСБУ код 2330 (проценты к уплате) = 0 — "
                 "процентные расходы учитываются в составе себестоимости лизинга, "

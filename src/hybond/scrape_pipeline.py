@@ -17,7 +17,6 @@ needed for the default path.
 """
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
 
@@ -25,10 +24,6 @@ from .classify_utils import queue_bucket
 from .scrape import edisclosure as ed
 from .scrape import smartlab as sl
 from .store import db
-
-
-def load_watchlist(path: Path) -> dict:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def run_scrape(
@@ -48,13 +43,17 @@ def run_scrape(
     in smartlab.INTERFAX_ISSUERS. Filings from this source are marked
     edisclosure_id='smartlab' so hy-event-classify treats them as secondary."""
     snap_date = snap_date or date.today()
-    wl = load_watchlist(watchlist_path)
-    issuer_ids = [k for k in wl if not k.startswith("_")]
     backend = ed.SeleniumBackend() if use_selenium else ed.HttpBackend()
 
     con = db.connect()
     db.init_db(con)
     db.init_filing(con)
+    # Issuer scope is `issuer` WHERE watchlist_tier IN (1, 2), matching
+    # pipeline.py/financials_pipeline.py -- see the Watchlist Tier System
+    # follow-up task, 2026-08-20. watchlist_path is accepted for signature
+    # compatibility with existing callers but no longer read here; matching
+    # is by ИНН, which the issuer table already carries as its own key.
+    issuer_ids = [r["issuer_id"] for r in db.list_issuers_by_tier(con, (1, 2))]
 
     summary = {"snap_date": snap_date.isoformat(), "issuers": {}, "new_total": 0,
                "errors": {}}

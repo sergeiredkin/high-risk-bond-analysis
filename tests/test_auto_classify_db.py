@@ -129,6 +129,28 @@ def test_get_auto_classify_queue_priority_ordered_first(tmp_path):
     assert rows[0]["body_hash"] == "prio1"  # priority pattern -> first despite older date
 
 
+def test_get_auto_classify_queue_tier1_ordered_before_tier2(tmp_path):
+    """Sub-task A: tier=1 (active watchlist) issuers' filings must sort
+    ahead of tier=2's, even when the tier=2 filing has a higher-priority
+    content pattern -- tier is the primary sort key, content bucket is
+    secondary."""
+    con = _con(tmp_path)
+    db.init_filing(con)
+    db.add_issuer_at_tier(con, "1", "Tier1 Co", watchlist_tier=1)
+    db.add_issuer_at_tier(con, "2", "Tier2 Co", watchlist_tier=2)
+    db.insert_filing(con, body_hash="t2_priority", issuer_id="2", edisclosure_id="1",
+                      published="2026-08-17", title="Присвоение рейтинга эмитенту понижено",
+                      url="http://a", fetched_on="2026-08-17")
+    db.insert_filing(con, body_hash="t1_normal", issuer_id="1", edisclosure_id="1",
+                      published="2026-08-16", title="Обычное раскрытие",
+                      url="http://b", fetched_on="2026-08-16")
+    con.commit()
+
+    rows = db.get_auto_classify_queue(con)
+    assert rows[0]["body_hash"] == "t1_normal"  # tier=1 first despite being content-normal
+    assert rows[1]["body_hash"] == "t2_priority"
+
+
 def test_get_auto_classify_queue_priority_only_filters(tmp_path):
     con = _con(tmp_path)
     db.init_filing(con)

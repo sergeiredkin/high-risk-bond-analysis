@@ -1009,6 +1009,9 @@
     .iw-status { display: none; }
     .iw-rating { width: auto; }
   }
+  /* ---- Passive monitoring (tier=2) collapsed rows, Вотчлист tab -------- */
+  .iw-tier2-badge { flex-shrink: 0; font-size: 11px; padding: 2px 7px; border-radius: 10px;
+    background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--bg-border); }
 
   /* ---- Mobile bottom tab bar --------------------------------------------- */
   .mobile-tab-bar { display: none; }
@@ -1253,6 +1256,12 @@
     <h2>Эмитенты — сводная таблица</h2>
     <p class="section-note">Клик по строке разворачивает детали: события, тезис, флаги детектора изменений, облигации. Shift+клик — развернуть несколько строк одновременно. Вердикт — как на вкладке «Рынок», но по эмитенту в целом: худший (наиболее консервативный) из вердиктов всех его выпусков.</p>
     <div id="issuerRowsView"></div>
+  </section>
+
+  <section id="sec-passive-issuers" class="collapsed">
+    <h2 class="collapsible-h2"><span class="collapse-arrow">▼</span><span id="passiveIssuersHeader">Пассивный мониторинг</span></h2>
+    <p class="section-note">Эмитенты tier=2 — данные собираются наравне с активным вотчлистом (МОЕХ, AZIPI, ГИР БО, шесть столпов, AEY), но без вердикта/рекомендации: известные, но не рекомендованные к позиции (подтверждённый дефолт, снятые с рассмотрения кандидаты и т.п.).</p>
+    <div id="passiveIssuersView"></div>
   </section>
   </div>
 
@@ -4417,6 +4426,37 @@ function renderIssuerRows() {
   });
 }
 renderIssuerRows();
+
+// Passive monitoring (tier=2): collapsed section, no verdict/recommendation
+// -- just enough to know the issuer exists and is still being tracked.
+// Same collapsible-h2 mechanism as sec-wall/sec-pillars (generic toggle
+// handler further down), not a bespoke expand/collapse.
+function renderPassiveIssuers() {
+  const rows = DATA.issuers_passive || [];
+  const header = document.getElementById('passiveIssuersHeader');
+  if (header) header.textContent = `Пассивный мониторинг (${rows.length})`;
+  const el = document.getElementById('passiveIssuersView');
+  if (!el) return;
+  if (!rows.length) {
+    el.innerHTML = emptyStateHtml({
+      icon: 'star', title: 'Нет эмитентов в пассивном мониторинге', subtitle: '',
+    });
+    return;
+  }
+  el.innerHTML = `<div class="iw-rows">${rows.map(iss => {
+    const aey = iss.last_aey_base_risk_adj_pct != null ? `${iss.last_aey_base_risk_adj_pct.toFixed(1)}%` : '—';
+    return `<div class="iw-row-wrap">
+      <div class="iw-row" style="cursor:default">
+        <span class="iw-name">${escapeHtml(iss.name)}</span>
+        <span class="iw-rating">${iss.sector || '—'}</span>
+        <span class="iw-rating">${iss.rating || '—'}</span>
+        <span class="iw-aey" title="${escapeHtml(AEY_RISK_ADJ_TOOLTIP)}" style="cursor:help">${aey}</span>
+        <span class="iw-tier2-badge">tier 2</span>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+renderPassiveIssuers();
 
 function renderIssuerDetail(iss) {
   let html = '';

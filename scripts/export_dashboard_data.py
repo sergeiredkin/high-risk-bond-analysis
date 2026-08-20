@@ -693,6 +693,38 @@ def known_issuers_meta(con) -> dict[str, dict]:
     return out
 
 
+def passive_issuers_export(con, tier2_rows: list[dict], watchlist: dict, snap_date: str | None) -> list[dict]:
+    """Lightweight rows for tier=2 (passive monitoring) issuers -- the
+    collapsed Вотчлист section. No verdict/recommendation fields (bonds,
+    six_pillars, thesis, events) by design; those stay tier=1-only. `name`/
+    `sector` fall back to watchlist.json when the issuer happens to be
+    enriched there, else the bare `issuer` table values."""
+    aey_by_inn: dict[str, list[float]] = defaultdict(list)
+    if snap_date:
+        for r in con.execute(
+                "SELECT emitent_inn, aey_base_risk_adj, aey_base FROM universe_snapshot "
+                "WHERE snap_date=?", (snap_date,)):
+            aey = r["aey_base_risk_adj"] if r["aey_base_risk_adj"] is not None else r["aey_base"]
+            if aey is not None:
+                aey_by_inn[r["emitent_inn"]].append(aey)
+
+    out = []
+    for row in tier2_rows:
+        issuer_id = row["issuer_id"]
+        meta = watchlist.get(issuer_id, {})
+        rating_row = db.current_rating_row(con, issuer_id)
+        aeys = aey_by_inn.get(issuer_id, [])
+        out.append({
+            "issuer_id": issuer_id,
+            "name": meta.get("name") or row["name"],
+            "sector": meta.get("sector") or row["sector"],
+            "watchlist_tier": 2,
+            "rating": rating_row["rating"] if rating_row else meta.get("rating"),
+            "last_aey_base_risk_adj_pct": round(max(aeys) * 100, 2) if aeys else None,
+        })
+    return out
+
+
 def data_notes(con, watchlist: dict) -> dict:
     """Slice status banners, computed live from the store every export run --
     these used to be hand-maintained strings (a stale one claimed synthetic
@@ -973,8 +1005,16 @@ def main() -> None:
     cbr = cbr_export(con, scenarios)
     fhist = flag_history(con)
     shist = spread_history_by_secid(con)
+    # Tier=1 (active watchlist, full verdict card) drives the main issuer
+    # loop below; tier=2 (passive monitoring) gets a lightweight collapsed
+    # row instead -- see passive_issuers_export(). The `issuer` DB table is
+    # the tier source of truth (Watchlist Tier System task, 2026-08-18);
+    # watchlist.json remains an enrichment lookup for risk_tier/note/
+    # edisclosure_id per issuer_id, not the list of which issuers appear.
+    tier1_rows = db.list_issuers_by_tier(con, 1)
+    tier2_rows = db.list_issuers_by_tier(con, 2)
     spread_history, spread_history_labels = spread_history_by_issuer(
-        con, list(watchlist.keys()), date.today().isoformat())
+        con, [r["issuer_id"] for r in tier1_rows], date.today().isoformat())
     fcounts = filing_counts_by_issuer(con)
     aey_by_secid = universe_aey_by_secid(con, universe["snap_date"])
     convexity_by_secid_map = convexity_by_secid(con)
@@ -984,7 +1024,9 @@ def main() -> None:
     expected_returns = expected_returns_by_secid(con)
 
     issuers = []
-    for issuer_id, meta in watchlist.items():
+    for issuer_row in tier1_rows:
+        issuer_id = issuer_row["issuer_id"]
+        meta = watchlist.get(issuer_id, {})
         fl = factlists.get(issuer_id, {})
         thesis_row = db.get_thesis(con, issuer_id)
         thesis = None
@@ -1056,8 +1098,9 @@ def main() -> None:
 
         issuers.append({
             "issuer_id": issuer_id,
-            "name": meta.get("name"),
-            "sector": meta.get("sector"),
+            "name": meta.get("name") or issuer_row["name"],
+            "sector": meta.get("sector") or issuer_row["sector"],
+            "watchlist_tier": 1,
             "risk_tier": meta.get("risk_tier", "core"),
             "rating": meta.get("rating"),
             "rating_needs_verification": rating_needs_verification,
@@ -1079,6 +1122,7 @@ def main() -> None:
             "thesis": thesis,
             "filing_counts": fcounts.get(issuer_id, {"total": 0, "classified": 0}),
         })
+    issuers_passive = passive_issuers_export(con, tier2_rows, watchlist, universe.get("snap_date"))
     notes = data_notes(con, watchlist)
     known_issuers = known_issuers_meta(con)
     company_scan_history = company_scan_history_export(con)
@@ -1105,6 +1149,7 @@ def main() -> None:
         "maturity_wall": report.get("maturity_wall", []),
         "redemptions_by_issuer": report.get("redemptions_by_issuer", {}),
         "issuers": issuers,
+        "issuers_passive": issuers_passive,
         "aey_source_note": _aey_source_note(scenarios),
         "aey_is_fallback": scenarios["is_fallback"],
         "universe": universe,

@@ -30,19 +30,36 @@ def load_watchlist(path: Path) -> dict[str, list[str]]:
     return {k: v for k, v in data.items() if not k.startswith("_")}
 
 
-def run(watchlist_path: Path, snap_date: date | None = None) -> dict:
+def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
+    """Issuer scope is `issuer` WHERE watchlist_tier IN (1, 2) -- tier=1
+    (active watchlist) and tier=2 (passive monitoring) both get identical
+    data collection, per the Watchlist Tier System task. watchlist.json is
+    now a fallback enrichment source only: if it exists, any secid listed
+    there gets folded into issuer_bond (the persistent secid source of
+    truth) alongside whatever universe_snapshot/bond already know -- it's
+    no longer what drives the loop. Its absence does not raise; the
+    pipeline just has one fewer source to union that run."""
     snap_date = snap_date or date.today()
-    wl = load_watchlist(watchlist_path)
-    secids = [s for v in wl.values() for s in v["secids"]]
-
-    master = {r["SECID"]: r for r in sources.fetch_bond_master()}
-    md = {r["SECID"]: r for r in sources.fetch_marketdata(secids)}
-    curve = sources.fetch_cbr_zcyc()
+    wl = {}
+    if watchlist_path is not None and Path(watchlist_path).exists():
+        wl = load_watchlist(watchlist_path)
 
     con = db.connect()
     db.init_db(con)
     db.init_rating(con)
     db.init_expected_return(con)
+    db.init_issuer_bond(con)
+    db.sync_issuer_bond(con, wl)
+
+    issuer_rows = db.list_issuers_by_tier(con, (1, 2))
+    issuer_secids = {r["issuer_id"]: db.list_bonds_for_issuer(con, r["issuer_id"])
+                      for r in issuer_rows}
+    secids = [s for lst in issuer_secids.values() for s in lst]
+
+    master = {r["SECID"]: r for r in sources.fetch_bond_master()}
+    db.refresh_delisted_flags(con, set(master.keys()))
+    md = {r["SECID"]: r for r in sources.fetch_marketdata(secids)}
+    curve = sources.fetch_cbr_zcyc()
 
     screen_rows = []
     flows_by_issuer: dict[str, list] = {}
@@ -57,9 +74,10 @@ def run(watchlist_path: Path, snap_date: date | None = None) -> dict:
     # at all, see the `else` branch below -- not a new gap this introduces).
     flows_by_secid: dict[str, list] = {}
 
-    for issuer_id, v in wl.items():
-        db.upsert_issuer(con, issuer_id, v["name"], v.get("sector"))
-        for secid in v["secids"]:
+    for row in issuer_rows:
+        issuer_id, name, sector = row["issuer_id"], row["name"], row["sector"]
+        db.upsert_issuer(con, issuer_id, name, sector)
+        for secid in issuer_secids[issuer_id]:
             m = master.get(secid)
             q = md.get(secid)
             if not m:
@@ -198,7 +216,7 @@ def run(watchlist_path: Path, snap_date: date | None = None) -> dict:
                     )
 
             screen_rows.append({
-                "secid": secid, "issuer": v["name"], "ytm_pct": round(ytm * 100, 2),
+                "secid": secid, "issuer": name, "ytm_pct": round(ytm * 100, 2),
                 "g_spread_bp": round(gsp, 0),
                 "mod_dur": round(mdur, 2) if mdur is not None else None,
                 "tenor_yrs": round(tenor, 2), "yield_source": yield_source,

@@ -136,6 +136,18 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
+    # WAL lets readers (most interactive hybond commands) proceed while a
+    # writer (e.g. the hourly auto-classify cron, which can hold a
+    # connection open for 30-40+ minutes given real Ollama latency) is
+    # mid-transaction -- the default rollback-journal mode serializes ALL
+    # access, which is the actual cause of the recurring "database is
+    # locked" errors hit repeatedly this session. busy_timeout makes any
+    # genuine writer-vs-writer collision retry for 5s instead of failing
+    # immediately. In-memory paths (tests use ":memory:") don't support WAL
+    # and don't need it -- skip there rather than let the pragma no-op.
+    if str(path) != ":memory:":
+        con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=5000")
     return con
 
 
@@ -179,6 +191,29 @@ def init_db(con: sqlite3.Connection) -> None:
     issuer_cols = {r["name"] for r in con.execute("PRAGMA table_info(issuer)")}
     if "active" not in issuer_cols:
         con.execute("ALTER TABLE issuer ADD COLUMN active INTEGER DEFAULT 1")
+    # issuer: watchlist_tier replaces the flat active flag with a full
+    # lifecycle -- 1=active watchlist (full verdict card), 2=passive
+    # monitoring (collapsed dashboard row, no recommendation, data
+    # collection identical to tier 1). `active` is kept in sync (1 <->
+    # tier=1, 0 <-> tier=2) by every write path below rather than dropped,
+    # since it's cheap insurance for anything outside this codebase that
+    # might still read it -- but nothing in hybond itself reads `active`
+    # anymore (see universe_pipeline.py, which now reads watchlist_tier).
+    issuer_cols = {r["name"] for r in con.execute("PRAGMA table_info(issuer)")}
+    if "watchlist_tier" not in issuer_cols:
+        con.execute("ALTER TABLE issuer ADD COLUMN watchlist_tier INTEGER NOT NULL DEFAULT 2")
+        con.execute("UPDATE issuer SET watchlist_tier = 1 WHERE active = 1")
+        con.execute("UPDATE issuer SET watchlist_tier = 2 WHERE active = 0 OR active IS NULL")
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS watchlist_tier_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            issuer_id TEXT NOT NULL REFERENCES issuer(issuer_id),
+            from_tier INTEGER,
+            to_tier INTEGER NOT NULL,
+            reason TEXT,
+            changed_at TEXT NOT NULL
+        )
+    """)
     con.commit()
 
 
@@ -189,6 +224,154 @@ def upsert_issuer(con, issuer_id: str, name: str, sector: str | None = None, not
         "sector=excluded.sector, notes=excluded.notes",
         (issuer_id, name, sector, notes),
     )
+
+
+WATCHLIST_TIERS = {1, 2}
+
+
+def add_issuer_at_tier(con, issuer_id: str, name: str, watchlist_tier: int = 2,
+                        sector: str | None = None, notes: str | None = None) -> None:
+    """Insert a brand-new issuer row directly at a given tier -- the
+    `promote --confirm` path (manual_candidate -> real issuer). Errors on a
+    pre-existing issuer_id rather than silently overwriting it; use
+    set_watchlist_tier() to change an existing issuer's tier instead."""
+    if watchlist_tier not in WATCHLIST_TIERS:
+        raise ValueError(f"watchlist_tier must be one of {sorted(WATCHLIST_TIERS)}, got {watchlist_tier!r}")
+    existing = con.execute("SELECT 1 FROM issuer WHERE issuer_id=?", (issuer_id,)).fetchone()
+    if existing:
+        raise ValueError(f"issuer_id={issuer_id!r} already exists in issuer table")
+    con.execute(
+        "INSERT INTO issuer(issuer_id,name,sector,notes,active,watchlist_tier) "
+        "VALUES(?,?,?,?,?,?)",
+        (issuer_id, name, sector, notes, 1 if watchlist_tier == 1 else 0, watchlist_tier),
+    )
+
+
+def set_watchlist_tier(con, issuer_id: str, to_tier: int, reason: str | None = None,
+                        changed_at: str | None = None) -> dict:
+    """Move an existing issuer to a new tier, mirroring `active`, and log
+    the change to watchlist_tier_log for a full promote/demote audit trail.
+    Returns the log row as a dict. Raises ValueError on an unknown
+    issuer_id or an invalid to_tier."""
+    if to_tier not in WATCHLIST_TIERS:
+        raise ValueError(f"to_tier must be one of {sorted(WATCHLIST_TIERS)}, got {to_tier!r}")
+    row = con.execute("SELECT watchlist_tier FROM issuer WHERE issuer_id=?", (issuer_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"no issuer row with issuer_id={issuer_id!r}")
+    from_tier = row["watchlist_tier"]
+    changed_at = changed_at or datetime.now().isoformat(timespec="seconds")
+    con.execute("UPDATE issuer SET watchlist_tier=?, active=? WHERE issuer_id=?",
+                (to_tier, 1 if to_tier == 1 else 0, issuer_id))
+    cur = con.execute(
+        "INSERT INTO watchlist_tier_log(issuer_id,from_tier,to_tier,reason,changed_at) "
+        "VALUES(?,?,?,?,?)",
+        (issuer_id, from_tier, to_tier, reason, changed_at))
+    return {"id": cur.lastrowid, "issuer_id": issuer_id, "from_tier": from_tier,
+            "to_tier": to_tier, "reason": reason, "changed_at": changed_at}
+
+
+def list_issuers_by_tier(con, watchlist_tier: int | tuple[int, ...] | list[int]) -> list[dict]:
+    """Accepts a single tier (existing callers, e.g. export_dashboard_data.py's
+    `list_issuers_by_tier(con, 1)`) or an iterable of tiers (daily-pipeline
+    callers that want tier=1 and tier=2 together, e.g. `(1, 2)`)."""
+    tiers = (watchlist_tier,) if isinstance(watchlist_tier, int) else tuple(watchlist_tier)
+    placeholders = ",".join("?" for _ in tiers)
+    return [dict(r) for r in con.execute(
+        f"SELECT issuer_id, name, sector, notes, watchlist_tier FROM issuer "
+        f"WHERE watchlist_tier IN ({placeholders}) ORDER BY name", tiers)]
+
+
+ISSUER_BOND_SOURCES = {"watchlist_json", "universe_snapshot", "bond", "manual"}
+
+
+def init_issuer_bond(con) -> None:
+    """Persistent issuer_id -> secid mapping -- the single source of truth
+    the daily pipeline (pipeline.py) reads to know which bonds to fetch,
+    replacing a live per-run watchlist.json['secids'] read. Needed because
+    neither the `bond` table (only populated *by* a prior pipeline.run(), so
+    empty for any issuer never run yet) nor `universe_snapshot` (MOEX's live
+    broad screen, which drops a bond the moment it delists) is independently
+    complete -- confirmed live: Гарант-Инвест's two delisted ISINs exist in
+    neither table today, only in watchlist.json's static secids list. See
+    Watchlist Tier System follow-up task, 2026-08-20."""
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS issuer_bond (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            issuer_id TEXT NOT NULL REFERENCES issuer(issuer_id),
+            secid TEXT NOT NULL,
+            added_at TEXT NOT NULL,
+            source TEXT NOT NULL,
+            delisted INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(issuer_id, secid)
+        )
+    """)
+    con.commit()
+
+
+def add_issuer_bond(con, issuer_id: str, secid: str, source: str,
+                     added_at: str | None = None) -> None:
+    if source not in ISSUER_BOND_SOURCES:
+        raise ValueError(f"source must be one of {sorted(ISSUER_BOND_SOURCES)}, got {source!r}")
+    added_at = added_at or datetime.now().isoformat(timespec="seconds")
+    # ON CONFLICT DO NOTHING -- a secid keeps whichever source/added_at first
+    # recorded it, and never clobbers a delisted=1 flag a later sync sets.
+    con.execute(
+        "INSERT INTO issuer_bond(issuer_id,secid,added_at,source) VALUES(?,?,?,?) "
+        "ON CONFLICT(issuer_id,secid) DO NOTHING",
+        (issuer_id, secid, added_at, source))
+
+
+def sync_issuer_bond(con, watchlist: dict | None = None) -> None:
+    """Reconcile issuer_bond against every currently-known source, for every
+    issuer in the `issuer` table. Idempotent and cheap (no network) -- safe
+    to call on every pipeline run. Priority order matters only for which
+    `source` label a brand-new secid gets recorded with (first-seen wins,
+    via add_issuer_bond's ON CONFLICT DO NOTHING): watchlist.json first (it's
+    the only place a fully-delisted bond's ISIN may still be recorded),
+    then universe_snapshot, then bond. watchlist.json is optional -- absence
+    is not an error, just one fewer source to union (Step 5's graceful-
+    fallback requirement)."""
+    watchlist = watchlist or {}
+    issuer_ids = [r["issuer_id"] for r in con.execute("SELECT issuer_id FROM issuer")]
+    for issuer_id in issuer_ids:
+        for secid in (watchlist.get(issuer_id, {}) or {}).get("secids", []):
+            add_issuer_bond(con, issuer_id, secid, source="watchlist_json")
+        for r in con.execute(
+                "SELECT DISTINCT secid FROM universe_snapshot WHERE emitent_inn=?", (issuer_id,)):
+            add_issuer_bond(con, issuer_id, r["secid"], source="universe_snapshot")
+        for r in con.execute(
+                "SELECT DISTINCT secid FROM bond WHERE issuer_id=?", (issuer_id,)):
+            add_issuer_bond(con, issuer_id, r["secid"], source="bond")
+
+
+def refresh_delisted_flags(con, live_secids: set[str]) -> None:
+    """Called after a real MOEX fetch_bond_master() pull -- `live_secids` is
+    the actual set MOEX ISS returned this run, so `delisted` reflects a real
+    live check, not a guess. Symmetric: a secid can also come back off the
+    delisted list if it reappears (rare, but handled for correctness)."""
+    rows = [(secid,) for secid in
+            {r["secid"] for r in con.execute("SELECT DISTINCT secid FROM issuer_bond")}
+            if secid not in live_secids]
+    if rows:
+        con.executemany("UPDATE issuer_bond SET delisted=1 WHERE secid=? AND delisted=0", rows)
+    reappeared = [(secid,) for secid in live_secids]
+    if reappeared:
+        con.executemany("UPDATE issuer_bond SET delisted=0 WHERE secid=? AND delisted=1", reappeared)
+
+
+def list_bonds_for_issuer(con, issuer_id: str) -> list[str]:
+    """tier=2 (passive monitoring / confirmed-default historical monitoring)
+    issuers keep delisted bonds in scope -- that's the whole point of the
+    Гарант-Инвест case. tier=1 issuers only get currently-listed bonds."""
+    row = con.execute("SELECT watchlist_tier FROM issuer WHERE issuer_id=?",
+                       (issuer_id,)).fetchone()
+    if row and row["watchlist_tier"] == 2:
+        q = "SELECT secid FROM issuer_bond WHERE issuer_id=?"
+        params = (issuer_id,)
+    else:
+        q = "SELECT secid FROM issuer_bond WHERE issuer_id=? AND delisted=0"
+        params = (issuer_id,)
+    return [r["secid"] for r in con.execute(q, params)]
 
 
 PLACEMENT_FULL_THRESHOLD_PCT = 99.5  # >= this counts as "fully placed" (odd-lot
@@ -563,24 +746,28 @@ def insert_event(con, **f) -> int:
 # --- Ollama auto-classification (classify_ollama.py / `hybond auto-classify`) --
 
 def get_auto_classify_queue(con, limit: int | None = None, priority_only: bool = False) -> list[dict]:
-    """Unclassified filings, joined to issuer for issuer_name, ordered priority
-    (via classify_utils.queue_bucket -- same substring patterns the manual
-    `hybond queue` display already uses) before normal. Noise-bucketed filings
-    are NOT excluded here -- they still need classify_filing() to run so a
-    real (low-severity) event gets recorded, same as manual classification
-    would; queue_bucket is only used for ORDERING, not filtering, except when
-    priority_only is set."""
+    """Unclassified filings, joined to issuer for issuer_name, ordered
+    tier=1 (active watchlist) before tier=2 before everything else, then
+    by content priority (via classify_utils.queue_bucket -- same substring
+    patterns the manual `hybond queue` display already uses), then newest
+    first. Noise-bucketed filings are NOT excluded here -- they still need
+    classify_filing() to run so a real (low-severity) event gets recorded,
+    same as manual classification would; queue_bucket is only used for
+    ORDERING, not filtering, except when priority_only is set."""
     rows = con.execute(
         "SELECT f.body_hash, f.issuer_id, i.name AS issuer_name, f.title, f.url, "
-        "f.published FROM filing f JOIN issuer i ON i.issuer_id = f.issuer_id "
+        "f.published, i.watchlist_tier FROM filing f JOIN issuer i ON i.issuer_id = f.issuer_id "
         "WHERE f.classified = 0 ORDER BY f.published DESC"
     ).fetchall()
     buckets = [(r, queue_bucket(r["title"])) for r in rows]
     if priority_only:
         buckets = [(r, b) for r, b in buckets if b == "priority"]
     else:
-        order = {"priority": 0, "normal": 1, "noise": 2}
-        buckets.sort(key=lambda rb: order[rb[1]])
+        bucket_order = {"priority": 0, "normal": 1, "noise": 2}
+        # tier=1 first (0), everything else after (1) -- tier is NOT NULL so
+        # this never needs a None case (see issuer.watchlist_tier's schema).
+        buckets.sort(key=lambda rb: (0 if rb[0]["watchlist_tier"] == 1 else 1,
+                                      bucket_order[rb[1]]))
     out = [dict(r) for r, _ in buckets]
     return out[:limit] if limit is not None else out
 
@@ -1438,6 +1625,20 @@ def init_company_scan(con) -> None:
     time -- `id` is the PK, not `inn`), so history/drift can be queried
     later rather than only the latest result."""
     con.executescript(COMPANY_SCAN_SCHEMA)
+    # decision/decision_reason/decision_at: the user's OWN follow-up call on
+    # a scan result (promote / hold / avoid + why), distinct from the scan's
+    # own issuer_quality/bond_suitability verdict -- that's the model's
+    # assessment, this is what the user actually decided to do about it.
+    # Same PRAGMA table_info + conditional ALTER TABLE retrofit pattern used
+    # everywhere else in this file (see market_note.feed_url, event.
+    # classified_by, etc.) -- all nullable, existing rows stay NULL.
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(company_scan_result)")}
+    if "decision" not in cols:
+        con.execute("ALTER TABLE company_scan_result ADD COLUMN decision TEXT")
+    if "decision_reason" not in cols:
+        con.execute("ALTER TABLE company_scan_result ADD COLUMN decision_reason TEXT")
+    if "decision_at" not in cols:
+        con.execute("ALTER TABLE company_scan_result ADD COLUMN decision_at TEXT")
     con.commit()
 
 
@@ -1471,3 +1672,68 @@ def company_scan_history(con, inn: str) -> list[dict]:
     return [dict(r) for r in con.execute(
         "SELECT * FROM company_scan_result WHERE inn=? ORDER BY scanned_at DESC",
         (inn,)).fetchall()]
+
+
+# --- Manually-flagged promotion candidates ----------------------------------
+# `hybond promote --inn/--name`: promote.py's own ranking only ever sees
+# issuers already present in universe_snapshot (MOEX-tracked ВДО bonds) --
+# an issuer found purely via company-scan (free-web research, no MOEX quote)
+# can never appear there. This table is a lightweight, separate log of
+# "flag this issuer for the promotion report too", not a ranking input and
+# not a watchlist change -- adding a row here does NOT touch watchlist.json
+# or the `issuer` table. One row per ИНН (re-flagging updates it in place)
+# since the point is current visibility in the report, not a scan-style
+# history -- company_scan_result already owns that history separately.
+
+MANUAL_CANDIDATE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS manual_candidate (
+    inn        TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    added_at   TEXT NOT NULL,
+    note       TEXT
+);
+"""
+
+
+def init_manual_candidate(con) -> None:
+    con.executescript(MANUAL_CANDIDATE_SCHEMA)
+    con.commit()
+
+
+def add_manual_candidate(con, inn: str, name: str, note: str | None = None,
+                          added_at: str | None = None) -> None:
+    added_at = added_at or datetime.now().isoformat(timespec="seconds")
+    con.execute(
+        "INSERT INTO manual_candidate(inn,name,added_at,note) VALUES(?,?,?,?) "
+        "ON CONFLICT(inn) DO UPDATE SET name=excluded.name, "
+        "added_at=excluded.added_at, note=excluded.note",
+        (inn, name, added_at, note))
+
+
+def list_manual_candidates(con) -> list[dict]:
+    """Excludes ИНН already present in `issuer` (i.e. already actually
+    promoted/watchlisted) -- same "don't show stale duplicates" principle
+    list_scan_candidates() uses for the company-scan candidate chip list."""
+    known = {r["issuer_id"] for r in con.execute("SELECT issuer_id FROM issuer")}
+    rows = [dict(r) for r in con.execute(
+        "SELECT * FROM manual_candidate ORDER BY added_at DESC")]
+    return [r for r in rows if r["inn"] not in known]
+
+
+SCAN_DECISIONS = {"promote", "hold", "avoid"}
+
+
+def set_company_scan_decision(con, scan_id: int, decision: str, reason: str | None,
+                               decided_at: str | None = None) -> None:
+    """Records the user's own follow-up call on one company_scan_result row
+    (by `id`, not `inn` -- an issuer can have several scans over time, and a
+    decision belongs to a specific scan's findings, not the issuer in
+    general). `decided_at` defaults to now (UTC ISO) if not given."""
+    if decision not in SCAN_DECISIONS:
+        raise ValueError(f"decision must be one of {sorted(SCAN_DECISIONS)}, got {decision!r}")
+    decided_at = decided_at or datetime.now().isoformat(timespec="seconds")
+    cur = con.execute(
+        "UPDATE company_scan_result SET decision=?, decision_reason=?, decision_at=? "
+        "WHERE id=?", (decision, reason, decided_at, scan_id))
+    if cur.rowcount == 0:
+        raise ValueError(f"no company_scan_result row with id={scan_id}")
