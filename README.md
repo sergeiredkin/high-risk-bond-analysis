@@ -71,26 +71,64 @@ Run everything from the repo root with `src/` on the path (`PYTHONPATH=src`).
 
 ## Commands
 
+Full list (27 subcommands; `hybond <cmd> --help` for exact flags):
+
 ```
+--- Slice 1: prices / spreads / universe ---
 hybond selftest                     confirm MOEX/CBR reachability
 hybond run <watchlist.json>         Slice 1: prices, YTM, G-spread, maturity wall
 hybond universe [--refresh-emitent-map]
                                      full MOEX universe screen: G-spread, mispricing,
                                      AEY scenarios, rating join (not just the watchlist)
 hybond bonds <INN>                  live: all outstanding MOEX series for one issuer
+hybond ofz                          OFZ (government bond) universe + carry/roll-down
+hybond vdo-screen [--top N]         ranked ВДО screen
 hybond rate --inn --agency --rating [--outlook] [--action] [--date] | --list
                                      manual credit-rating entry (feeds default-probability layer)
-hybond financials <watchlist.json> [--key ...]
-                                     Slice 4: ГИР БО financials + six pillars
-hybond scrape <watchlist.json> [--selenium] [--smartlab] [--no-bodies] [--debug]
-                                     Slice 3: pull e-disclosure / smart-lab material-fact filings
-hybond queue                        Slice 3: filings awaiting classification
-hybond diff [--driving fixed|stat|hybrid] [--factlist-dir data/factlists]
-                                     Slice 2: change detection + factlist assembly
-hybond grade                        Slice 2: detector scorecard (run weeks later)
 hybond cbr --fetch YYYY-MM-DD | --fetch-all | --list | --install-cron
            --diff YYYY-MM-DD | --diff-all
                                      CBR key-rate meeting tracker: fetch, list, diff
+
+--- Slice 2: change detection ---
+hybond diff [--driving fixed|stat|hybrid] [--factlist-dir data/factlists]
+                                     Slice 2: change detection + factlist assembly
+hybond grade                        Slice 2: detector scorecard (run weeks later)
+
+--- Slice 3: e-disclosure event feed + classification ---
+hybond scrape <watchlist.json> [--selenium] [--smartlab] [--no-bodies] [--debug]
+                                     Slice 3: pull e-disclosure / smart-lab material-fact filings
+hybond market-notes                 pull smart-lab/MOEX-listing/CBR-press RSS market notes
+hybond queue [--skip-noise]         filings awaiting classification
+hybond market-notes-queue           market_note rows awaiting classification
+hybond auto-classify [--limit N] [--dry-run] [--priority-only]
+                      [--source filing|market_note] [--pause SECONDS]
+                                     local-Ollama (qwen3.5) auto-classification;
+                                     --pause bursts in --limit-sized chunks until
+                                     the queue is empty, releasing the DB between bursts
+hybond review-queue [--limit N]     events flagged needs_review=1
+hybond fill-price-impact            backfill price-before/after columns on event rows
+
+--- Slice 4: financials ---
+hybond financials <watchlist.json> [--key ...]
+                                     Slice 4: ГИР БО financials + six pillars
+
+--- Watchlist tier management ---
+hybond promote [--rating-floor] [--n-before-cap] [--cap] [--target]
+               [--inn INN --name NAME [--note]] [--confirm INN --tier 1|2]
+                                     Phase 2 candidate shortlist; also the
+                                     manual-candidate -> real-issuer path
+hybond watchlist-demote <inn> --reason REASON
+                                     move an active (tier=1) issuer to passive (tier=2)
+hybond watchlist-promote <inn> --reason REASON [--tier 1]
+                                     move a passive (tier=2) issuer to active (tier=1)
+hybond discover [watchlist.json]    MOEX-vs-watchlist.json coverage diff
+
+--- Company scan (ad hoc due-diligence on issuers outside the watchlist) ---
+hybond scan-company <query> [--key ...]
+hybond scan-candidates [--key] [--limit] [--no-rescan]
+hybond scan-candidates-list [--no-rescan]
+hybond scan-company-store <query> --markdown FILE [--card FILE] [--model MODEL]
+hybond scan-company-decide <id> --decision avoid|hold|promote --reason REASON
 ```
 
 ## Daily pipeline

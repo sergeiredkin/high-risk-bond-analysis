@@ -249,14 +249,21 @@ placeholders (reserved back in Slice 2) are now populated.
       taxonomy + hy-daily-brief + API stub
 - [x] Slice 4: ГИР БО financials client (parser-api + direct stub) +
       deterministic six-pillar compute + hy-credit-scorecard + hy-thesis-check;
-      factlist placeholders populated; 37 tests pass
+      factlist placeholders populated; 473 tests pass
 - [x] Bugfixes: `db.connect()` call-time DB_PATH; factlist tolerates
       pre-Slice-3/4 missing tables
-- [ ] Live connectivity in real env (`hybond selftest`; scrape needs Selenium +
-      edisclosure_id; financials need PARSER_API_KEY)
-- [ ] Run the full pipeline on a real 15–25 issuer watchlist; accumulate history
-- [ ] Week 4–6: `hybond grade` → pick detector; spot-check classifier; then
-      enable classify automation
+- [x] Live connectivity in real env (`hybond selftest`; daily cron running on
+      MOEX/CBR/e-disclosure/ГИР БО since real deployment)
+- [x] Run the full pipeline on a real watchlist; accumulate history (34
+      tier=1 active + 48 tier=2 passive-monitoring issuers as of 2026-08-21;
+      1,937 flag_log rows accumulated)
+- [x] Classify automation enabled: local Ollama (qwen3.5) auto-classify
+      pipeline, tier-priority queue, burst/pause mode, hourly cron +
+      classification-aware dashboard rebuild every 30 min
+- [ ] `hybond grade` → pick detector: 1,937 flag_log rows accumulated but
+      `--driving` still defaults to `fixed` (src/hybond/__main__.py) --
+      no evidence the grade output has actually been reviewed and a
+      detector chosen yet
 - [ ] Optional later: IFRS consolidated for holding-company issuers where
       single-entity РСБУ misleads (the one remaining OCR-ish task)
 

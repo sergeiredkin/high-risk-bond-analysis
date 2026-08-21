@@ -1,6 +1,6 @@
 # Feature: Default Probability Layer
 
-**Status:** Planned — implement after Slice 1–4 are running on real data  
+**Status:** Implemented — active in `src/hybond/compute/default_probs.py`, used by `promote.py` and `portfolio.py`  
 **Prerequisite:** Real G-spread data in `spread_snapshot` for at least one week  
 **Scope:** Two files + two extra fields in the factlist. No new slice, no new CLI command.
 
