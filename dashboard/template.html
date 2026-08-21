@@ -2034,6 +2034,18 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   themeToggleBtn.innerHTML = THEME_ICONS[theme === 'light' ? 'sun' : 'moon'];
   localStorage.setItem(THEME_KEY, theme);
+  // Canvas charts are rasterized (grid/text/signal colors baked in via
+  // getComputedStyle at draw time), not live CSS -- switching data-theme
+  // alone does not repaint them. Reuse the same redraw hooks gotoTab()
+  // already calls when switching into a tab (see below, near the tab
+  // switcher) so a theme toggle picks up the new palette immediately
+  // instead of only on the next tab switch. Guarded with `window.__x &&`
+  // since these hooks are assigned later in the script, after the chart
+  // that owns them first renders -- harmless no-op on the very first
+  // applyTheme() call at page load, before any chart exists yet.
+  if (window.__cbrRedraw) window.__cbrRedraw();
+  if (window.__marketMapRedraw) window.__marketMapRedraw();
+  if (window.__spreadHistRedraw) window.__spreadHistRedraw();
 }
 themeToggleBtn.addEventListener('click', () => {
   applyTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
@@ -5794,13 +5806,19 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     mmCtx.fillText(X_DEFS[mmState.x].label, P.l + plotW / 2 - 60, H - 6);
 
     if (mmState.y === 'mispricing') {
-      mmCtx.fillStyle = 'rgba(12,163,12,0.06)';
+      // Same undervalue/overvalue semantic as fairGreenColor/fairRedColor
+      // above -- reuse those (theme-aware) rather than a second, separately
+      // hardcoded green/red pair that would silently drift from the CSS
+      // tokens on a light/dark theme switch.
+      mmCtx.save(); mmCtx.globalAlpha = 0.06;
+      mmCtx.fillStyle = fairGreenColor;
       mmCtx.fillRect(P.l, P.t, plotW, sy(0) - P.t);
-      mmCtx.fillStyle = 'rgba(208,59,59,0.06)';
+      mmCtx.fillStyle = fairRedColor;
       mmCtx.fillRect(P.l, sy(0), plotW, P.t + plotH - sy(0));
-      mmCtx.fillStyle = '#0ca30c'; mmCtx.font = 'bold 11px system-ui';
+      mmCtx.restore();
+      mmCtx.fillStyle = fairGreenColor; mmCtx.font = 'bold 11px system-ui';
       mmCtx.fillText('↗ Недооценка', P.l + 6, P.t + 14);
-      mmCtx.fillStyle = '#d03b3b';
+      mmCtx.fillStyle = fairRedColor;
       mmCtx.fillText('↘ Переоценка', P.l + 6, P.t + plotH - 6);
     }
 
@@ -5925,13 +5943,13 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       }
 
       if (b.mispricing_bp !== null && b.mispricing_bp > 1000) {
-        mmCtx.save(); mmCtx.shadowColor = '#0ca30c'; mmCtx.shadowBlur = 10;
-        mmCtx.beginPath(); mmCtx.arc(px, py, r, 0, 7); mmCtx.strokeStyle = '#0ca30c'; mmCtx.lineWidth = 1.5; mmCtx.stroke();
+        mmCtx.save(); mmCtx.shadowColor = fairGreenColor; mmCtx.shadowBlur = 10;
+        mmCtx.beginPath(); mmCtx.arc(px, py, r, 0, 7); mmCtx.strokeStyle = fairGreenColor; mmCtx.lineWidth = 1.5; mmCtx.stroke();
         mmCtx.restore();
       }
       if (b.pd_gap !== null && b.pd_gap > 0.10) {
-        mmCtx.save(); mmCtx.shadowColor = '#d03b3b'; mmCtx.shadowBlur = 10;
-        mmCtx.beginPath(); mmCtx.arc(px, py, r + 2, 0, 7); mmCtx.strokeStyle = '#d03b3b'; mmCtx.lineWidth = 1.5; mmCtx.stroke();
+        mmCtx.save(); mmCtx.shadowColor = fairRedColor; mmCtx.shadowBlur = 10;
+        mmCtx.beginPath(); mmCtx.arc(px, py, r + 2, 0, 7); mmCtx.strokeStyle = fairRedColor; mmCtx.lineWidth = 1.5; mmCtx.stroke();
         mmCtx.restore();
       }
 
@@ -6781,6 +6799,12 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
     const gridColor = styles.getPropertyValue('--grid').trim() || '#e1e0d9';
     const textColor = styles.getPropertyValue('--text-secondary').trim() || '#52514e';
     const lineColor = styles.getPropertyValue('--text-primary').trim() || '#0b0b0b';
+    // Same base/stress-scenario semantic as the market map's undervalue/
+    // overvalue coloring (drawMap(), above) -- theme-aware green/red
+    // instead of a hardcoded pair, so it doesn't silently drift from those
+    // CSS tokens on a light/dark switch.
+    const goodColor = styles.getPropertyValue('--verdict-green').trim() || '#2ECC71';
+    const badColor = styles.getPropertyValue('--verdict-red').trim() || '#E74C3C';
 
     ctx.strokeStyle = gridColor; ctx.fillStyle = textColor; ctx.font = '10px system-ui'; ctx.lineWidth = 1;
     for (let i = 0; i < MONTHS; i += 3) {
@@ -6845,14 +6869,14 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
       }
       ctx.stroke(); ctx.restore();
     }
-    drawScenario(rs.base_annual_bp, '#0ca30c');
-    drawScenario(rs.stress_annual_bp, '#d03b3b');
+    drawScenario(rs.base_annual_bp, goodColor);
+    drawScenario(rs.stress_annual_bp, badColor);
 
     document.getElementById('cbrChartLegend').innerHTML = `
       <div class="legend-item"><span style="width:14px;height:2px;background:${lineColor};display:inline-block"></span>Фактическая КС</div>
       <div class="legend-item"><span class="swatch" style="background:rgba(42,120,214,0.4);border-radius:2px;width:14px;height:10px"></span>Прогноз ЦБ (годовой диапазон)</div>
-      <div class="legend-item"><span style="width:14px;height:2px;background:#0ca30c;display:inline-block;border-top:2px dashed #0ca30c"></span>Базовый сценарий</div>
-      <div class="legend-item"><span style="width:14px;height:2px;background:#d03b3b;display:inline-block;border-top:2px dashed #d03b3b"></span>Стресс-сценарий</div>
+      <div class="legend-item"><span style="width:14px;height:2px;background:${goodColor};display:inline-block;border-top:2px dashed ${goodColor}"></span>Базовый сценарий</div>
+      <div class="legend-item"><span style="width:14px;height:2px;background:${badColor};display:inline-block;border-top:2px dashed ${badColor}"></span>Стресс-сценарий</div>
     `;
   }
 
