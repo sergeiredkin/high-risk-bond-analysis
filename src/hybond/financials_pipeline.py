@@ -9,13 +9,18 @@ documented stub.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import date
 from pathlib import Path
 
+import requests
+
 from .compute import pillars as P
 from .ingest import nalog
 from .store import db
+
+logger = logging.getLogger(__name__)
 
 
 def load_watchlist(path: Path) -> dict:
@@ -55,6 +60,10 @@ def run_financials(
         # issuer_id is the ИНН by convention
         try:
             rec = nalog.fetch_financials(issuer_id, backend)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            logger.warning("network error fetching financials for %s: %s", issuer_id, e)
+            summary["errors"][issuer_id] = str(e)
+            continue
         except Exception as e:  # noqa: BLE001
             summary["errors"][issuer_id] = str(e)
             continue

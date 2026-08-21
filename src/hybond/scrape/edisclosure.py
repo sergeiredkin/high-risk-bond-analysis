@@ -38,6 +38,7 @@ depends on network access.
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import urllib.parse
 from dataclasses import dataclass
@@ -45,8 +46,21 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Protocol
 
+logger = logging.getLogger(__name__)
+
 RAW_DIR = Path("data/raw/edisclosure")
 BASE = "https://e-disclosure.azipi.ru"
+
+# Live incident, 2026-08-21 (PID 81344): a `hybond scrape` process ran 2+
+# hours blocked inside a network call, immune to SIGTERM (a caught signal
+# only runs its handler once the current C-level call returns -- see
+# pipeline_lock.py's docstring for the general shape of this problem).
+# HttpBackend already had a `requests` timeout, but SeleniumBackend's
+# `driver.get()` had NONE -- Selenium's page load has no default timeout at
+# all, and its underlying browser-control channel is exactly the kind of
+# C-level blocking call a Python signal handler can't interrupt. This is the
+# actual fix for that incident, not a defensive nice-to-have.
+DEFAULT_TIMEOUT_S = 30
 
 
 @dataclass(frozen=True)
@@ -71,18 +85,23 @@ class Backend(Protocol):
 
 class HttpBackend:
     """Plain requests backend. Default for AZIPI — no JS gate to work around."""
-    def __init__(self, timeout: int = 30):
+    def __init__(self, timeout: int = DEFAULT_TIMEOUT_S):
         import requests
         self._requests = requests
         self.timeout = timeout
 
     def get(self, url: str) -> str:
-        r = self._requests.get(
-            url, timeout=self.timeout,
-            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) "
-                                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                                    "Chrome/120.0 Safari/537.36",
-                     "Accept-Language": "ru,en"})
+        import requests
+        try:
+            r = self._requests.get(
+                url, timeout=self.timeout,
+                headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) "
+                                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                        "Chrome/120.0 Safari/537.36",
+                         "Accept-Language": "ru,en"})
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            logger.warning("HttpBackend.get network error for %s: %s", url, e)
+            raise
         if r.status_code != 200:
             raise RuntimeError(f"{url} -> HTTP {r.status_code}")
         return r.text
@@ -91,13 +110,21 @@ class HttpBackend:
 class SeleniumBackend:
     """Headless-browser backend, kept as an optional fallback only. Not used
     by the default AZIPI scrape path — selenium is an optional dependency
-    imported only here so the rest of the system has no browser requirement."""
-    def __init__(self, wait: float = 6.0, driver=None):
+    imported only here so the rest of the system has no browser requirement.
+
+    `page_load_timeout` is the actual fix for the 2026-08-21 live incident
+    (see module docstring above) -- without it, `driver.get()` can block
+    forever on a slow/hung page, in a C-level call a caught SIGTERM cannot
+    interrupt. Applied in `_ensure()` so it covers both a freshly-created
+    driver and one injected for tests."""
+    def __init__(self, wait: float = 6.0, driver=None, page_load_timeout: float = DEFAULT_TIMEOUT_S):
         self.wait = wait
+        self.page_load_timeout = page_load_timeout
         self._driver = driver  # inject for tests; else lazily created
 
     def _ensure(self):
         if self._driver is not None:
+            self._driver.set_page_load_timeout(self.page_load_timeout)
             return self._driver
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
@@ -106,12 +133,18 @@ class SeleniumBackend:
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
         self._driver = webdriver.Chrome(options=opts)
+        self._driver.set_page_load_timeout(self.page_load_timeout)
         return self._driver
 
     def get(self, url: str) -> str:
         import time
+        from selenium.common.exceptions import TimeoutException
         d = self._ensure()
-        d.get(url)
+        try:
+            d.get(url)
+        except TimeoutException as e:
+            logger.warning("SeleniumBackend.get page-load timeout for %s: %s", url, e)
+            raise
         time.sleep(self.wait)
         return d.page_source
 

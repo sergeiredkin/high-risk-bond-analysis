@@ -17,13 +17,28 @@ needed for the default path.
 """
 from __future__ import annotations
 
+import logging
+import time
 from datetime import date
 from pathlib import Path
+
+import requests
 
 from .classify_utils import queue_bucket
 from .scrape import edisclosure as ed
 from .scrape import smartlab as sl
 from .store import db
+
+logger = logging.getLogger(__name__)
+
+# Total-runtime guard (2026-08-21, see edisclosure.py's module docstring for
+# the live incident this whole task is about): even with per-call timeouts,
+# a watchlist-sized run making one request per quiet issuer can still add up
+# past any reasonable "this should be quick" expectation. 300s is well above
+# a normal run (watchlist size x a few seconds per request) but short enough
+# that a stuck/slow run gets cut off well before it becomes a multi-hour
+# hang like the live incident.
+MAX_RUNTIME_S = 300
 
 
 def run_scrape(
@@ -44,6 +59,7 @@ def run_scrape(
     edisclosure_id='smartlab' so hy-event-classify treats them as secondary."""
     snap_date = snap_date or date.today()
     backend = ed.SeleniumBackend() if use_selenium else ed.HttpBackend()
+    start_time = time.monotonic()
 
     con = db.connect()
     db.init_db(con)
@@ -56,11 +72,15 @@ def run_scrape(
     issuer_ids = [r["issuer_id"] for r in db.list_issuers_by_tier(con, (1, 2))]
 
     summary = {"snap_date": snap_date.isoformat(), "issuers": {}, "new_total": 0,
-               "errors": {}}
+               "errors": {}, "timed_out": False}
 
     # --- primary: homepage feed, one request for the whole watchlist -------
     try:
         home_html = ed.fetch_homepage(backend)
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+        logger.warning("network error fetching AZIPI homepage feed: %s", e)
+        home_html = ""
+        summary["errors"]["_homepage"] = str(e)
     except Exception as e:  # noqa: BLE001
         home_html = ""
         summary["errors"]["_homepage"] = str(e)
@@ -78,6 +98,14 @@ def run_scrape(
     debug_org_written = False
 
     for issuer_id in issuer_ids:
+        if time.monotonic() - start_time > MAX_RUNTIME_S:
+            logger.warning(
+                "run_scrape exceeded %ss total runtime, stopping before issuer %s "
+                "(%d/%d issuers processed)",
+                MAX_RUNTIME_S, issuer_id, len(summary["issuers"]), len(issuer_ids))
+            summary["timed_out"] = True
+            break
+
         filings = home_filings_by_inn.get(issuer_id, [])
 
         # --- secondary: this issuer had nothing in today's feed — check
@@ -93,6 +121,10 @@ def run_scrape(
                         summary["debug_org_page"] = str(debug_org_path)
                         debug_org_written = True
                     filings = ed.parse_org_page_feed(org_html, issuer_id)
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                logger.warning("network error scraping issuer %s (org search): %s", issuer_id, e)
+                summary["errors"][issuer_id] = str(e)
+                continue
             except Exception as e:  # noqa: BLE001
                 summary["errors"][issuer_id] = str(e)
                 continue
@@ -105,6 +137,9 @@ def run_scrape(
             if fetch_bodies and f.url:
                 try:
                     body = ed.fetch_message_body(f.url, backend)
+                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                    logger.warning("network error fetching filing body %s: %s", f.url, e)
+                    body = None
                 except Exception:  # noqa: BLE001
                     body = None
             db.insert_filing(
@@ -121,10 +156,19 @@ def run_scrape(
         summary["new_total"] += len(fresh)
 
     # --- secondary source: smart-lab.ru, community news + IR posts ---------
+    if use_smartlab and time.monotonic() - start_time > MAX_RUNTIME_S:
+        logger.warning("run_scrape exceeded %ss total runtime, skipping Smart-Lab pass",
+                        MAX_RUNTIME_S)
+        summary["timed_out"] = True
+        use_smartlab = False
     if use_smartlab:
         try:
             sl_html = sl.fetch_feed(backend)
             sl_filings = [f for f in sl.parse_feed(sl_html) if f.issuer_id in issuer_ids]
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            logger.warning("network error fetching Smart-Lab feed: %s", e)
+            sl_filings = []
+            summary["errors"]["_smartlab"] = str(e)
         except Exception as e:  # noqa: BLE001
             sl_filings = []
             summary["errors"]["_smartlab"] = str(e)
@@ -139,6 +183,9 @@ def run_scrape(
                 if fetch_bodies and f.url:
                     try:
                         body = ed.fetch_message_body(f.url, backend)
+                    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                        logger.warning("network error fetching Smart-Lab filing body %s: %s", f.url, e)
+                        body = None
                     except Exception:  # noqa: BLE001
                         body = None
                 db.insert_filing(

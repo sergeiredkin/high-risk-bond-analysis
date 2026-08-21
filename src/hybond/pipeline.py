@@ -11,13 +11,18 @@ Flow:
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from pathlib import Path
+
+import requests
 
 from .calendar.wall import build_wall, redemptions_by_issuer
 from .compute import bondmath, cashflows, default_probs, expected_return
 from .ingest import sources
 from .store import db
+
+logger = logging.getLogger(__name__)
 
 
 def load_watchlist(path: Path) -> dict[str, list[str]]:
@@ -88,7 +93,11 @@ def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
             # MOEX (see its docstring) -- fetch the real flag per-security
             # instead. Only ~25-30 calls here (watchlist size), not viable
             # at universe scale (~1000 bonds), see fetch_security_qualified.
-            qualified = sources.fetch_security_qualified(secid)
+            try:
+                qualified = sources.fetch_security_qualified(secid)
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                logger.warning("network error fetching qualified-investor flag for %s: %s", secid, e)
+                qualified = None
             # Registered-vs-placed volume: same fetch_bond_master() call, two
             # more columns (see sources.py) -- no new endpoint. issue_size is
             # the registered size, issue_size_placed how much has actually
@@ -128,7 +137,11 @@ def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
                 num_trades=q.get("NUMTRADES"), systime=q.get("SYSTIME"),
             )
 
-            bz = sources.fetch_bondization(secid)
+            try:
+                bz = sources.fetch_bondization(secid)
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                logger.warning("network error fetching bondization for %s: %s", secid, e)
+                continue
             coupons = [(sources.parse_date(c.get("coupondate")), c.get("value"))
                        for c in bz["coupons"]]
             coupons = [(d, val) for d, val in coupons if d]
