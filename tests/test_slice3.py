@@ -228,6 +228,20 @@ def test_event_insert_and_query(tmp_path):
     con.close()
 
 
+def test_skill_prompt_requires_three_question_note_ru():
+    # note_ru is what classify_api.py's prompt actually asks for (loaded
+    # from this SKILL.md, shared by both the Haiku and Opus backends via
+    # choose_model()) -- must require an investor-actionable summary
+    # (what happened / instrument / credit implication), not a vague
+    # broker-note-style note (2026-08-21).
+    from hybond.skills import classify_api
+    prompt = classify_api._load_prompt()
+    assert "must answer three questions" in prompt
+    assert "which instrument or series" in prompt
+    assert "credit implication for bondholders" in prompt
+    assert "Never write" in prompt and "without a credit" in prompt
+
+
 def test_api_hook_is_off_by_design():
     from hybond.skills import classify_api
     # model policy resolves without a call

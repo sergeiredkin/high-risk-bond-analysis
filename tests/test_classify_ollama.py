@@ -273,3 +273,22 @@ def test_batch_think_is_top_level_not_nested_in_options():
     payload = mock_post.call_args.kwargs["json"]
     assert payload["think"] is False
     assert "think" not in payload["options"]
+
+
+# ---- investor-actionable summary requirement (2026-08-21) ------------------
+# Both the single and batch prompts must require summaries that answer three
+# questions (what happened / which instrument / credit implication), so a
+# vague broker-note-style summary is never a compliant model output.
+
+def test_single_prompt_requires_three_question_summary():
+    from hybond.classify_ollama import PROMPT_TEMPLATE
+    assert "что конкретно произошло" in PROMPT_TEMPLATE
+    assert "выпуск/серия" in PROMPT_TEMPLATE
+    assert "кредитное значение для держателей" in PROMPT_TEMPLATE
+
+
+def test_batch_prompt_requires_three_question_summary():
+    from hybond.classify_ollama import BATCH_PROMPT_TEMPLATE
+    assert "что конкретно произошло" in BATCH_PROMPT_TEMPLATE
+    assert "выпуск/серия" in BATCH_PROMPT_TEMPLATE
+    assert "кредитное значение для держателей" in BATCH_PROMPT_TEMPLATE

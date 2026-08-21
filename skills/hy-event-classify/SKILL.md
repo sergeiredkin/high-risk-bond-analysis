@@ -81,9 +81,25 @@ Return JSON exactly matching the contract in `references/taxonomy.md`:
   "affected_pillar": "...", "direction": "worse|better|neutral",
   "confidence": 0.0,
   "so_what": "one English sentence: what this changes about default risk",
-  "note_ru": "одно-два предложения на русском для брифа/блога"
+  "note_ru": "макс. 2 предложения: что произошло + выпуск/серия (если применимо) + кредитное значение для держателей"
 }
 ```
+
+**`note_ru` must answer three questions in maximum 2 sentences: (1) what
+specifically happened, (2) which instrument or series, if applicable, (3) the
+credit implication for bondholders.** Never write `note_ru` without a credit
+angle — this field is what the daily brief publishes, and a summary with no
+credit angle is not investor-actionable. Avoid vague broker-note language.
+
+Bad: «Эмитент сохраняет осторожный взгляд на операционную деятельность»
+Good: «Эмитент не выплатил купон по серии 002P-07 в размере 32,8 млн руб —
+причина: арест счетов по решению суда. Для держателей облигаций: высокая
+вероятность технического дефолта по всем сериям в течение 10 рабочих дней.»
+
+Bad: «Раскрытие аналитической статьи с плановой отчётностью»
+Good: «Аналитики прогнозируют снижение выручки на 16% в 2026 году на фоне
+сокращения буровых объёмов Роснефти — основного клиента (62% выручки).
+Кредитное давление усиливается при текущем покрытии процентов 1.3x.»
 
 Then, in prose below the JSON, give a 2–4 sentence explanation of the call for a
 human — what in the filing drove the category and severity, and what to watch
