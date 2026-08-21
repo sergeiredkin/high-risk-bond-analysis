@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from hybond import __main__ as cli  # noqa: E402
+from hybond import pipeline_lock  # noqa: E402
 from hybond.store import db  # noqa: E402
 
 REBUILD_SCRIPT = ROOT / "rebuild_dashboard.sh"
@@ -45,7 +46,6 @@ def test_script_has_valid_bash_syntax():
 
 def test_script_references_expected_paths_and_steps():
     text = REBUILD_SCRIPT.read_text()
-    assert "data/logs/classify_running.lock" in text
     assert "data/logs/last_classify.timestamp" in text
     assert "export_dashboard_data.py" in text
     assert "build_dashboard.py" in text
@@ -99,7 +99,7 @@ def test_lock_file_removed_on_real_sigterm(tmp_path, monkeypatch):
     # clearing. Sends a real signal to this test process while
     # cmd_auto_classify is blocked in a mocked slow classify call.
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.sqlite")
-    monkeypatch.setattr(cli, "AUTO_CLASSIFY_LOCK_PATH", tmp_path / "classify_running.lock")
+    monkeypatch.setattr(pipeline_lock, "PIPELINE_LOCK_PATH", tmp_path / "pipeline_running.lock")
     monkeypatch.setattr(cli, "AUTO_CLASSIFY_TIMESTAMP_PATH", tmp_path / "last_classify.timestamp")
     con = db.connect()
     db.init_db(con)
@@ -127,4 +127,4 @@ def test_lock_file_removed_on_real_sigterm(tmp_path, monkeypatch):
         t.join(timeout=5)
 
     assert rc == 143
-    assert not cli.AUTO_CLASSIFY_LOCK_PATH.exists()
+    assert not pipeline_lock.PIPELINE_LOCK_PATH.exists()

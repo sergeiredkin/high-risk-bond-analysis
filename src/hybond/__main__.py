@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import signal
 import sys
 import time
 from datetime import date
@@ -40,8 +39,13 @@ def cmd_selftest(_args) -> int:
 
 
 def cmd_run(args) -> int:
-    from . import pipeline
-    report = pipeline.run(Path(args.watchlist), snap_date=date.today())
+    from . import pipeline, pipeline_lock
+    try:
+        with pipeline_lock.held():
+            report = pipeline.run(Path(args.watchlist), snap_date=date.today())
+    except pipeline_lock.PipelineInterrupted:
+        print("Interrupted", file=sys.stderr)
+        return 143
     text = json.dumps(report, ensure_ascii=False, indent=2)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
@@ -86,12 +90,17 @@ def cmd_grade(args) -> int:
 
 
 def cmd_scrape(args) -> int:
-    from . import scrape_pipeline
+    from . import pipeline_lock, scrape_pipeline
     from pathlib import Path
-    summary = scrape_pipeline.run_scrape(
-        Path(args.watchlist), use_selenium=args.selenium,
-        fetch_bodies=not args.no_bodies, debug=args.debug,
-        use_smartlab=args.smartlab)
+    try:
+        with pipeline_lock.held():
+            summary = scrape_pipeline.run_scrape(
+                Path(args.watchlist), use_selenium=args.selenium,
+                fetch_bodies=not args.no_bodies, debug=args.debug,
+                use_smartlab=args.smartlab)
+    except pipeline_lock.PipelineInterrupted:
+        print("Interrupted", file=sys.stderr)
+        return 143
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print(f"\n{summary['new_total']} new filing(s) across "
           f"{len(summary['issuers'])} issuer(s). "
@@ -334,25 +343,11 @@ def _auto_classify_pass(con, args) -> dict:
     return stats
 
 
-AUTO_CLASSIFY_LOCK_PATH = Path("data/logs/classify_running.lock")
 AUTO_CLASSIFY_TIMESTAMP_PATH = Path("data/logs/last_classify.timestamp")
 
 
-class AutoClassifyInterrupted(Exception):
-    """Raised from the SIGTERM/SIGINT handler installed in cmd_auto_classify.
-
-    Necessary because Python's DEFAULT SIGTERM handling terminates the
-    process immediately without running try/finally blocks -- unlike
-    SIGINT, which Python's default handler already converts into a
-    catchable KeyboardInterrupt. Confirmed live: `timeout N ./rebuild_
-    dashboard.sh` (which sends SIGTERM to the process group, including this
-    one) left classify_running.lock behind even with a bare try/finally
-    around the burst loop, because the finally block never ran. `timeout`,
-    `systemctl stop`, and a plain `kill` (no -9) all send SIGTERM, so this
-    is the realistic "interrupted mid-classify" case, not an edge case."""
-
-
 def cmd_auto_classify(args) -> int:
+    from . import pipeline_lock
     from .store import db
 
     pause = getattr(args, "pause", None)
@@ -360,60 +355,52 @@ def cmd_auto_classify(args) -> int:
               "skipped_confidence": 0, "failed": 0, "needs_review": 0}
     interrupted = False
 
-    def _raise_interrupted(signum, _frame):
-        raise AutoClassifyInterrupted(f"signal {signum}")
-
-    old_sigterm = signal.signal(signal.SIGTERM, _raise_interrupted)
-    old_sigint = signal.signal(signal.SIGINT, _raise_interrupted)
-
-    # Held for the whole call (all bursts under --pause included), not
-    # per-burst -- distinct from --pause's DB-connection release. This lock
-    # is mutual exclusion between separate auto-classify invocations (the
-    # hourly cron vs. rebuild_dashboard.sh's own catch-up burst), so it
-    # covers every caller automatically by living here rather than being
-    # duplicated as a bash-level trap in each calling script.
-    AUTO_CLASSIFY_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    AUTO_CLASSIFY_LOCK_PATH.write_text(str(int(time.time())))
     try:
-        # Without --pause: exactly one pass, one connection held open for its
-        # duration -- unchanged from before this flag existed. With --pause:
-        # the connection is closed (not just idle) between bursts so it's
-        # genuinely released, not merely uncontended -- the actual fix for
-        # background runs blocking interactive hybond commands. Loops until a
-        # burst classifies zero items (queue empty); there is no separate
-        # outer cap -- with --pause, --limit is the per-burst size, not a
-        # total budget (see cmd_auto_classify's --pause help text).
-        first = True
-        while True:
-            if pause and not first:
-                time.sleep(pause)
-            first = False
+        # pipeline_lock.held() is the shared cross-pipeline lock (scrape,
+        # auto-classify, and the daily `hybond run` all use it) -- covers
+        # the real live-confirmed collision (hourly_filings.sh's scrape
+        # step still running past its slot vs. rebuild_dashboard.sh's own
+        # classify burst), not just two auto-classify invocations racing
+        # each other. Held for the whole call (all bursts under --pause
+        # included), not per-burst -- distinct from --pause's DB-connection
+        # release.
+        with pipeline_lock.held():
+            # Without --pause: exactly one pass, one connection held open for
+            # its duration -- unchanged from before this flag existed. With
+            # --pause: the connection is closed (not just idle) between
+            # bursts so it's genuinely released, not merely uncontended --
+            # the actual fix for background runs blocking interactive hybond
+            # commands. Loops until a burst classifies zero items (queue
+            # empty); there is no separate outer cap -- with --pause,
+            # --limit is the per-burst size, not a total budget (see
+            # cmd_auto_classify's --pause help text).
+            first = True
+            while True:
+                if pause and not first:
+                    time.sleep(pause)
+                first = False
 
-            con = db.connect()
-            db.init_db(con)
-            db.init_market_note(con)
-            stats = _auto_classify_pass(con, args)
-            con.close()
+                con = db.connect()
+                db.init_db(con)
+                db.init_market_note(con)
+                stats = _auto_classify_pass(con, args)
+                con.close()
 
-            for k in total:
-                total[k] += stats[k]
+                for k in total:
+                    total[k] += stats[k]
 
-            # dry-run never marks items classified, so the same rows would be
-            # refetched every burst forever -- one pass is all --dry-run
-            # --pause can meaningfully do. A pass that processed fewer than
-            # --limit items already drained the queue (get_auto_classify_queue
-            # returns up to `limit` rows when that many exist) -- stop now
-            # rather than paying one more sleep + an empty probe pass to find
-            # that out.
-            drained = args.limit is not None and stats["processed"] < args.limit
-            if not pause or stats["processed"] == 0 or args.dry_run or drained:
-                break
-    except AutoClassifyInterrupted:
+                # dry-run never marks items classified, so the same rows
+                # would be refetched every burst forever -- one pass is all
+                # --dry-run --pause can meaningfully do. A pass that
+                # processed fewer than --limit items already drained the
+                # queue (get_auto_classify_queue returns up to `limit` rows
+                # when that many exist) -- stop now rather than paying one
+                # more sleep + an empty probe pass to find that out.
+                drained = args.limit is not None and stats["processed"] < args.limit
+                if not pause or stats["processed"] == 0 or args.dry_run or drained:
+                    break
+    except pipeline_lock.PipelineInterrupted:
         interrupted = True
-    finally:
-        AUTO_CLASSIFY_LOCK_PATH.unlink(missing_ok=True)
-        signal.signal(signal.SIGTERM, old_sigterm)
-        signal.signal(signal.SIGINT, old_sigint)
 
     # dry-run writes nothing to the DB, so it hasn't actually "categorized"
     # anything -- rebuild_dashboard.sh's staleness check should not treat a

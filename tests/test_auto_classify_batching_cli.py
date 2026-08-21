@@ -19,6 +19,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from hybond import __main__ as cli  # noqa: E402
+from hybond import pipeline_lock  # noqa: E402
 from hybond.store import db  # noqa: E402
 
 
@@ -30,7 +31,7 @@ def _isolate_lock_and_timestamp_paths(tmp_path, monkeypatch):
     # data/logs/ (a real bug caught live: a test run left a fake
     # last_classify.timestamp in the real repo, which rebuild_dashboard.sh
     # would have read as a genuine recent classify completion).
-    monkeypatch.setattr(cli, "AUTO_CLASSIFY_LOCK_PATH", tmp_path / "classify_running.lock")
+    monkeypatch.setattr(pipeline_lock, "PIPELINE_LOCK_PATH", tmp_path / "pipeline_running.lock")
     monkeypatch.setattr(cli, "AUTO_CLASSIFY_TIMESTAMP_PATH", tmp_path / "last_classify.timestamp")
 
 
@@ -205,7 +206,7 @@ def test_lock_file_removed_after_normal_completion(tmp_path, monkeypatch):
     with patch("hybond.classify_ollama.classify_filing") as mock_classify:
         mock_classify.return_value = _fake_result()
         cli.cmd_auto_classify(args)
-    assert not cli.AUTO_CLASSIFY_LOCK_PATH.exists()
+    assert not pipeline_lock.PIPELINE_LOCK_PATH.exists()
 
 
 def test_lock_file_removed_even_if_classify_raises(tmp_path, monkeypatch):
@@ -222,16 +223,15 @@ def test_lock_file_removed_even_if_classify_raises(tmp_path, monkeypatch):
         mock_classify.side_effect = RuntimeError("simulated crash mid-classify")
         with pytest.raises(RuntimeError):
             cli.cmd_auto_classify(args)
-    assert not cli.AUTO_CLASSIFY_LOCK_PATH.exists()
+    assert not pipeline_lock.PIPELINE_LOCK_PATH.exists()
 
 
 def test_lock_file_present_during_run():
     # Can't easily observe the lock file mid-run without a second thread;
-    # instead verify write_text was actually called with the right path by
-    # checking cmd_auto_classify's own module-level path constants exist and
-    # point at the expected filenames (regression guard against the path
-    # being silently renamed/removed from the function).
-    assert cli.AUTO_CLASSIFY_LOCK_PATH.name == "classify_running.lock"
+    # instead verify the expected path constants exist and point at the
+    # expected filenames (regression guard against the path being silently
+    # renamed/removed).
+    assert pipeline_lock.PIPELINE_LOCK_PATH.name == "pipeline_running.lock"
     assert cli.AUTO_CLASSIFY_TIMESTAMP_PATH.name == "last_classify.timestamp"
 
 

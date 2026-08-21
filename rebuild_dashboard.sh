@@ -8,7 +8,6 @@ conda activate base
 set -e
 cd "/home/sergei/Documents/high risk bond analysis"
 
-LOCK="data/logs/classify_running.lock"
 TS_FILE="data/logs/last_classify.timestamp"
 LOG="data/logs/rebuild_dashboard.log"
 mkdir -p data/logs
@@ -17,32 +16,18 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 
 log "=== rebuild_dashboard start ==="
 
-# Step 1: if hourly_filings.sh's own classify run is already in progress,
-# wait rather than race it for the GPU/DB -- up to 3 min, polling every 10s.
-# A lock still present after that is treated as stale (a crashed prior run)
-# rather than blocking the dashboard indefinitely.
-if [ -f "$LOCK" ]; then
-    log "classify_running.lock present, waiting up to 3 min"
-    waited=0
-    while [ -f "$LOCK" ] && [ "$waited" -lt 180 ]; do
-        sleep 10
-        waited=$((waited + 10))
-    done
-    if [ -f "$LOCK" ]; then
-        log "lock still present after ${waited}s wait -- proceeding anyway (stale lock from a crashed run?)"
-    else
-        log "lock cleared after ${waited}s"
-    fi
-fi
-
-# Step 2: catch up on classification if it hasn't run recently, so freshly
+# Step 1: catch up on classification if it hasn't run recently, so freshly
 # scraped filings don't render un-categorized on the dashboard. (The task
 # spec for this script literally read "if classify RAN within the last 20
 # min, run a burst" -- the inverse of what its own stated purpose requires;
 # corrected here to "if classify has NOT run in the last 20 min", which is
 # what actually achieves "fresh filings get categorized before appearing in
-# the dashboard".) cmd_auto_classify (src/hybond/__main__.py) writes/removes
-# $LOCK and writes $TS_FILE itself -- this script does not duplicate that.
+# the dashboard".) cmd_auto_classify (src/hybond/__main__.py) writes $TS_FILE
+# itself, and now also waits on the shared data/logs/pipeline_running.lock
+# internally (pipeline_lock.held()) before it starts writing -- if
+# hourly_filings.sh's scrape step is still running past its slot, this call
+# waits up to 60s for it rather than racing it, then proceeds regardless.
+# This script does not duplicate that wait itself.
 run_burst=1
 if [ -f "$TS_FILE" ]; then
     last_ts=$(cat "$TS_FILE")
@@ -61,7 +46,7 @@ if [ "$run_burst" -eq 1 ]; then
     log "classify burst done"
 fi
 
-# Step 3: rebuild. Local/no-network, so (unlike the classify burst above)
+# Step 2: rebuild. Local/no-network, so (unlike the classify burst above)
 # stays under `set -e` -- a real bug here should fail loudly.
 log "running export_dashboard_data.py"
 PYTHONPATH=src python scripts/export_dashboard_data.py >> "$LOG" 2>&1
