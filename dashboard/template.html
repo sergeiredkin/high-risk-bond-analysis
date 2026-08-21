@@ -592,6 +592,27 @@
   }
   .subtab-btn:hover { color: var(--text-primary); }
   .subtab-btn.active { color: var(--gold-primary); border-bottom-color: var(--gold-primary); }
+
+  /* ---- In-tab sub-navigation (Вотчлист/Рынок mini-nav, scroll-spy) -------
+     Same reasoning as .subtab-btn's own comment above: deliberately its own
+     class, not .tab-btn/.subtab-btn, so gotoTab()'s generic .tab-btn query
+     can't sweep these up. Smaller/more muted than both on purpose -- this
+     scrolls to an in-page section, it does not switch panels, so it should
+     read as a lighter-weight aid, not a real navigation control. Sticky at
+     top:0 is safe here: nothing else in the page pins itself to the top of
+     the viewport during in-tab scrolling (the ticker bar and header scroll
+     away normally), so there's no other fixed element to collide with. */
+  .subnav-bar { display: flex; gap: 2px; position: sticky; top: 0; z-index: 40;
+    background: var(--bg-surface); border-bottom: 1px solid var(--bg-border);
+    margin: 0 0 16px; padding: 0 2px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; }
+  .subnav-bar::-webkit-scrollbar { display: none; }
+  .subnav-btn { background: none; border: none; padding: 8px 12px; font-size: 12px;
+    font-weight: 600; color: var(--text-secondary); cursor: pointer;
+    border-bottom: 2px solid transparent; white-space: nowrap; flex-shrink: 0; }
+  .subnav-btn:hover { color: var(--text-primary); }
+  .subnav-btn.active { color: var(--gold-primary); border-bottom-color: var(--gold-primary); }
+
   .pftab-panel { display: none; }
   .pftab-panel.active { display: block; }
   .pt-value-text { font-size: 15px; line-height: 1.3; }
@@ -1180,6 +1201,15 @@
   <div id="backToHomeLink">← Главная</div>
 
   <div class="tab-panel active" id="tab-watchlist">
+  <!-- Mini-nav: scoped to the tab's two real sections only (tier=1/tier=2).
+       Grows with the content, not ahead of it -- no entries for a filters
+       panel or a G-спред chart until those actually exist in this tab
+       (G-спред already exists, but in the Рынок tab, where it has its own
+       mini-nav entry). See initSubnav() near the collapsible-sections init. -->
+  <nav class="subnav-bar" id="watchlistSubnav">
+    <button type="button" class="subnav-btn active" data-target="sec-table">Активный мониторинг</button>
+    <button type="button" class="subnav-btn" data-target="sec-passive-issuers">Пассивный мониторинг</button>
+  </nav>
   <!-- Queue backlog indicator (DATA.queue_count) -- see renderQueueIndicator()
        near the bottom of the script block. Empty/hidden when queue_count is
        0 or absent. -->
@@ -1266,6 +1296,19 @@
   </div>
 
   <div class="tab-panel" id="tab-market">
+  <!-- Mini-nav: scoped to real content only, per the same "grow with the
+       content" principle as the Вотчлист mini-nav -- no entry for a primary-
+       placements calendar (Первичные размещения), since that UI doesn't
+       exist yet anywhere in the dashboard. "Кривая ОФЗ" targets sec-market
+       (like "Скринер") but also activates the ОФЗ instrument toggle inside
+       it -- that's real, already-shipped OFZ carry/roll-down content, just
+       gated behind a toggle rather than its own section (see initSubnav()'s
+       data-activate-ofz handling). -->
+  <nav class="subnav-bar" id="marketSubnav">
+    <button type="button" class="subnav-btn active" data-target="sec-market">Скринер</button>
+    <button type="button" class="subnav-btn" data-target="sec-aey-heatmap">Хитмап</button>
+    <button type="button" class="subnav-btn" data-target="sec-market" data-activate-ofz="1">Кривая ОФЗ</button>
+  </nav>
     <section id="sec-market">
       <h2>Рынок ВДО — универсум и карта</h2>
       <p class="section-note">Полный список рублёвых корпоративных облигаций MOEX (не только вотчлист), как таблица-скринер и как scatter-карта — один и тот же отфильтрованный набор бумаг, переключаемый видом ниже. Собрано <code>hybond universe</code> (<code>src/hybond/universe_pipeline.py</code>). Раньше это были две отдельные вкладки с независимыми фильтрами (и «Карта рынка» жила в отдельном самодостаточном файле <code>market_map.html</code>) — объединены, чтобы порог рейтинга/ликвидности, диапазон срока погашения и диапазон AEY (скорр.) применялись одинаково в обоих представлениях.</p>
@@ -4599,6 +4642,62 @@ document.querySelectorAll('h2.collapsible-h2').forEach(h2 => {
     h2.closest('section').classList.toggle('collapsed');
   });
 });
+
+// ================= In-tab mini-nav (Вотчлист / Рынок) ===================
+// Same scroll-spy pattern as the Справка tab's TOC (see renderSpravka()):
+// smooth scrollIntoView on click, IntersectionObserver-based active-state
+// highlighting on scroll. Unlike Справка's TOC, targets here are whole
+// <section> elements the tab already renders, not per-question anchors
+// generated at render time -- so this can run once at page load rather
+// than being re-run inside a render function.
+function initSubnav(navId) {
+  const nav = document.getElementById(navId);
+  if (!nav) return;
+  const buttons = Array.from(nav.querySelectorAll('.subnav-btn'));
+
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.dataset.target);
+      if (!target) return;
+      // Harmless no-op for non-collapsible targets (sec-market,
+      // sec-aey-heatmap); actually expands sec-passive-issuers, which
+      // starts collapsed like sec-wall/sec-pillars.
+      target.classList.remove('collapsed');
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // "Кривая ОФЗ": real, already-shipped OFZ carry/roll-down content,
+      // just gated behind sec-market's instrument toggle rather than its
+      // own section -- activate it after the scroll starts, same
+      // scroll-then-activate-a-toggle pattern spravkaNavigate() already
+      // uses for the Рынок tab's Карта view (see opts.mapView there).
+      if (btn.dataset.activateOfz) {
+        requestAnimationFrame(() => {
+          const ofzBtn = document.querySelector(
+            '#marketInstrumentToggle .view-btn[data-instrument="ofz"]');
+          if (ofzBtn) ofzBtn.click();
+        });
+      }
+    });
+  });
+
+  // Two buttons can legitimately target the same section (Скринер and
+  // Кривая ОФЗ both point at sec-market) -- observe each unique target
+  // once, but highlight every button pointing at whichever one is in view.
+  const targetIds = Array.from(new Set(buttons.map(b => b.dataset.target)));
+  const targets = targetIds.map(id => document.getElementById(id)).filter(Boolean);
+  if (targets.length && window.IntersectionObserver) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const anchor = entry.target.id;
+          buttons.forEach(b => b.classList.toggle('active', b.dataset.target === anchor));
+        }
+      });
+    }, { root: null, rootMargin: '-10% 0px -75% 0px', threshold: 0 });
+    targets.forEach(t => observer.observe(t));
+  }
+}
+initSubnav('watchlistSubnav');
+initSubnav('marketSubnav');
 
 // ================= Tabs =================
 // Single shared tab-switch function -- the top .tab-bar, the ticker bar's
