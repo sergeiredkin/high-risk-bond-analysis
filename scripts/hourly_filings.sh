@@ -24,6 +24,9 @@ PYTHONPATH=src python -m hybond market-notes >> "$LOG" 2>&1
 # RTX 3060) -- --limit is a COMBINED budget across filings+market_notes (see
 # cmd_auto_classify), so --limit 30 can take up to ~40 min, inside the hourly
 # window but overlapping into the next run's start is possible if the queue
-# is deep; no lock/overlap guard exists yet if that becomes a problem.
+# is deep. cmd_auto_classify itself now holds data/logs/classify_running.lock
+# for the duration and writes data/logs/last_classify.timestamp on any
+# successful (non-dry-run) completion -- rebuild_dashboard.sh reads both to
+# avoid colliding with this cron and to know when a catch-up burst is needed.
 PYTHONPATH=src python -m hybond auto-classify --limit 30 >> "$LOG" 2>&1
 echo "=== done $(date) ===" >> "$LOG"

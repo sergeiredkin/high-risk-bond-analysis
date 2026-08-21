@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 
 import requests
 
 logger = logging.getLogger(__name__)
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "qwen3.5:latest"
+MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:latest")
 
 CONFIDENCE_THRESHOLD = 0.65
 REVIEW_CONFIDENCE_THRESHOLD = 0.80
@@ -88,11 +89,16 @@ def classify_filing(title: str, url: str, issuer_name: str) -> dict | None:
         "model": MODEL,
         "prompt": prompt,
         "stream": False,  # parse the full response at once, not a token stream
+        "think": False,  # top-level field per Ollama's /api/generate contract --
+        # nesting this under "options" is silently rejected ("invalid option
+        # provided option=think" server-side), so the model always ran its
+        # full reasoning chain and blew the context budget before emitting
+        # JSON. That misplacement, not a genuine model/timeout limitation,
+        # was the real cause of the empty-response failures seen all session.
         "options": {
             "temperature": 0.1,  # kept well under 0.2 -- higher produces inconsistent JSON
             "top_k": 20,
             "top_p": 0.95,
-            "think": False,
         },
     }
 
@@ -176,19 +182,21 @@ def classify_filings_batch(filings: list[dict]) -> list[dict | None]:
     dominates a single classify_filing() call (see its timeout comment).
 
     MEASURED AND NOT CURRENTLY VIABLE on this machine's real Ollama/qwen3.5
-    build (2026-08-20): two live batch calls (2 items, then 5 items, up to
-    num_predict=4000) both came back with done_reason='length' and an EMPTY
-    response after ~75s -- `think: False` does not actually suppress the
-    model's reasoning chain for a single item either (see classify_filing()'s
-    comment), and batching multiple items multiplies that reasoning cost
-    instead of amortizing it, so the model exhausts its output budget before
-    emitting any of the requested JSON array. Net effect: worse than
-    baseline (75s for zero classifications vs 52-77s for one).
+    build, as of the 2026-08-20 test: two live batch calls (2 items, then 5
+    items, up to num_predict=4000) both came back with done_reason='length'
+    and an EMPTY response after ~75s. CAVEAT (2026-08-21): that test ran with
+    `think: False` misplaced inside `options` instead of top-level in the
+    payload, which Ollama silently ignores ("invalid option provided
+    option=think" server-side) -- so the model was doing full unsuppressed
+    reasoning the whole time, not "think:False failing to suppress
+    reasoning" as originally concluded. Both call sites now send `think` at
+    the top level (see classify_filing()'s payload comment). The batch
+    finding above has NOT been re-measured against the fix and may no longer
+    hold -- re-test live before drawing new conclusions either way.
     cmd_auto_classify does NOT call this function as a result -- it stays
     single-item (classify_filing per filing, batched only for DB-commit
-    cadence). Kept here, unit-tested, in case a future model/Ollama build
-    handles `think: False` properly and this becomes viable -- re-measure
-    live before wiring it back into production, don't just re-enable it.
+    cadence). Kept here, unit-tested, in case a re-measurement shows this
+    becomes viable now that the payload bug is fixed.
 
     `filings`: list of dicts with title/url/issuer_name keys (the same
     shape get_auto_classify_queue()/get_auto_classify_market_notes() rows
@@ -209,7 +217,8 @@ def classify_filings_batch(filings: list[dict]) -> list[dict | None]:
         "model": MODEL,
         "prompt": prompt,
         "stream": False,
-        "options": {"temperature": 0.1, "top_k": 20, "top_p": 0.95, "think": False},
+        "think": False,  # top-level field, see classify_filing()'s payload comment
+        "options": {"temperature": 0.1, "top_k": 20, "top_p": 0.95},
     }
 
     try:

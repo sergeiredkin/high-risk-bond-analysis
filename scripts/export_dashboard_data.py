@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import sys
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, "src")
@@ -1133,6 +1133,12 @@ def main() -> None:
         "generated_at": report.get("snap_date"),
         "day1_snap_date": report.get("snap_date"),
         "day2_snap_date": issuers[0]["snap_date"] if issuers else None,
+        # Wall-clock time this export ran, distinct from day2_snap_date (the
+        # DB's data snapshot date) -- one answers "how fresh is the HTML
+        # page", the other "how fresh is the underlying data". Deliberately
+        # NOT used to override day2_snap_date anywhere: doing so would hide
+        # genuine data staleness behind an always-current-looking date.
+        "rebuild_at": datetime.now().isoformat(),
         "queue_count": queue_count_val,
         # PD/LGD Recalibration task (2026-08-16): dashboard-visible provenance
         # for the PD table + LGD assumption everything AEY-adjacent derives

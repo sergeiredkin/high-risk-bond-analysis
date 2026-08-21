@@ -6,6 +6,10 @@ __pycache__/
 # one of its allow-list entries, must never be committed.
 .claude/settings.local.json
 
+# Local environment config -- may contain secrets; .env.example is the
+# committed template.
+.env
+
 # Generated/accumulated data: sqlite DB, raw MOEX/CBR/e-disclosure caches,
 # logs, factlists -- all regenerable via the pipeline, not source.
 # (data/* rather than data/ so the !data/exports/ negation below can still

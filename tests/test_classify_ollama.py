@@ -116,6 +116,23 @@ def test_stream_false_and_temperature_bounded():
     assert kwargs["timeout"] == 120
 
 
+def test_think_is_top_level_not_nested_in_options():
+    # Regression: Ollama's /api/generate takes `think` as a top-level
+    # payload field. Nesting it under "options" is silently ignored
+    # server-side ("invalid option provided option=think"), so the model
+    # runs full unsuppressed reasoning and blows the context budget before
+    # emitting JSON -- the real cause of the empty-response failures
+    # observed all session (2026-08-20/21).
+    body = '{"category": "routine", "severity": "noise", "confidence": 0.9, "summary": "Плановое раскрытие"}'
+    with patch("hybond.classify_ollama.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(body)
+        classify_filing("test", "http://x", "Тест ОАО")
+    _, kwargs = mock_post.call_args
+    payload = kwargs["json"]
+    assert payload["think"] is False
+    assert "think" not in payload["options"]
+
+
 def test_taxonomy_matches_real_hy_event_classify_taxonomy():
     # Locks in the taxonomy-alignment decision: exactly the 10 categories /
     # 5 severities from skills/hy-event-classify/references/taxonomy.md, not
@@ -246,3 +263,13 @@ def test_batch_prompt_includes_all_titles():
     sent_prompt = mock_post.call_args.kwargs["json"]["prompt"]
     assert "Уникальный заголовок раз" in sent_prompt
     assert "Уникальный заголовок два" in sent_prompt
+
+
+def test_batch_think_is_top_level_not_nested_in_options():
+    # Same regression as classify_filing's payload -- see that test's comment.
+    with patch("hybond.classify_ollama.requests.post") as mock_post:
+        mock_post.return_value = _mock_response('[]')
+        classify_filings_batch([_filing()])
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["think"] is False
+    assert "think" not in payload["options"]

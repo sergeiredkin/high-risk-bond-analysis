@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import signal
 import sys
 import time
 from datetime import date
@@ -223,13 +224,9 @@ def _chunked(items: list, size: int) -> list[list]:
     return [items[i:i + size] for i in range(0, len(items), size)]
 
 
-def cmd_auto_classify(args) -> int:
+def _auto_classify_pass(con, args) -> dict:
     from .classify_ollama import MODEL, classify_filing, needs_review
     from .store import db
-
-    con = db.connect()
-    db.init_db(con)
-    db.init_market_note(con)
 
     # --limit is a COMBINED budget across both queues, not per-queue -- each
     # real classification call measured at 52-77s (see classify_ollama.py),
@@ -334,14 +331,109 @@ def cmd_auto_classify(args) -> int:
             time.sleep(0.1)
 
     con.commit()
-    con.close()
+    return stats
 
-    print(f"Processed: {stats['processed']}")
-    print(f"Classified: {stats['classified']} events written")
-    print(f"Noise (skipped): {stats['skipped_noise']}")
-    print(f"Low confidence (skipped): {stats['skipped_confidence']}")
-    print(f"Failed (API error): {stats['failed']}")
-    print(f"Needs review: {stats['needs_review']}")
+
+AUTO_CLASSIFY_LOCK_PATH = Path("data/logs/classify_running.lock")
+AUTO_CLASSIFY_TIMESTAMP_PATH = Path("data/logs/last_classify.timestamp")
+
+
+class AutoClassifyInterrupted(Exception):
+    """Raised from the SIGTERM/SIGINT handler installed in cmd_auto_classify.
+
+    Necessary because Python's DEFAULT SIGTERM handling terminates the
+    process immediately without running try/finally blocks -- unlike
+    SIGINT, which Python's default handler already converts into a
+    catchable KeyboardInterrupt. Confirmed live: `timeout N ./rebuild_
+    dashboard.sh` (which sends SIGTERM to the process group, including this
+    one) left classify_running.lock behind even with a bare try/finally
+    around the burst loop, because the finally block never ran. `timeout`,
+    `systemctl stop`, and a plain `kill` (no -9) all send SIGTERM, so this
+    is the realistic "interrupted mid-classify" case, not an edge case."""
+
+
+def cmd_auto_classify(args) -> int:
+    from .store import db
+
+    pause = getattr(args, "pause", None)
+    total = {"processed": 0, "classified": 0, "skipped_noise": 0,
+              "skipped_confidence": 0, "failed": 0, "needs_review": 0}
+    interrupted = False
+
+    def _raise_interrupted(signum, _frame):
+        raise AutoClassifyInterrupted(f"signal {signum}")
+
+    old_sigterm = signal.signal(signal.SIGTERM, _raise_interrupted)
+    old_sigint = signal.signal(signal.SIGINT, _raise_interrupted)
+
+    # Held for the whole call (all bursts under --pause included), not
+    # per-burst -- distinct from --pause's DB-connection release. This lock
+    # is mutual exclusion between separate auto-classify invocations (the
+    # hourly cron vs. rebuild_dashboard.sh's own catch-up burst), so it
+    # covers every caller automatically by living here rather than being
+    # duplicated as a bash-level trap in each calling script.
+    AUTO_CLASSIFY_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    AUTO_CLASSIFY_LOCK_PATH.write_text(str(int(time.time())))
+    try:
+        # Without --pause: exactly one pass, one connection held open for its
+        # duration -- unchanged from before this flag existed. With --pause:
+        # the connection is closed (not just idle) between bursts so it's
+        # genuinely released, not merely uncontended -- the actual fix for
+        # background runs blocking interactive hybond commands. Loops until a
+        # burst classifies zero items (queue empty); there is no separate
+        # outer cap -- with --pause, --limit is the per-burst size, not a
+        # total budget (see cmd_auto_classify's --pause help text).
+        first = True
+        while True:
+            if pause and not first:
+                time.sleep(pause)
+            first = False
+
+            con = db.connect()
+            db.init_db(con)
+            db.init_market_note(con)
+            stats = _auto_classify_pass(con, args)
+            con.close()
+
+            for k in total:
+                total[k] += stats[k]
+
+            # dry-run never marks items classified, so the same rows would be
+            # refetched every burst forever -- one pass is all --dry-run
+            # --pause can meaningfully do. A pass that processed fewer than
+            # --limit items already drained the queue (get_auto_classify_queue
+            # returns up to `limit` rows when that many exist) -- stop now
+            # rather than paying one more sleep + an empty probe pass to find
+            # that out.
+            drained = args.limit is not None and stats["processed"] < args.limit
+            if not pause or stats["processed"] == 0 or args.dry_run or drained:
+                break
+    except AutoClassifyInterrupted:
+        interrupted = True
+    finally:
+        AUTO_CLASSIFY_LOCK_PATH.unlink(missing_ok=True)
+        signal.signal(signal.SIGTERM, old_sigterm)
+        signal.signal(signal.SIGINT, old_sigint)
+
+    # dry-run writes nothing to the DB, so it hasn't actually "categorized"
+    # anything -- rebuild_dashboard.sh's staleness check should not treat a
+    # preview run as a real catch-up. An interrupted run may have partially
+    # classified items (already committed per-batch, see _auto_classify_pass)
+    # but is not a clean "completion" either -- don't claim the queue is caught up.
+    if not args.dry_run and not interrupted and total["processed"] > 0:
+        AUTO_CLASSIFY_TIMESTAMP_PATH.write_text(str(int(time.time())))
+
+    if interrupted:
+        print(f"Interrupted after processing {total['processed']} items "
+              f"({total['classified']} classified, already committed per-batch)")
+        return 143
+
+    print(f"Processed: {total['processed']}")
+    print(f"Classified: {total['classified']} events written")
+    print(f"Noise (skipped): {total['skipped_noise']}")
+    print(f"Low confidence (skipped): {total['skipped_confidence']}")
+    print(f"Failed (API error): {total['failed']}")
+    print(f"Needs review: {total['needs_review']}")
     return 0
 
 
@@ -992,6 +1084,13 @@ def main(argv=None) -> int:
                       help="only process rows classify_utils.queue_bucket() marks 'priority'")
     pac.add_argument("--source", choices=["filing", "market_note"], default=None,
                       help="restrict to one queue (default: both)")
+    pac.add_argument("--pause", type=int, default=None,
+                      help="burst mode: classify --limit items, close the DB "
+                           "connection, sleep this many seconds, repeat until "
+                           "the queue is empty. With --pause, --limit is the "
+                           "per-burst size, not a total budget -- lets long "
+                           "backlog runs release the DB between bursts instead "
+                           "of holding one connection for the whole run.")
     pac.set_defaults(func=cmd_auto_classify)
 
     prq = sub.add_parser("review-queue",

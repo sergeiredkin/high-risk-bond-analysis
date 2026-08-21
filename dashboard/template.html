@@ -2715,8 +2715,17 @@ applyDisclosure(
     ? localStorage.getItem('hybond-disclosure') : 'standard');
 
 // ---------- header / notes ----------
+// day2_snap_date is the DB's real data-freshness signal and is never
+// overridden by wall-clock time (see export_dashboard_data.py's rebuild_at
+// comment) -- rebuildAt is a second, distinct signal shown alongside it:
+// how recently this HTML page itself was regenerated.
+const rebuildAt = DATA.rebuild_at
+  ? DATA.rebuild_at.replace('T', ' ').slice(0, 16)
+  : null;
 document.getElementById('subtitle').textContent =
-  `Первый день: ${DATA.day1_snap_date}  ·  Последний день: ${DATA.day2_snap_date}  ·  ${DATA.issuers.length} эмитентов в списке наблюдения`;
+  `Первый день: ${DATA.day1_snap_date}  ·  Последний день: ${DATA.day2_snap_date}` +
+  (rebuildAt ? `  ·  Страница обновлена ${rebuildAt}` : '') +
+  `  ·  ${DATA.issuers.length} эмитентов в списке наблюдения`;
 document.getElementById('genTime').textContent = DATA.generated_at || '';
 
 const notesEl = document.getElementById('sec-notes');
