@@ -693,12 +693,43 @@ def known_issuers_meta(con) -> dict[str, dict]:
     return out
 
 
+def passive_events_since(con, issuer_id: str, since: str) -> list[dict]:
+    """Recent classified event/market_note rows for one tier=2 issuer, same
+    30-day-window query shape as assemble.py's _events_since_last/
+    _market_notes_since_last (Слайс 3), but called directly here rather
+    than through build_factlist() -- tier=2 issuers deliberately don't get
+    a full factlist built (see passive_issuers_export()'s docstring), so
+    reusing the heavy factlist path just to get events would mean building
+    bonds/six_pillars/thesis nobody asked for. These two DB helpers are
+    already issuer_id-agnostic to tier, so calling them straight from the
+    export script is a cheap, self-contained way to feed Лента событий
+    without touching the daily pipeline (2026-08-21 event-feed-filtering task)."""
+    out = []
+    try:
+        for r in db.events_since(con, issuer_id, since):
+            out.append({"occurred": r["occurred"], "category": r["category"],
+                        "severity": r["severity"], "summary": r["summary"], "source": "event"})
+    except Exception:  # noqa: BLE001 -- event table may not exist yet
+        pass
+    try:
+        for r in db.market_notes_since(con, issuer_id, since):
+            out.append({"occurred": r["occurred"], "category": r["category"],
+                        "severity": r["severity"], "summary": r["headline"],
+                        "source": r["source"], "url": r["url"]})
+    except Exception:  # noqa: BLE001 -- market_note table may not exist yet
+        pass
+    return out
+
+
 def passive_issuers_export(con, tier2_rows: list[dict], watchlist: dict, snap_date: str | None) -> list[dict]:
     """Lightweight rows for tier=2 (passive monitoring) issuers -- the
     collapsed Вотчлист section. No verdict/recommendation fields (bonds,
-    six_pillars, thesis, events) by design; those stay tier=1-only. `name`/
-    `sector` fall back to watchlist.json when the issuer happens to be
-    enriched there, else the bare `issuer` table values."""
+    six_pillars, thesis) by design; those stay tier=1-only. `events` is the
+    one exception, added for the event-feed-filtering task (2026-08-21):
+    Лента событий was silently tier=1-only even though tier=2 issuers can
+    have material classified events too -- see passive_events_since() above.
+    `name`/`sector` fall back to watchlist.json when the issuer happens to
+    be enriched there, else the bare `issuer` table values."""
     aey_by_inn: dict[str, list[float]] = defaultdict(list)
     if snap_date:
         for r in con.execute(
@@ -707,6 +738,7 @@ def passive_issuers_export(con, tier2_rows: list[dict], watchlist: dict, snap_da
             aey = r["aey_base_risk_adj"] if r["aey_base_risk_adj"] is not None else r["aey_base"]
             if aey is not None:
                 aey_by_inn[r["emitent_inn"]].append(aey)
+    since = (date.today() - timedelta(days=30)).isoformat()
 
     out = []
     for row in tier2_rows:
@@ -721,6 +753,7 @@ def passive_issuers_export(con, tier2_rows: list[dict], watchlist: dict, snap_da
             "watchlist_tier": 2,
             "rating": rating_row["rating"] if rating_row else meta.get("rating"),
             "last_aey_base_risk_adj_pct": round(max(aeys) * 100, 2) if aeys else None,
+            "events": passive_events_since(con, issuer_id, since),
         })
     return out
 

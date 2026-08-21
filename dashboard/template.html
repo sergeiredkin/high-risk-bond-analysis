@@ -34,6 +34,16 @@
     --verdict-red-bg: rgba(231,76,60,0.12);
     --verdict-grey:  #555D75;
     --verdict-grey-bg: rgba(85,93,117,0.12);
+    /* Dedicated "high" severity color, distinct from yellow (medium) --
+       Event-feed-filtering task (2026-08-21): --serious used to double as
+       "high" via the --serious alias below, but --serious's value
+       (--gold-hover, #E8920F) reads as near-identical to --verdict-yellow
+       (#F5A623) at badge size, so critical/high/medium had no real visual
+       hierarchy in Лента событий. Scoped as its own token rather than
+       changing --serious, which is reused elsewhere (mispricing thresholds,
+       conflict boxes) for an unrelated "elevated warning" meaning. */
+    --verdict-orange: #E8920F;
+    --verdict-orange-bg: rgba(232,146,15,0.16);
 
     /* Spacing (4px base) */
     --space-1: 4px;
@@ -122,6 +132,8 @@
     --verdict-red-bg: rgba(192,57,43,0.12);
     --verdict-grey:  #6E6E73;
     --verdict-grey-bg: rgba(110,110,115,0.12);
+    --verdict-orange: #C1690C;
+    --verdict-orange-bg: rgba(193,105,12,0.14);
   }
   * { box-sizing: border-box; }
   body {
@@ -289,6 +301,27 @@
   }
   .events-filter button.active { background: var(--text-primary); color: var(--surface-1); }
   .events-filter .events-filter-note { font-size: 14px; color: var(--text-muted); }
+  /* Severity badges (Лента событий, event-feed-filtering task 2026-08-21) --
+     pill-shaped with a tinted background + matching border, not just
+     colored text, so critical/high/medium read as three distinct weights
+     at a glance rather than three shades of the same underline. */
+  .ev-badge {
+    display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 10.5px;
+    font-weight: 700; text-transform: uppercase; letter-spacing: .03em; margin-left: 4px;
+  }
+  .ev-badge-critical { background: var(--verdict-red-bg); color: var(--verdict-red); border: 1px solid var(--verdict-red); }
+  .ev-badge-high { background: var(--verdict-orange-bg); color: var(--verdict-orange); border: 1px solid var(--verdict-orange); }
+  .ev-badge-medium { background: var(--verdict-yellow-bg); color: var(--verdict-yellow); border: 1px solid var(--verdict-yellow); }
+  /* Tier=2 (passive monitoring) events: same events-list look, but in a
+     separately-headed, collapsed-by-default block below the tier=1 feed --
+     never interleaved with tier=1 items, so a passive/lightly-tracked
+     issuer's event can't visually outrank an actively-monitored one. */
+  .events-passive-toggle {
+    font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-secondary); cursor: pointer; margin-top: 12px;
+  }
+  .events-passive-body { display: none; margin-top: 8px; }
+  .events-passive-body.expanded { display: block; }
   .maturity-filter { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin-bottom: 12px; }
   .maturity-filter label {
     display: flex; align-items: center; gap: 5px; font-size: 14px; cursor: pointer;
@@ -1722,6 +1755,8 @@
             <span class="events-filter-note" id="eventsFilterNote"></span>
           </div>
           <div id="eventsTimeline"></div>
+          <button type="button" class="events-passive-toggle" id="eventsPassiveToggle" style="display:none"></button>
+          <div class="events-passive-body" id="eventsPassiveBody"></div>
         </div>
       </section>
 
@@ -4566,17 +4601,27 @@ function renderIssuerDetail(iss) {
 // ================= Events timeline =================
 // Notification panel: pools `event` (primary, AZIPI-classified filings) and
 // `market_note` (secondary, e.g. Smart-Lab news) into one feed per issuer,
-// newest first. Default filter shows only high/critical; a single toggle
-// reveals the full history (medium/low/noise) -- deliberately one control,
-// not a per-severity taxonomy browser. market_note items are always tagged
-// with a source badge so a lower-confidence secondary item never reads with
-// the same weight as a primary AZIPI filing.
+// newest first within severity. Event-feed-filtering task (2026-08-21):
+// severity='noise' and category='routine' are excluded permanently, in
+// both toggle modes -- they were previously visible in "Вся история" mode,
+// which defeated the point of a "signal" feed. 'low' severity is likewise
+// never shown (only critical/high/medium are meaningful enough to surface
+// here at all); the toggle now only decides whether medium is included on
+// top of the always-shown critical/high. market_note items are always
+// tagged with a source badge so a lower-confidence secondary item never
+// reads with the same weight as a primary AZIPI filing. Tier=2 (passive
+// monitoring) issuers get their own events (see passive_events_since() in
+// export_dashboard_data.py), but rendered in a separate, collapsed-by-
+// default block below -- never interleaved with tier=1's prominent list.
 (function renderEvents() {
-  function SEV_ORDER(s) { return { critical: 4, high: 3, medium: 2, low: 1, noise: 0 }[s] ?? 0; }
-  const all = [];
+  const SEV_RANK = { critical: 3, high: 2, medium: 1 };
+  const rawAll = [];
   DATA.issuers.forEach(iss => {
-    (iss.events || []).forEach(e => all.push({ ...e, issuer: iss.name }));
-    (iss.market_notes || []).forEach(e => all.push({ ...e, issuer: iss.name }));
+    (iss.events || []).forEach(e => rawAll.push({ ...e, issuer: iss.name, tier: 1 }));
+    (iss.market_notes || []).forEach(e => rawAll.push({ ...e, issuer: iss.name, tier: 1 }));
+  });
+  (DATA.issuers_passive || []).forEach(iss => {
+    (iss.events || []).forEach(e => rawAll.push({ ...e, issuer: iss.name, tier: 2 }));
   });
   // MOEX Listing/CBR Press task (2026-08-17): DATA.market_wide_notes --
   // issuer_id IS NULL market_note rows (rate decisions, listing/delisting
@@ -4584,49 +4629,81 @@ function renderIssuerDetail(iss) {
   // structurally never attach to any issuer (see market_wide_notes()'s own
   // docstring in export_dashboard_data.py). Merged in here as their own
   // pseudo-"issuer" slot (the feed's friendly name) rather than left out of
-  // Лента событий entirely.
-  (DATA.market_wide_notes || []).forEach(e => all.push({
-    ...e, issuer: feedSourceLabel(e.source), category: e.category || 'рыночная новость',
+  // Лента событий entirely. Grouped with tier=1 (prominent), since these
+  // aren't tied to any passively-monitored issuer.
+  (DATA.market_wide_notes || []).forEach(e => rawAll.push({
+    ...e, issuer: feedSourceLabel(e.source), category: e.category || 'рыночная новость', tier: 1,
   }));
-  all.sort((a, b) => (b.occurred || '').localeCompare(a.occurred || '') || (SEV_ORDER(b.severity) - SEV_ORDER(a.severity)));
 
-  let mode = 'critical'; // 'critical' (default) | 'all'
+  // Permanent exclusion, independent of the mode toggle below: noise/low
+  // severity and routine-category events never appear in this feed.
+  const all = rawAll.filter(e => SEV_RANK[e.severity] && e.category !== 'routine');
+  all.sort((a, b) => (SEV_RANK[b.severity] - SEV_RANK[a.severity]) || (b.occurred || '').localeCompare(a.occurred || ''));
+
+  let mode = 'critical'; // 'critical' (default, critical+high) | 'all' (+ medium)
 
   function sourceBadge(e) {
     if (e.source === 'event' || !e.source) return '';
     return `<span class="source-badge secondary">по данным ${escapeHtml(feedSourceLabel(e.source))}</span>`;
   }
 
+  function sevBadge(sev) {
+    return `<span class="ev-badge ev-badge-${sev}">${sev}</span>`;
+  }
+
+  function eventLi(e) {
+    return `
+        <li style="border-color:${SEV_COLOR[e.severity]||'var(--grid)'}">
+          <b>${e.occurred || '—'} · ${e.issuer} · ${e.category}</b>${sevBadge(e.severity)}${sourceBadge(e)}
+          ${e.summary}
+        </li>`;
+  }
+
   function render() {
     const el = document.getElementById('eventsTimeline');
     const note = document.getElementById('eventsFilterNote');
-    const shown = mode === 'critical'
-      ? all.filter(e => e.severity === 'critical' || e.severity === 'high')
-      : all;
+    const passiveToggle = document.getElementById('eventsPassiveToggle');
+    const passiveBody = document.getElementById('eventsPassiveBody');
+    const allowed = mode === 'critical' ? new Set(['critical', 'high']) : new Set(['critical', 'high', 'medium']);
+    const visible = all.filter(e => allowed.has(e.severity));
+    const prominent = visible.filter(e => e.tier !== 2);
+    const passive = visible.filter(e => e.tier === 2);
+
     if (!all.length) {
       el.innerHTML = '<span style="color:var(--text-muted)">Событий нет.</span>';
       note.textContent = '';
+      passiveToggle.style.display = 'none';
+      passiveBody.classList.remove('expanded');
       return;
     }
-    if (!shown.length) {
-      el.innerHTML = '<span style="color:var(--text-muted)">Нет событий high/critical за период — переключите на «Вся история».</span>';
+    if (!prominent.length) {
+      el.innerHTML = '<span style="color:var(--text-muted)">Нет событий high/critical за период — переключите на «+ medium».</span>';
     } else {
-      el.innerHTML = `<ul class="events-list">` + shown.map(e => `
-        <li style="border-color:${SEV_COLOR[e.severity]||'var(--grid)'}">
-          <b>${e.occurred || '—'} · ${e.issuer} · ${e.category} <span style="color:${SEV_COLOR[e.severity]}">(${e.severity})</span></b>${sourceBadge(e)}
-          ${e.summary}
-        </li>`).join('') + `</ul>`;
+      el.innerHTML = `<ul class="events-list">` + prominent.map(eventLi).join('') + `</ul>`;
     }
     note.textContent = mode === 'critical'
-      ? `Показано ${shown.length} из ${all.length} (high/critical)`
-      : `Показано всё: ${all.length}`;
+      ? `Показано ${prominent.length} из ${all.filter(e => e.tier !== 2).length} (high/critical)`
+      : `Показано: ${prominent.length}`;
+
+    if (passive.length) {
+      passiveToggle.style.display = '';
+      passiveToggle.textContent = `Пассивный мониторинг — события (${passive.length})`;
+      passiveBody.innerHTML = `<ul class="events-list">` + passive.map(eventLi).join('') + `</ul>`;
+    } else {
+      passiveToggle.style.display = 'none';
+      passiveBody.classList.remove('expanded');
+    }
   }
 
   document.getElementById('eventsFilterToggle').addEventListener('click', function () {
     mode = mode === 'critical' ? 'all' : 'critical';
-    this.textContent = mode === 'critical' ? 'Только high/critical' : 'Вся история';
+    this.textContent = mode === 'critical' ? 'Только high/critical' : '+ medium';
     this.classList.toggle('active', mode === 'critical');
     render();
+  });
+
+  document.getElementById('eventsPassiveToggle').addEventListener('click', function () {
+    document.getElementById('eventsPassiveBody').classList.toggle('expanded');
   });
 
   render();

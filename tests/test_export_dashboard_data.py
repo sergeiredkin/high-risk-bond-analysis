@@ -2,13 +2,15 @@
 (2026-08-16), spread_history_by_issuer() (per-issuer G-spread history for
 the new Рынок tab delta table + chart)."""
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from hybond.store import db  # noqa: E402
-from export_dashboard_data import spread_history_by_issuer, passive_issuers_export  # noqa: E402
+from export_dashboard_data import (  # noqa: E402
+    spread_history_by_issuer, passive_issuers_export, passive_events_since)
 
 ISSUER = "7701234567"
 
@@ -188,3 +190,37 @@ def test_passive_issuers_export_falls_back_to_watchlist_json_name(tmp_path):
     con.close()
     assert rows[0]["name"] == "Watchlist.json Name"
     assert rows[0]["sector"] == "fuel_retail"
+
+
+# ---- tier=2 events in Лента событий (event-feed-filtering task, 2026-08-21) -
+
+def test_passive_issuers_export_includes_recent_events(tmp_path):
+    con = _bare_con(tmp_path)
+    db.add_issuer_at_tier(con, ISSUER, "Some Co", watchlist_tier=2)
+    con.commit()
+    db.insert_event(con, issuer_id=ISSUER, occurred=date.today().isoformat(),
+                     category="litigation", severity="high",
+                     summary="Иск подан", source_url=None)
+    con.commit()
+    rows = passive_issuers_export(con, db.list_issuers_by_tier(con, 2), {}, None)
+    con.close()
+    assert len(rows[0]["events"]) == 1
+    assert rows[0]["events"][0]["severity"] == "high"
+
+
+def test_passive_events_since_respects_since_date(tmp_path):
+    con = _bare_con(tmp_path)
+    db.add_issuer_at_tier(con, ISSUER, "Some Co", watchlist_tier=2)
+    con.commit()
+    old = (date.today() - timedelta(days=60)).isoformat()
+    recent = date.today().isoformat()
+    db.insert_event(con, issuer_id=ISSUER, occurred=old, category="litigation",
+                     severity="critical", summary="Старое", source_url=None)
+    db.insert_event(con, issuer_id=ISSUER, occurred=recent, category="litigation",
+                     severity="critical", summary="Свежее", source_url=None)
+    con.commit()
+    since = (date.today() - timedelta(days=30)).isoformat()
+    events = passive_events_since(con, ISSUER, since)
+    con.close()
+    assert len(events) == 1
+    assert events[0]["summary"] == "Свежее"
