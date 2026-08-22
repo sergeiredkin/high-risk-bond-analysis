@@ -22,4 +22,4 @@ if [ -z "$PARSER_API_KEY" ]; then
     exit 1
 fi
 
-PYTHONPATH=src python -m hybond financials watchlist.json >> "$LOG" 2>&1
+PYTHONPATH=src python -m hybond financials >> "$LOG" 2>&1

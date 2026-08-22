@@ -109,8 +109,9 @@ hybond review-queue [--limit N]     events flagged needs_review=1
 hybond fill-price-impact            backfill price-before/after columns on event rows
 
 --- Slice 4: financials ---
-hybond financials <watchlist.json> [--key ...]
-                                     Slice 4: ГИР БО financials + six pillars
+hybond financials [--inn INN] [--key ...]
+                                     Slice 4: ГИР БО financials + six pillars;
+                                     no args = all tier=1+2 issuers, --inn = one issuer
 
 --- Watchlist tier management ---
 hybond promote [--rating-floor] [--n-before-cap] [--cap] [--target]

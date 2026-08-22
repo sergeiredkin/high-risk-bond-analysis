@@ -754,9 +754,8 @@ def cmd_rate(args) -> int:
 
 def cmd_financials(args) -> int:
     from . import financials_pipeline
-    from pathlib import Path
-    summary = financials_pipeline.run_financials(Path(args.watchlist),
-                                                 api_key=args.key)
+    summary = financials_pipeline.run_financials(None, api_key=args.key,
+                                                 inn=args.inn)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if "error" in summary:
         print(f"\n{summary['error']}", file=sys.stderr)
@@ -1172,9 +1171,11 @@ def main(argv=None) -> int:
     pr_.add_argument("--list", action="store_true", help="show current ratings for all issuers")
     pr_.set_defaults(func=cmd_rate)
     pf = sub.add_parser("financials",
-                        help="Slice 4: fetch ГИР БО financials + compute pillars")
-    pf.add_argument("watchlist")
+                        help="Slice 4: fetch ГИР БО financials + compute pillars "
+                             "(all tier=1+2 issuers, or a single issuer via --inn)")
     pf.add_argument("--key", help="parser-api key (or set PARSER_API_KEY)")
+    pf.add_argument("--inn", help="run financials for a single issuer ИНН only, "
+                                  "instead of the full tier=1+2 watchlist")
     pf.set_defaults(func=cmd_financials)
     psc = sub.add_parser("scan-company",
                          help="[DEPRECATED, needs a key] LLM company-scan for an issuer "

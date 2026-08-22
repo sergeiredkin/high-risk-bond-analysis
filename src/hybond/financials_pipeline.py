@@ -31,12 +31,14 @@ def run_financials(
     watchlist_path: Path | None,
     api_key: str | None = None,
     snap_date: date | None = None,
+    inn: str | None = None,
 ) -> dict:
     """Issuer scope is `issuer` WHERE watchlist_tier IN (1, 2), matching
     pipeline.py's daily loop -- see the Watchlist Tier System follow-up
     task, 2026-08-20. watchlist.json (when present) is read only as a
     fallback enrichment source for `name`, since `issuer.name` is always
-    authoritative once set."""
+    authoritative once set. Pass `inn` to run a single issuer instead of the
+    full tier=1+2 scope, regardless of that issuer's tier."""
     snap_date = snap_date or date.today()
     api_key = api_key or os.environ.get("PARSER_API_KEY")
     if not api_key:
@@ -53,7 +55,16 @@ def run_financials(
 
     summary = {"snap_date": snap_date.isoformat(), "issuers": {}, "errors": {}}
 
-    issuer_rows = db.list_issuers_by_tier(con, (1, 2))
+    if inn:
+        row = con.execute(
+            "SELECT issuer_id, name, sector, notes, watchlist_tier FROM issuer "
+            "WHERE issuer_id=?", (inn,)).fetchone()
+        if row is None:
+            con.close()
+            return {"error": f"no issuer row with issuer_id={inn!r}"}
+        issuer_rows = [dict(row)]
+    else:
+        issuer_rows = db.list_issuers_by_tier(con, (1, 2))
     for row in issuer_rows:
         issuer_id, sector = row["issuer_id"], row["sector"]
         v = wl.get(issuer_id, {})
