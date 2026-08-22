@@ -903,6 +903,20 @@
   #cbrChart { width: 100%; height: 320px; display: block; }
   .cbr-chart-card { position: relative; }
 
+  /* Mobile-overflow audit (2026-08-21): #mmChart/#cbrChart both pin their
+     CSS width to 100% of their container, so drawMap()/drawChart() reading
+     canvas.getBoundingClientRect() back always measures the CONTAINER's
+     available width. #spreadHistChart had no such rule -- drawSpreadHistChart()
+     falls back to a hardcoded 800 CSS px (`rect.width || 800`) the first time
+     it draws while its tab is still hidden (rect.width reads 0 there), which
+     then sets canvas.width=800. With no CSS width to override that, every
+     SUBSequent redraw measures the canvas's OWN now-800px box instead of its
+     container -- a self-perpetuating stale width that never shrinks back
+     down, confirmed live: 356px of page-level horizontal overflow at 375px.
+     This one rule breaks that self-reference the same way it's already
+     broken for the other two canvases. */
+  #spreadHistChart { width: 100%; height: 320px; display: block; }
+
   /* ---- Rate Decision Simulator ------------------------------------------- */
   .cbr-sim-refs { display: flex; gap: 16px; flex-wrap: wrap; margin: 10px 0 14px; font-size: 12.5px; }
   .cbr-sim-ref { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
@@ -4586,7 +4600,14 @@ function renderIssuerDetail(iss) {
     </div>`;
   }
   if (iss.bonds && iss.bonds.length) {
-    html += `<div style="margin-top:10px"><b>Облигации</b><table style="margin-top:6px"><thead><tr>
+    // 8 columns -- doesn't overflow 375px with today's content (short
+    // SECID/date/percent cells), but every other data table in the
+    // dashboard gets the standard .table-scroll wrapper as a matter of
+    // course (mobile-overflow audit, 2026-08-21); this was the one
+    // outlier, and 8 columns is exactly the shape that WOULD overflow
+    // with a longer SECID or a wider AEY tooltip column, so wrap it
+    // defensively rather than wait for that to actually happen.
+    html += `<div style="margin-top:10px"><b>Облигации</b><div class="table-scroll"><table style="margin-top:6px"><thead><tr>
       <th>SECID</th><th>Погашение</th><th>Купон, %</th><th>G-спред</th><th>YTM</th>
       <th>Мисценка</th><th title="${escapeHtml(AEY_RISK_ADJ_TOOLTIP)}" style="cursor:help">AEY (скорр.)</th><th>Размещение</th></tr></thead><tbody>` +
       iss.bonds.map(b => {
@@ -4601,7 +4622,7 @@ function renderIssuerDetail(iss) {
         return `<tr><td>${b.short_name||b.secid}</td><td>${b.mat_date||'—'}</td><td>${b.coupon_pct??'—'}</td>` +
           `<td>${gcell}</td><td>${b.ytm_pct??'—'}</td><td>${misCell}</td><td>${aeyCell}</td><td>${placeCell}</td></tr>`;
       }).join('') +
-      `</tbody></table>` +
+      `</tbody></table></div>` +
       (iss.bonds.some(b => b.yield_source === 'moex')
         ? `<p style="margin-top:4px;color:var(--text-muted);font-size:13px;line-height:1.6">* G-спред оценён по доходности MOEX (флоатер — купон ещё не зафиксирован), не по расчётной YTM (ACT/365F)</p>`
         : '') +
