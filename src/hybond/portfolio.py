@@ -11,6 +11,8 @@ caveat about analysis_json's other fields).
 """
 from __future__ import annotations
 
+import math
+
 from .cbr_tracker import _midpoint
 from .compute import default_probs
 from .store import db
@@ -192,3 +194,146 @@ def rank_candidates(con, limit: int = 15, per_issuer_cap: int = 2,
     query += " ORDER BY aey_base_risk_adj DESC"
     rows = [dict(r) for r in con.execute(query, params)]
     return apply_issuer_cap(rows, per_issuer_cap)[:limit]
+
+
+def poisson_pmf(lam: float, n: int) -> float:
+    """P(N = n) for a Poisson(lam) distribution -- used to price the
+    probability of exactly n issuer defaults in the multi-default stress
+    test below, given lam = E[defaults] = sum of the portfolio's per-issuer
+    1yr PDs (the standard Poisson-binomial approximation for a sum of
+    independent low-probability Bernoulli events)."""
+    if lam < 0:
+        raise ValueError(f"lam must be >= 0, got {lam}")
+    if n < 0:
+        raise ValueError(f"n must be >= 0, got {n}")
+    return math.exp(-lam) * lam ** n / math.factorial(n)
+
+
+def _aggregate_positions_by_issuer(positions: list[dict]) -> list[dict]:
+    """Collapse per-bond positions to per-issuer aggregates: summed weight,
+    weight-contribution to portfolio AEY, and the weighted-average 1yr PD
+    across that issuer's own positions (normally identical across an
+    issuer's bonds since PD is rating-derived, but weight-averaged rather
+    than just taking the first value in case they ever differ). Positions
+    with pd_1y=None (no rating -> no PD) are excluded from the PD-driven
+    ordering entirely -- an unrated issuer can't be placed in a "worst PD
+    first" ranking, and silently treating it as PD=0 would be the wrong kind
+    of wrong (understating risk, not just missing data)."""
+    agg: dict[str, dict] = {}
+    for p in positions:
+        iid = p["issuer_id"]
+        a = agg.setdefault(iid, {
+            "issuer_id": iid, "name": p.get("name", iid),
+            "weight": 0.0, "aey_contrib": 0.0, "pd_weight": 0.0, "pd_sum": 0.0,
+        })
+        w = p["weight_frac"]
+        a["weight"] += w
+        a["aey_contrib"] += w * p["aey_pct"]
+        if p.get("pd_1y") is not None:
+            a["pd_sum"] += w * p["pd_1y"]
+            a["pd_weight"] += w
+    issuers = []
+    for a in agg.values():
+        pd = (a["pd_sum"] / a["pd_weight"]) if a["pd_weight"] > 0 else None
+        issuers.append({"issuer_id": a["issuer_id"], "name": a["name"],
+                        "weight": a["weight"], "aey_contrib": a["aey_contrib"],
+                        "pd_1y": pd})
+    return issuers
+
+
+def multi_default_stress_test(
+    positions: list[dict],
+    scenario_ns: tuple[int, ...] = (0, 1, 2, 3, 5, 8),
+    lgd: float | None = None,
+    ofz_rate_pct: float | None = None,
+    cbr_rate_pct: float | None = None,
+) -> dict:
+    """Multi-default portfolio stress test (Portfolio stress test v2 task,
+    2026-08-22): extends the single-issuer default stress test to N
+    simultaneous defaults, worst-PD-first (pessimistic ordering).
+
+    `positions` is a list of {issuer_id, name, weight_frac, aey_pct, pd_1y}
+    dicts, one per held bond (weight_frac in [0, 1], aey_pct/pd_1y in
+    percent-point / percent units respectively) -- already loaded from the
+    DB-backed dashboard export upstream, this function does no I/O itself so
+    it stays trivially testable against known inputs.
+
+    For each scenario N: the N issuers with the highest 1yr PD are assumed
+    to default (worst-case ordering, not a random draw). Portfolio return
+    is the weighted-average AEY of the SURVIVING issuers' own positions
+    (renormalised to their own weight, i.e. "what the rest of the portfolio
+    still earns on its own merits") minus a capital-loss term of
+    N * avg_issuer_weight * LGD, expressed in AEY percentage points --
+    avg_issuer_weight = total portfolio weight / number of distinct issuers
+    held, an explicit simplification (actual defaulted issuers' weights are
+    not summed directly) matching this task's own formula spec, not a
+    refinement of the existing single-issuer stress test's exact-weight
+    calculation.
+
+    E[defaults] = sum of every held issuer's own 1yr PD (Poisson lambda,
+    unclamped by portfolio size -- this is the raw expectation, not a
+    per-scenario figure). Scenario N is capped at the number of distinct
+    issuers actually held (`n_effective`) since more defaults than issuers
+    held is not a state this portfolio can reach; `capped=True` flags rows
+    where the requested N exceeded that.
+
+    break_even_n is the largest N in [0, n_issuers] at which the portfolio
+    still returns at least ofz_rate_pct -- None if ofz_rate_pct wasn't
+    supplied, -1 if the portfolio is already below the OFZ rate at N=0
+    (never breaks even, not "breaks even at a negative number of
+    defaults")."""
+    lgd = default_probs.LGD if lgd is None else lgd
+    all_issuers = _aggregate_positions_by_issuer(positions)
+    issuers = [i for i in all_issuers if i["pd_1y"] is not None]
+    excluded_unrated = len(all_issuers) - len(issuers)
+    n_issuers = len(issuers)
+    total_weight = sum(i["weight"] for i in issuers)
+    expected_defaults = sum(i["pd_1y"] for i in issuers)
+    avg_issuer_weight = (total_weight / n_issuers) if n_issuers else 0.0
+    ranked = sorted(issuers, key=lambda i: i["pd_1y"], reverse=True)
+
+    def _scenario_return(n: int) -> tuple[float, int]:
+        n_eff = min(n, n_issuers)
+        survivors = ranked[n_eff:]
+        surv_w = sum(s["weight"] for s in survivors)
+        surv_aey = (sum(s["aey_contrib"] for s in survivors) / surv_w) if surv_w > 0 else 0.0
+        loss_pp = n_eff * avg_issuer_weight * lgd * 100
+        return surv_aey - loss_pp, n_eff
+
+    scenarios = []
+    for n in scenario_ns:
+        ret, n_eff = _scenario_return(n)
+        scenarios.append({
+            "n_defaults": n, "n_effective": n_eff, "capped": n > n_issuers,
+            "portfolio_return_pct": ret,
+            "vs_ofz_pp": (ret - ofz_rate_pct) if ofz_rate_pct is not None else None,
+            "vs_cbr_pp": (ret - cbr_rate_pct) if cbr_rate_pct is not None else None,
+            "probability": poisson_pmf(expected_defaults, n),
+        })
+
+    break_even_n = None
+    if ofz_rate_pct is not None:
+        ret0, _ = _scenario_return(0)
+        if ret0 < ofz_rate_pct:
+            break_even_n = -1
+        else:
+            break_even_n = 0
+            for n in range(1, n_issuers + 1):
+                ret, _ = _scenario_return(n)
+                if ret >= ofz_rate_pct:
+                    break_even_n = n
+                else:
+                    break
+
+    return {
+        "expected_defaults": expected_defaults,
+        "n_issuers": n_issuers,
+        "excluded_unrated": excluded_unrated,
+        "avg_issuer_weight": avg_issuer_weight,
+        "lgd": lgd,
+        "scenarios": scenarios,
+        "break_even_n": break_even_n,
+        "break_even_probability": (
+            poisson_pmf(expected_defaults, break_even_n)
+            if break_even_n is not None and break_even_n >= 0 else None),
+    }

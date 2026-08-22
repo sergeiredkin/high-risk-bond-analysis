@@ -2,8 +2,11 @@
 real (tmp-file) SQLite DB via db.connect(), same pattern as test_slice1.py --
 no network.
 """
+import math
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -295,3 +298,169 @@ def test_rank_candidates_excludes_bonds_outside_watchlist_by_default(tmp_path):
     con.commit()
     assert portfolio.rank_candidates(con) == []
     assert portfolio.rank_candidates(con, in_watchlist_only=False) != []
+
+
+# ---- Portfolio stress test v2: poisson_pmf / multi_default_stress_test ----
+
+def test_poisson_pmf_n_zero_is_e_neg_lambda():
+    assert portfolio.poisson_pmf(2.0, 0) == pytest.approx(math.exp(-2.0))
+
+
+def test_poisson_pmf_known_value():
+    # lambda=1, n=1: e^-1 * 1^1 / 1! = e^-1
+    assert portfolio.poisson_pmf(1.0, 1) == pytest.approx(math.exp(-1.0))
+    # lambda=3, n=2: e^-3 * 9 / 2 = 4.5 * e^-3
+    assert portfolio.poisson_pmf(3.0, 2) == pytest.approx(4.5 * math.exp(-3.0))
+
+
+def test_poisson_pmf_lambda_zero_all_mass_at_n_zero():
+    assert portfolio.poisson_pmf(0.0, 0) == 1.0
+    assert portfolio.poisson_pmf(0.0, 3) == 0.0
+
+
+def test_poisson_pmf_rejects_negative_inputs():
+    with pytest.raises(ValueError):
+        portfolio.poisson_pmf(-1.0, 0)
+    with pytest.raises(ValueError):
+        portfolio.poisson_pmf(1.0, -1)
+
+
+def test_poisson_pmf_sums_to_one_across_full_support():
+    # The discrete display buckets (0,1,2,3,5,8) deliberately don't sum to
+    # 1 (they skip 4,6,7,...) -- this checks the PMF formula itself is a
+    # valid distribution, summed over enough of its support to converge.
+    for lam in (0.1, 1.0, 2.5, 5.0):
+        total = sum(portfolio.poisson_pmf(lam, n) for n in range(0, 60))
+        assert total == pytest.approx(1.0, abs=1e-9)
+
+
+def _pos(issuer_id, weight_frac, aey_pct, pd_1y, name=None):
+    return {"issuer_id": issuer_id, "name": name or issuer_id,
+            "weight_frac": weight_frac, "aey_pct": aey_pct, "pd_1y": pd_1y}
+
+
+def test_multi_default_known_inputs_two_equal_issuers():
+    # Two issuers, equal 50/50 weight, AEY 20% each, PD 5% and 1%.
+    # avg_issuer_weight = 1.0 / 2 = 0.5. LGD forced to 1.0 for round numbers.
+    positions = [
+        _pos("A", 0.5, 20.0, 0.05),
+        _pos("B", 0.5, 20.0, 0.01),
+    ]
+    result = portfolio.multi_default_stress_test(
+        positions, scenario_ns=(0, 1, 2), lgd=1.0)
+
+    assert result["n_issuers"] == 2
+    assert result["expected_defaults"] == pytest.approx(0.06)
+    assert result["avg_issuer_weight"] == pytest.approx(0.5)
+
+    by_n = {s["n_defaults"]: s for s in result["scenarios"]}
+    # N=0: no loss, full weighted AEY (both issuers equal AEY -> 20%)
+    assert by_n[0]["portfolio_return_pct"] == pytest.approx(20.0)
+    assert by_n[0]["n_effective"] == 0
+    assert by_n[0]["capped"] is False
+    # N=1: worst-PD issuer (A, PD=0.05) defaults first. Survivor B alone
+    # earns 20% on its own weight; loss = 1 * 0.5 * 1.0 * 100 = 50pp.
+    assert by_n[1]["portfolio_return_pct"] == pytest.approx(20.0 - 50.0)
+    assert by_n[1]["n_effective"] == 1
+    # N=2: both default -- no survivors, loss = 2 * 0.5 * 1.0 * 100 = 100pp.
+    assert by_n[2]["portfolio_return_pct"] == pytest.approx(0.0 - 100.0)
+    assert by_n[2]["n_effective"] == 2
+    assert by_n[2]["capped"] is False
+
+
+def test_multi_default_caps_n_above_issuer_count():
+    positions = [_pos("A", 1.0, 15.0, 0.02)]
+    result = portfolio.multi_default_stress_test(positions, scenario_ns=(0, 5), lgd=1.0)
+    by_n = {s["n_defaults"]: s for s in result["scenarios"]}
+    assert by_n[5]["n_effective"] == 1  # capped at n_issuers=1
+    assert by_n[5]["capped"] is True
+    # Same result as N=1 since only 1 issuer exists to default
+    by_n1 = portfolio.multi_default_stress_test(
+        positions, scenario_ns=(1,), lgd=1.0)["scenarios"][0]
+    assert by_n[5]["portfolio_return_pct"] == pytest.approx(by_n1["portfolio_return_pct"])
+
+
+def test_multi_default_excludes_unrated_issuers_from_pd_ordering():
+    positions = [
+        _pos("A", 0.5, 20.0, 0.05),
+        _pos("B", 0.5, 20.0, None),  # no rating -> no PD
+    ]
+    result = portfolio.multi_default_stress_test(positions, lgd=1.0)
+    assert result["n_issuers"] == 1  # B excluded
+    assert result["excluded_unrated"] == 1
+    assert result["expected_defaults"] == pytest.approx(0.05)  # only A's PD
+
+
+def test_multi_default_vs_ofz_and_cbr_deltas():
+    positions = [_pos("A", 1.0, 25.0, 0.03)]
+    result = portfolio.multi_default_stress_test(
+        positions, scenario_ns=(0,), lgd=1.0, ofz_rate_pct=14.0, cbr_rate_pct=17.0)
+    row = result["scenarios"][0]
+    assert row["portfolio_return_pct"] == pytest.approx(25.0)
+    assert row["vs_ofz_pp"] == pytest.approx(25.0 - 14.0)
+    assert row["vs_cbr_pp"] == pytest.approx(25.0 - 17.0)
+
+
+def test_multi_default_vs_ofz_none_when_ofz_rate_not_supplied():
+    positions = [_pos("A", 1.0, 25.0, 0.03)]
+    result = portfolio.multi_default_stress_test(positions, scenario_ns=(0,), lgd=1.0)
+    assert result["scenarios"][0]["vs_ofz_pp"] is None
+    assert result["break_even_n"] is None
+
+
+def test_multi_default_break_even_verified_against_manual_calc():
+    # Three issuers, equal weight (1/3 each), equal AEY 30%, distinct PDs
+    # so ranking is deterministic. LGD=1.0 for round numbers.
+    # avg_issuer_weight = 1.0 -> loss per default = 1 * (1/3) * 1.0 * 100 = 33.333...pp
+    positions = [
+        _pos("A", 1 / 3, 30.0, 0.10),  # worst PD, defaults first
+        _pos("B", 1 / 3, 30.0, 0.05),
+        _pos("C", 1 / 3, 30.0, 0.01),  # best PD, defaults last
+    ]
+    # Manual truth table (survivors always earn 30% on their own weight):
+    #   N=0: return = 30.0                     (loss 0)
+    #   N=1: return = 30.0 - 33.333.. = -3.33   (survivors B,C still 30%)
+    #   N=2: return = 30.0 - 66.667.. = -36.67
+    #   N=3: return =  0.0 - 100.0   = -100.0
+    ofz = 0.0  # break-even against a 0% OFZ rate: only N=0 clears it
+    result = portfolio.multi_default_stress_test(
+        positions, scenario_ns=(0, 1, 2, 3), lgd=1.0, ofz_rate_pct=ofz)
+    by_n = {s["n_defaults"]: s["portfolio_return_pct"] for s in result["scenarios"]}
+    assert by_n[0] == pytest.approx(30.0)
+    assert by_n[1] == pytest.approx(30.0 - 100.0 / 3)
+    assert by_n[2] == pytest.approx(30.0 - 200.0 / 3)
+    assert by_n[3] == pytest.approx(-100.0)
+    assert result["break_even_n"] == 0
+    assert result["break_even_probability"] == pytest.approx(
+        portfolio.poisson_pmf(result["expected_defaults"], 0))
+
+    # Raise the OFZ bar above what even N=0 clears -> never breaks even.
+    result2 = portfolio.multi_default_stress_test(
+        positions, scenario_ns=(0, 1, 2, 3), lgd=1.0, ofz_rate_pct=50.0)
+    assert result2["break_even_n"] == -1
+    assert result2["break_even_probability"] is None
+
+
+def test_multi_default_break_even_at_higher_n():
+    # Ten equal-weight issuers, low uniform PD, small LGD so more than one
+    # default is still survivable -- break-even should land above 0.
+    positions = [_pos(f"I{i}", 0.1, 30.0, 0.02) for i in range(10)]
+    result = portfolio.multi_default_stress_test(
+        positions, scenario_ns=(0, 1, 2, 3, 5, 8), lgd=default_probs.LGD,
+        ofz_rate_pct=14.0)
+    assert result["break_even_n"] is not None
+    assert result["break_even_n"] >= 1
+    # Verify against a manual scan of all N in [0, n_issuers]
+    manual_be = -1
+    ret0 = None
+    for n in range(0, 11):
+        s = portfolio.multi_default_stress_test(
+            positions, scenario_ns=(n,), lgd=default_probs.LGD)["scenarios"][0]
+        if n == 0:
+            ret0 = s["portfolio_return_pct"]
+        if s["portfolio_return_pct"] >= 14.0:
+            manual_be = n
+        else:
+            break
+    assert ret0 >= 14.0  # sanity: this fixture is meant to start above OFZ
+    assert result["break_even_n"] == manual_be

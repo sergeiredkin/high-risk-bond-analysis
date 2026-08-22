@@ -438,6 +438,14 @@
   .pf-stress-row-line .pf-stress-val { font-variant-numeric: tabular-nums; font-weight: 600; }
   .pf-stress-divider { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
   .pf-stress-recovery-note { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  /* ---- Multi-default stress test (Портфель -> Сценарии) ------------------ */
+  .pf-multistress-summary { font-size: 14px; font-weight: 600; margin: 0 0 12px; padding: 10px 14px;
+    background: var(--gold-muted); border: 1px solid var(--gold-primary); border-radius: 8px; }
+  .pf-multistress-table tbody tr.pf-breakeven-row { background: var(--gold-muted); }
+  .pf-multistress-table tbody tr.pf-breakeven-row td { font-weight: 600; }
+  .pf-multistress-table tbody tr.pf-breakeven-row td:first-child { border-left: 3px solid var(--gold-primary); }
+  .pf-multistress-capped { color: var(--text-muted); font-size: 11px; }
   .pf-pick-table tbody tr.pf-row { cursor: pointer; }
   .pf-pick-table tbody tr.pf-row:hover { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
   .pf-gate-ok { color: var(--good); font-weight: 600; }
@@ -1921,6 +1929,10 @@
         <h3 class="pf-h3-sep" style="margin-top:22px">Стресс-тест дефолта</h3>
         <p style="color:var(--text-muted);font-size:13px;margin:0 0 10px">Стресс-тест — что произойдёт с портфелем если один эмитент объявит дефолт</p>
         <div id="pfStressTest"></div>
+
+        <h3 class="pf-h3-sep" style="margin-top:22px">Стресс-тест: несколько дефолтов</h3>
+        <p class="section-note">Пессимистичный сценарий: N эмитентов с наибольшей вероятностью дефолта (PD) дефолтят одновременно. Доходность выживших позиций пересчитывается на их собственный вес; убыток от N дефолтов = N × средний вес эмитента в портфеле × LGD. Вероятность каждого сценария — приближение Пуассона P(N) = e⁻λλᴺ/N!, где λ = сумма годовых PD всех эмитентов портфеля («ожидаемое число дефолтов»). Наивное допущение независимости дефолтов (без учёта корреляции/кластеризации в кризис) — та же оговорка, что и у Планировщика роста выше.</p>
+        <div id="pfMultiStressTest"></div>
 
         <h3 class="pf-h3-sep" style="margin-top:22px">По позициям</h3>
         <p class="section-note">AEY по трём сценариям и премия к ОФЗ, по каждой выбранной позиции — для быстрого сравнения внутри корзины, без веса (см. агрегат выше).</p>
@@ -7948,6 +7960,7 @@ renderOfzCurveShape();
       lastPortfolioSumW = sumW;
       renderGrowthPlanner();
       renderStressTest();
+      renderMultiStressTest();
       return;
     }
     const scen = { base: 0, stress: 0, bull: 0, baseRiskAdj: 0 };
@@ -7978,6 +7991,7 @@ renderOfzCurveShape();
     lastPortfolioSumW = sumW;
     renderGrowthPlanner();
     renderStressTest();
+    renderMultiStressTest();
   }
 
   function fmtRub(v) {
@@ -8162,6 +8176,162 @@ renderOfzCurveShape();
       stressSelectedIssuer = sel.value;
       renderStressTest();
     });
+  }
+
+  // ---- Portfolio stress test v2: multi-default scenarios ------------------
+  // Same math as portfolio.multi_default_stress_test() (Python, unit-tested
+  // in test_portfolio.py against known inputs) -- kept as a hand-ported JS
+  // mirror rather than a server round-trip since the portfolio SELECTION
+  // itself only ever exists client-side (session-only `selected` Map, same
+  // as stressTestDefault() above), so there's no DB-persisted portfolio to
+  // compute this against server-side. Any change to the formula must be
+  // made in BOTH places -- see portfolio.py's own docstring for the same note.
+  const MULTI_STRESS_SCENARIOS = [0, 1, 2, 3, 5, 8];
+
+  // Same formula as portfolio.poisson_pmf() (Python): P(N=n) = e^-lam * lam^n / n!
+  // n never exceeds 8 in this UI, so a plain factorial loop (no Stirling/
+  // lgamma approximation) is exact and in no danger of overflowing.
+  function poissonPmf(lam, n) {
+    if (lam < 0 || n < 0) return 0;
+    let factorial = 1;
+    for (let i = 2; i <= n; i++) factorial *= i;
+    return Math.exp(-lam) * Math.pow(lam, n) / factorial;
+  }
+
+  function multiDefaultStressTest() {
+    if (!selected.size || lastPortfolioSumW <= 0) return null;
+
+    // Aggregate SELECTED positions to per-issuer weight/AEY/PD, same
+    // collapse as stressTestDefault() does per-issuer but for every issuer
+    // in the portfolio at once, not just one.
+    const byIssuer = new Map(); // issuer_id -> {name, weight, aeyContrib, pdWeight, pdSum}
+    selected.forEach((w, secid) => {
+      const r = poolBySecid.get(secid);
+      if (!r) return;
+      const frac = w / lastPortfolioSumW;
+      const a = byIssuer.get(r.issuer_id) || { name: r.issuer, weight: 0, aeyContrib: 0, pdWeight: 0, pdSum: 0 };
+      a.weight += frac;
+      a.aeyContrib += frac * (r.aey_base_risk_adj_pct ?? 0);
+      if (r.p_default_pct != null) { a.pdSum += frac * r.p_default_pct; a.pdWeight += frac; }
+      byIssuer.set(r.issuer_id, a);
+    });
+
+    const allIssuers = Array.from(byIssuer.entries()).map(([issuer_id, a]) => ({
+      issuer_id, name: a.name, weight: a.weight, aeyContrib: a.aeyContrib,
+      pd1y: a.pdWeight > 0 ? (a.pdSum / a.pdWeight) / 100 : null, // pp -> fraction, matches portfolio.py's decimal PD
+    }));
+    const issuers = allIssuers.filter(i => i.pd1y != null);
+    const excludedUnrated = allIssuers.length - issuers.length;
+    const nIssuers = issuers.length;
+    if (nIssuers === 0) return { emptyReason: 'no-rated-issuers', excludedUnrated };
+
+    const totalWeight = issuers.reduce((s, i) => s + i.weight, 0);
+    const expectedDefaults = issuers.reduce((s, i) => s + i.pd1y, 0);
+    const avgIssuerWeight = totalWeight / nIssuers;
+    const ranked = [...issuers].sort((a, b) => b.pd1y - a.pd1y); // worst PD first
+
+    function scenarioReturn(n) {
+      const nEff = Math.min(n, nIssuers);
+      const survivors = ranked.slice(nEff);
+      const survW = survivors.reduce((s, i) => s + i.weight, 0);
+      const survAey = survW > 0 ? survivors.reduce((s, i) => s + i.aeyContrib, 0) / survW : 0;
+      const lossPp = nEff * avgIssuerWeight * LGD_STRESS * 100;
+      return { ret: survAey - lossPp, nEff };
+    }
+
+    // Reference rates: CBR key rate straight off DATA.cbr; OFZ via the SAME
+    // weighted-average-duration -> nearest-OFZ match renderGrowthPlanner()
+    // uses for its own "ОФЗ (альтернатива)" row -- one representative OFZ
+    // for the whole basket, not a per-position match.
+    const cbrRate = (DATA.cbr && DATA.cbr.current_rate != null) ? DATA.cbr.current_rate : null;
+    let sumWd = 0, weightedDur = 0;
+    selected.forEach((w, secid) => {
+      const r = poolBySecid.get(secid);
+      if (!r || r.mod_dur == null || w <= 0) return;
+      weightedDur += r.mod_dur * w; sumWd += w;
+    });
+    const avgDur = sumWd > 0 ? weightedDur / sumWd : null;
+    const ofzMatch = closestOfz(avgDur);
+    const ofzRate = ofzMatch ? ofzMatch.ofz.ytm_pct : null;
+
+    const scenarios = MULTI_STRESS_SCENARIOS.map(n => {
+      const { ret, nEff } = scenarioReturn(n);
+      return {
+        n, nEff, capped: n > nIssuers, ret,
+        vsOfz: ofzRate != null ? ret - ofzRate : null,
+        vsCbr: cbrRate != null ? ret - cbrRate : null,
+        prob: poissonPmf(expectedDefaults, n),
+      };
+    });
+
+    let breakEvenN = null;
+    if (ofzRate != null) {
+      const ret0 = scenarioReturn(0).ret;
+      if (ret0 < ofzRate) {
+        breakEvenN = -1;
+      } else {
+        breakEvenN = 0;
+        for (let n = 1; n <= nIssuers; n++) {
+          const { ret } = scenarioReturn(n);
+          if (ret >= ofzRate) breakEvenN = n; else break;
+        }
+      }
+    }
+
+    return {
+      expectedDefaults, nIssuers, excludedUnrated, avgIssuerWeight,
+      cbrRate, ofzRate, ofzMatch, scenarios, breakEvenN,
+      breakEvenProb: (breakEvenN != null && breakEvenN >= 0) ? poissonPmf(expectedDefaults, breakEvenN) : null,
+    };
+  }
+
+  function renderMultiStressTest() {
+    const el = document.getElementById('pfMultiStressTest');
+    const result = multiDefaultStressTest();
+    if (!result) {
+      el.innerHTML = emptyStateHtml({ icon: 'chart', title: 'Выберите позиции в Портфеле для расчёта' });
+      return;
+    }
+    if (result.emptyReason === 'no-rated-issuers') {
+      el.innerHTML = emptyStateHtml({
+        icon: 'chart', title: 'Нет данных PD для выбранных позиций',
+        subtitle: `${result.excludedUnrated} эмитент(а/ов) без рейтинга исключены — PD неизвестен.`,
+      });
+      return;
+    }
+
+    let html = '';
+    if (result.breakEvenN != null) {
+      const summaryText = result.breakEvenN < 0
+        ? `Портфель уже ниже доходности ОФЗ даже без дефолтов (${result.ofzRate.toFixed(2)}%).`
+        : `Портфель выигрывает у ОФЗ при до ${result.breakEvenN} дефолтов (вероятность ${(result.breakEvenProb * 100).toFixed(1)}%)`;
+      html += `<div class="pf-multistress-summary">${summaryText}</div>`;
+    } else {
+      html += `<div class="pf-multistress-summary" style="color:var(--text-muted)">Нет данных ОФЗ для сравнения (не найдена бумага близкой дюрации) — break-even не рассчитан.</div>`;
+    }
+
+    html += `<p class="section-note">Ожидаемое число дефолтов (λ = Σ PD по ${result.nIssuers} эмитентам` +
+      (result.excludedUnrated ? `, ${result.excludedUnrated} без рейтинга исключены` : '') +
+      `): <b>${result.expectedDefaults.toFixed(2)}</b></p>`;
+
+    html += `<div class="card table-scroll"><table class="pf-scen-table pf-multistress-table">
+      <thead><tr><th>N дефолтов</th><th>AEY портфеля</th><th>vs ОФЗ</th><th>vs КС ЦБ</th><th>Вероятность (Пуассон)</th></tr></thead><tbody>`;
+    result.scenarios.forEach(s => {
+      const isBreakEven = result.breakEvenN === s.n;
+      const rowClass = isBreakEven ? ' class="pf-breakeven-row"' : '';
+      const cappedNote = s.capped ? `<div class="pf-multistress-capped">эмитентов только ${s.nEff}</div>` : '';
+      html += `<tr${rowClass}>
+        <td>${s.n}${cappedNote}</td>
+        <td class="num-key">${s.ret >= 0 ? '+' : ''}${s.ret.toFixed(1)}%</td>
+        <td class="num-key" style="color:${s.vsOfz == null ? 'var(--text-muted)' : s.vsOfz >= 0 ? 'var(--verdict-green)' : 'var(--verdict-red)'}">${s.vsOfz == null ? '—' : (s.vsOfz >= 0 ? '+' : '') + s.vsOfz.toFixed(1) + 'пп'}</td>
+        <td class="num-key" style="color:${s.vsCbr == null ? 'var(--text-muted)' : s.vsCbr >= 0 ? 'var(--verdict-green)' : 'var(--verdict-red)'}">${s.vsCbr == null ? '—' : (s.vsCbr >= 0 ? '+' : '') + s.vsCbr.toFixed(1) + 'пп'}</td>
+        <td class="num-key">${(s.prob * 100).toFixed(2)}%</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    html += `<p class="pf-stress-recovery-note" style="margin-top:8px">LGD = ${LGD_STRESS.toFixed(3)} (Федресурс, 2022–2026). ОФЗ: ${result.ofzMatch ? escapeHtml(result.ofzMatch.ofz.short_name || result.ofzMatch.ofz.secid) + ` (дюр. ${result.ofzMatch.ofz.mod_dur.toFixed(1)}г, YTM ${result.ofzRate.toFixed(2)}%)` : 'нет подходящей бумаги'}. КС ЦБ: ${result.cbrRate != null ? result.cbrRate.toFixed(2) + '%' : '—'}.</p>`;
+
+    el.innerHTML = html;
   }
 
   // Portfolio-level OFZ premium (Task): weighted-average AEY(base) minus
