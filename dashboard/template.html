@@ -653,6 +653,47 @@
     border-bottom: 2px solid transparent; white-space: nowrap; flex-shrink: 0; }
   .subnav-btn:hover { color: var(--text-primary); }
   .subnav-btn.active { color: var(--gold-primary); border-bottom-color: var(--gold-primary); }
+  .subnav-count { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px;
+    background: var(--gold-primary); color: #1a1a1a; font-size: 10.5px; font-weight: 700; line-height: 15px; }
+
+  /* ---- Watchlist filter bar (Вотчлист -> Фильтры) -------------------------
+     Compact single row on desktop; collapses to a toggle-expandable panel
+     under 768px (same breakpoint every other mobile rule in this file uses).
+     Reuses the gold/dark design tokens (--gold-primary/--gold-muted) that
+     already carry "active/selected" meaning elsewhere (subnav active state,
+     the multi-default stress test's break-even row) -- not a new visual
+     language for "filter is active". */
+  #sec-filters { margin-bottom: 18px; }
+  .filter-bar-head { display: none; }
+  .filter-bar-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .filter-bar-row select { padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); font-size: 13px; min-width: 150px; }
+  .filter-bar-row select.filter-active { border-color: var(--gold-primary); color: var(--gold-primary); }
+  .filter-reset-btn { padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border);
+    background: none; color: var(--text-secondary); font-size: 12.5px; cursor: pointer; }
+  .filter-reset-btn:hover { color: var(--critical); border-color: var(--critical); }
+  .filter-chips-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .filter-chips-row:empty { margin-top: 0; }
+  .filter-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 10px;
+    border-radius: 14px; background: var(--gold-muted); border: 1px solid var(--gold-primary);
+    color: var(--gold-primary); font-size: 12px; font-weight: 600; }
+  .filter-chip button { background: none; border: none; color: inherit; cursor: pointer;
+    font-size: 13px; line-height: 1; padding: 2px 4px; }
+  .filter-chip button:hover { color: var(--critical); }
+  .filter-result-line { margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); }
+  .filter-toggle-btn { display: none; }
+
+  @media (max-width: 768px) {
+    .filter-bar-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .filter-bar-title { display: none; }
+    .filter-toggle-btn { display: inline-flex; align-items: center; width: 100%; padding: 9px 12px;
+      border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1);
+      color: var(--text-primary); font-size: 13px; font-weight: 600; cursor: pointer; }
+    .filter-bar-body { display: none; }
+    .filter-bar-body.open { display: block; margin-top: 10px; }
+    .filter-bar-row { flex-direction: column; align-items: stretch; }
+    .filter-bar-row select, .filter-reset-btn { width: 100%; }
+  }
 
   .pftab-panel { display: none; }
   .pftab-panel.active { display: block; }
@@ -1263,6 +1304,7 @@
        mini-nav entry). See initSubnav() near the collapsible-sections init. -->
   <nav class="subnav-bar" id="watchlistSubnav">
     <button type="button" class="subnav-btn active" data-target="sec-table">Активный мониторинг</button>
+    <button type="button" class="subnav-btn" data-target="sec-filters">Фильтры<span class="subnav-count" id="filterBadgeCount" style="display:none"></span></button>
     <button type="button" class="subnav-btn" data-target="sec-passive-issuers">Пассивный мониторинг</button>
   </nav>
   <!-- Queue backlog indicator (DATA.queue_count) -- see renderQueueIndicator()
@@ -1334,6 +1376,18 @@
     <div class="banner" id="pillarsCoverageBanner"></div>
     <p class="section-note">Каждый столп — балл 0–100, где выше = безопаснее. Leverage — долг/EBIT и покрытие процентов. Liquidity — текущая ликвидность и покрытие краткосрочного долга кэшем. Refinancing — доля краткосрочного долга в общем (выше доля = больше риска рефинансирования одномоментно). Operations — чистая маржа.</p>
     <div class="card"><div id="pillarChart"></div></div>
+    </div>
+  </section>
+
+  <section id="sec-filters">
+    <div class="filter-bar-head">
+      <h3 class="filter-bar-title">Фильтры</h3>
+      <button type="button" class="filter-toggle-btn" id="filterToggleBtn" aria-expanded="false">Фильтры<span class="subnav-count" id="filterToggleBadge" style="display:none"></span> ▾</button>
+    </div>
+    <div class="filter-bar-body" id="filterBarBody">
+      <div class="filter-bar-row" id="filterBarRow"></div>
+      <div class="filter-chips-row" id="filterChipsRow"></div>
+      <div class="filter-result-line" id="filterResultLine"></div>
     </div>
   </section>
 
@@ -4487,6 +4541,186 @@ const VERDICT_DOT_COLOR = { green: 'var(--verdict-green)', yellow: 'var(--verdic
   red: 'var(--verdict-red)', gray: 'var(--verdict-grey)' };
 const WATCHLIST_EXPANDED_KEY = 'hybond-watchlist-expanded-issuer';
 
+// ================= Watchlist filters (Вотчлист -> Фильтры) =================
+// Client-side only, over the already-exported DATA.issuers -- no new DB
+// queries. Every bucket function returns null for "insufficient data to
+// classify" (no rating, no bonds with mod_dur, no six_pillars score), which
+// issuerMatchesFilters() treats as "doesn't match a specific bucket filter"
+// (excluded when that filter is active) but always shows under the
+// respective filter's "Все" default, same missing-data-is-not-zero
+// principle used throughout this file (see e.g. pd_adjusted_aey's docstring).
+const RATING_BUCKETS = [
+  // Longest/most-specific prefix checked first -- 'ruBBB'.startsWith('ruBB')
+  // is also true, so a naive single-prefix test would misclassify.
+  ['ruAAA-ruAA', 'ruAAA–ruAA', r => /^ruAAA/.test(r) || /^ruAA/.test(r)],
+  ['ruA', 'ruA', r => /^ruA(?!A)/.test(r)],
+  ['ruBBB', 'ruBBB', r => /^ruBBB/.test(r)],
+  ['ruBB', 'ruBB', r => /^ruBB(?!B)/.test(r)],
+  ['ruB', 'ruB', r => /^ruB(?!B)/.test(r)],
+  ['ruCCC-', 'ruCCC и ниже', r => /^ruC/.test(r)],
+];
+function ratingBucketKey(rating) {
+  if (!rating) return null;
+  const hit = RATING_BUCKETS.find(([, , test]) => test(rating));
+  return hit ? hit[0] : null;
+}
+
+// risk_tier: anchor/core/watch/stress -- same 4-value scale already driving
+// TIER_COLOR/TIER_LABEL (Portfolio presets) and the .badge.tier-* CSS
+// classes, reused here rather than the separate green/yellow/red/gray
+// verdict scale (that one only has 3 real levels + "no data", one short of
+// the task's 4-option Низкий/Средний/Высокий/Критический spec).
+const RISK_TIER_OPTIONS = [
+  ['anchor', 'Низкий'], ['core', 'Средний'], ['watch', 'Высокий'], ['stress', 'Критический'],
+];
+
+const DURATION_BUCKETS = [
+  ['lt1', '< 1 года', y => y < 1],
+  ['1-2', '1–2 года', y => y >= 1 && y < 2],
+  ['2-3', '2–3 года', y => y >= 2 && y < 3],
+  ['3plus', '3+ лет', y => y >= 3],
+];
+// Volume-weighted average duration across the issuer's own bonds (falls
+// back to a plain average when no bond has volume data) -- same
+// weighted-duration convention the Портфель tab's OFZ-match logic uses,
+// just aggregated per issuer instead of per selected position.
+function issuerAvgDurationYrs(iss) {
+  const bonds = (iss.bonds || []).filter(b => b.mod_dur != null);
+  if (!bonds.length) return null;
+  const withVolume = bonds.filter(b => b.volume != null && b.volume > 0);
+  if (withVolume.length) {
+    const totalVol = withVolume.reduce((s, b) => s + b.volume, 0);
+    return withVolume.reduce((s, b) => s + b.mod_dur * b.volume, 0) / totalVol;
+  }
+  return bonds.reduce((s, b) => s + b.mod_dur, 0) / bonds.length;
+}
+function durationBucketKey(yrs) {
+  if (yrs == null) return null;
+  const hit = DURATION_BUCKETS.find(([, , test]) => test(yrs));
+  return hit ? hit[0] : null;
+}
+
+// score_refinancing (six_pillars, compute_pillars()): 0-100, higher = safer.
+// Real data, present whenever pillars_snapshot exists for the issuer -- no
+// placeholder needed. Same score scoreColor() already thresholds for the
+// pillar bars (>=80/60-79/40-59/<40), collapsed from 4 color bands to the
+// 3 this filter's spec asks for (Низкий/Средний/Высокий), not a new scale.
+const REFI_BUCKETS = [
+  ['low', 'Низкий риск', s => s >= 60],
+  ['mid', 'Средний', s => s >= 40 && s < 60],
+  ['high', 'Высокий', s => s < 40],
+];
+function refinancingBucketKey(iss) {
+  const sp = iss.six_pillars;
+  const score = sp ? sp.score_refinancing : null;
+  if (score == null) return null;
+  const hit = REFI_BUCKETS.find(([, , test]) => test(score));
+  return hit ? hit[0] : null;
+}
+
+const FILTER_DEFS = [
+  { key: 'sector', label: 'Сектор', allLabel: 'Все секторы' },
+  { key: 'risk', label: 'Риск', allLabel: 'Все' },
+  { key: 'rating', label: 'Рейтинг', allLabel: 'Все' },
+  { key: 'duration', label: 'Дюрация', allLabel: 'Все' },
+  { key: 'refinancing', label: 'Рефинансирование', allLabel: 'Все' },
+];
+
+let watchlistFilters = { sector: '', risk: '', rating: '', duration: '', refinancing: '' };
+
+function filterOptionsFor(defKey) {
+  if (defKey === 'sector') {
+    const sectors = Array.from(new Set(DATA.issuers.map(i => i.sector).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, 'ru'));
+    return sectors.map(s => [s, s]);
+  }
+  if (defKey === 'risk') return RISK_TIER_OPTIONS;
+  if (defKey === 'rating') return RATING_BUCKETS.map(([k, label]) => [k, label]);
+  if (defKey === 'duration') return DURATION_BUCKETS.map(([k, label]) => [k, label]);
+  if (defKey === 'refinancing') return REFI_BUCKETS.map(([k, label]) => [k, label]);
+  return [];
+}
+
+function filterValueLabel(defKey, value) {
+  if (!value) return null;
+  const hit = filterOptionsFor(defKey).find(([k]) => k === value);
+  return hit ? hit[1] : value;
+}
+
+function issuerMatchesFilters(iss) {
+  if (watchlistFilters.sector && (iss.sector || '') !== watchlistFilters.sector) return false;
+  if (watchlistFilters.risk && (iss.risk_tier || 'core') !== watchlistFilters.risk) return false;
+  if (watchlistFilters.rating && ratingBucketKey(iss.rating) !== watchlistFilters.rating) return false;
+  if (watchlistFilters.duration
+      && durationBucketKey(issuerAvgDurationYrs(iss)) !== watchlistFilters.duration) return false;
+  if (watchlistFilters.refinancing && refinancingBucketKey(iss) !== watchlistFilters.refinancing) return false;
+  return true;
+}
+
+function filteredWatchlistIssuers() {
+  return DATA.issuers.filter(issuerMatchesFilters);
+}
+
+function activeFilterCount() {
+  return FILTER_DEFS.filter(d => watchlistFilters[d.key]).length;
+}
+
+function renderFilterBar() {
+  const rowEl = document.getElementById('filterBarRow');
+  const chipsEl = document.getElementById('filterChipsRow');
+  const resultEl = document.getElementById('filterResultLine');
+  if (!rowEl) return;
+
+  rowEl.innerHTML = FILTER_DEFS.map(d => {
+    const opts = filterOptionsFor(d.key);
+    const active = watchlistFilters[d.key];
+    return `<select data-filter="${d.key}" class="${active ? 'filter-active' : ''}">
+      <option value="">${escapeHtml(d.allLabel)}</option>
+      ${opts.map(([k, label]) => `<option value="${escapeHtml(k)}"${k === active ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+    </select>`;
+  }).join('')
+    + `<button type="button" class="filter-reset-btn" id="filterResetBtn" style="display:${activeFilterCount() ? '' : 'none'}">Сбросить фильтры</button>`;
+
+  chipsEl.innerHTML = FILTER_DEFS.filter(d => watchlistFilters[d.key]).map(d => {
+    const label = filterValueLabel(d.key, watchlistFilters[d.key]);
+    return `<span class="filter-chip">${escapeHtml(d.label)}: ${escapeHtml(label)}<button type="button" data-clear="${d.key}" title="Убрать фильтр">×</button></span>`;
+  }).join('');
+
+  const total = DATA.issuers.length;
+  const shown = filteredWatchlistIssuers().length;
+  resultEl.textContent = `Показано ${shown} из ${total} эмитентов`;
+
+  rowEl.querySelectorAll('select[data-filter]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      watchlistFilters[sel.dataset.filter] = sel.value;
+      onFiltersChanged();
+    });
+  });
+  const resetBtn = document.getElementById('filterResetBtn');
+  if (resetBtn) resetBtn.addEventListener('click', () => {
+    FILTER_DEFS.forEach(d => { watchlistFilters[d.key] = ''; });
+    onFiltersChanged();
+  });
+  chipsEl.querySelectorAll('button[data-clear]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      watchlistFilters[btn.dataset.clear] = '';
+      onFiltersChanged();
+    });
+  });
+
+  const count = activeFilterCount();
+  [document.getElementById('filterBadgeCount'), document.getElementById('filterToggleBadge')].forEach(badge => {
+    if (!badge) return;
+    if (count > 0) { badge.textContent = String(count); badge.style.display = ''; }
+    else { badge.style.display = 'none'; }
+  });
+}
+
+function onFiltersChanged() {
+  renderFilterBar();
+  renderIssuerRows();
+}
+
 function renderIssuerRows() {
   const el = document.getElementById('issuerRowsView');
   if (!DATA.issuers.length) {
@@ -4495,8 +4729,16 @@ function renderIssuerRows() {
     });
     return;
   }
+  const rows = filteredWatchlistIssuers();
+  if (!rows.length) {
+    el.innerHTML = emptyStateHtml({
+      icon: 'star', title: 'Нет эмитентов по заданным фильтрам',
+      subtitle: 'Попробуйте ослабить или сбросить фильтры выше',
+    });
+    return;
+  }
   const lastExpanded = localStorage.getItem(WATCHLIST_EXPANDED_KEY);
-  el.innerHTML = `<div class="iw-rows">${DATA.issuers.map(iss => {
+  el.innerHTML = `<div class="iw-rows">${rows.map(iss => {
     const v = issuerWorstVerdict(iss);
     const bond = issuerBestBond(iss);
     const dotColor = VERDICT_DOT_COLOR[v ? v.level : 'gray'];
@@ -4550,7 +4792,20 @@ function renderIssuerRows() {
     });
   });
 }
+renderFilterBar();
 renderIssuerRows();
+
+// Mobile expand/collapse toggle -- desktop shows the filter body inline via
+// CSS, this only matters under the 768px breakpoint where .filter-bar-body
+// starts display:none (see the @media block above .pftab-panel's CSS).
+const filterToggleBtn = document.getElementById('filterToggleBtn');
+if (filterToggleBtn) {
+  filterToggleBtn.addEventListener('click', () => {
+    const body = document.getElementById('filterBarBody');
+    const isOpen = body.classList.toggle('open');
+    filterToggleBtn.setAttribute('aria-expanded', String(isOpen));
+  });
+}
 
 // Passive monitoring (tier=2): collapsed section, no verdict/recommendation
 // -- just enough to know the issuer exists and is still being tracked.
