@@ -40,9 +40,10 @@ def cmd_selftest(_args) -> int:
 
 def cmd_run(args) -> int:
     from . import pipeline, pipeline_lock
+    watchlist_path = Path(args.watchlist) if getattr(args, "watchlist", None) else None
     try:
         with pipeline_lock.held():
-            report = pipeline.run(Path(args.watchlist), snap_date=date.today())
+            report = pipeline.run(watchlist_path, snap_date=date.today())
     except pipeline_lock.PipelineInterrupted:
         print("Interrupted", file=sys.stderr)
         return 143
@@ -92,10 +93,11 @@ def cmd_grade(args) -> int:
 def cmd_scrape(args) -> int:
     from . import pipeline_lock, scrape_pipeline
     from pathlib import Path
+    watchlist_path = Path(args.watchlist) if getattr(args, "watchlist", None) else None
     try:
         with pipeline_lock.held():
             summary = scrape_pipeline.run_scrape(
-                Path(args.watchlist), use_selenium=args.selenium,
+                watchlist_path, use_selenium=args.selenium,
                 fetch_bodies=not args.no_bodies, debug=args.debug,
                 use_smartlab=args.smartlab)
     except pipeline_lock.PipelineInterrupted:
@@ -1024,7 +1026,9 @@ def main(argv=None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("selftest").set_defaults(func=cmd_selftest)
     pr = sub.add_parser("run")
-    pr.add_argument("watchlist")
+    pr.add_argument("--watchlist", help="optional watchlist.json fallback enrichment "
+                                        "source (secid metadata); issuer scope always "
+                                        "comes from the issuer table, not this file")
     pr.add_argument("--out")
     pr.set_defaults(func=cmd_run)
     pd = sub.add_parser("diff", help="Slice 2: run detectors on today's snapshot")
@@ -1036,7 +1040,9 @@ def main(argv=None) -> int:
     pg = sub.add_parser("grade", help="Slice 2: detector scorecard (run weeks later)")
     pg.set_defaults(func=cmd_grade)
     ps = sub.add_parser("scrape", help="Slice 3: pull e-disclosure message feed")
-    ps.add_argument("watchlist")
+    ps.add_argument("--watchlist", help="optional watchlist.json fallback enrichment "
+                                        "source; issuer scope always comes from the "
+                                        "issuer table, not this file")
     ps.add_argument("--selenium", action="store_true",
                     help="use headless browser for JS-gated pages")
     ps.add_argument("--no-bodies", action="store_true",

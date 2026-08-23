@@ -76,7 +76,8 @@ Full list (27 subcommands; `hybond <cmd> --help` for exact flags):
 ```
 --- Slice 1: prices / spreads / universe ---
 hybond selftest                     confirm MOEX/CBR reachability
-hybond run <watchlist.json>         Slice 1: prices, YTM, G-spread, maturity wall
+hybond run [--watchlist watchlist.json] [--out data/report.json]
+                                     Slice 1: prices, YTM, G-spread, maturity wall
 hybond universe [--refresh-emitent-map]
                                      full MOEX universe screen: G-spread, mispricing,
                                      AEY scenarios, rating join (not just the watchlist)
@@ -95,7 +96,7 @@ hybond diff [--driving fixed|stat|hybrid] [--factlist-dir data/factlists]
 hybond grade                        Slice 2: detector scorecard (run weeks later)
 
 --- Slice 3: e-disclosure event feed + classification ---
-hybond scrape <watchlist.json> [--selenium] [--smartlab] [--no-bodies] [--debug]
+hybond scrape [--watchlist watchlist.json] [--selenium] [--smartlab] [--no-bodies] [--debug]
                                      Slice 3: pull e-disclosure / smart-lab material-fact filings
 hybond market-notes                 pull smart-lab/MOEX-listing/CBR-press RSS market notes
 hybond queue [--skip-noise]         filings awaiting classification

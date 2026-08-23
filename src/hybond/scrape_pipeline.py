@@ -42,7 +42,7 @@ MAX_RUNTIME_S = 300
 
 
 def run_scrape(
-    watchlist_path: Path,
+    watchlist_path: Path | None,
     use_selenium: bool = False,
     fetch_bodies: bool = True,
     snap_date: date | None = None,

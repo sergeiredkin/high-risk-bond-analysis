@@ -25,7 +25,7 @@ con.close()
 " >> "$LOG" 2>&1
 
 # Slice 1: prices + spreads
-PYTHONPATH=src python -m hybond run watchlist.json >> "$LOG" 2>&1
+PYTHONPATH=src python -m hybond run >> "$LOG" 2>&1
 
 # Universe snapshot: full MOEX corporate-bond screen + G-spread + mispricing.
 # The SECID->ИНН emitent map is cached (emitent_map table) and only
@@ -55,7 +55,7 @@ PYTHONPATH=src python -m hybond promote >> "$LOG" 2>&1
 # here would previously abort the whole run before diff/dashboard-rebuild
 # ever executed, even though those later steps don't depend on this one
 # succeeding.
-PYTHONPATH=src python -m hybond scrape watchlist.json --smartlab >> "$LOG" 2>&1 \
+PYTHONPATH=src python -m hybond scrape --smartlab >> "$LOG" 2>&1 \
     || echo "scrape step failed (non-fatal)" >> "$LOG"
 
 # market_note: smart-lab.ru's general news feed (RSS) -- distinct secondary

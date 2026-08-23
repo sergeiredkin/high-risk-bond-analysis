@@ -19,7 +19,7 @@ echo "=== filings run $(date) ===" >> "$LOG"
 # to clear rather than starting a concurrent write blind (the exact
 # collision confirmed live on 2026-08-21: scrape still running past :15 into
 # a :30 classify burst caused a real "database is locked" failure).
-PYTHONPATH=src python -m hybond scrape watchlist.json --smartlab >> "$LOG" 2>&1
+PYTHONPATH=src python -m hybond scrape --smartlab >> "$LOG" 2>&1
 PYTHONPATH=src python -m hybond market-notes >> "$LOG" 2>&1
 # Auto-classify via local Ollama (classify_ollama.py): --limit 20 caps each
 # hourly run so the backlog clears gradually without hogging the GPU during
