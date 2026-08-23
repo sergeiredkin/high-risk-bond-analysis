@@ -1,6 +1,9 @@
 #!/bin/bash
-# hybond startup catch — runs at reboot, checks if today's scheduled
-# pipeline runs were missed while machine was off
+# hybond startup catch — runs at boot AND at systemd-sleep resume
+# (/etc/systemd/system-sleep/hybond-resume.sh, 2026-08-23 suspend/resume
+# cron-gap fix — @reboot alone never fires on resume-from-suspend, only on a
+# genuine cold boot), checks if today's data is actually stale rather than
+# just "was a run attempted today".
 export PATH="/home/sergei/miniconda3/bin:$PATH"
 source /home/sergei/miniconda3/etc/profile.d/conda.sh
 conda activate base
@@ -29,24 +32,22 @@ if [ "$NETWORK_READY" -eq 0 ]; then
     exit 1
 fi
 
-# Check last successful daily run from logs
-LAST_RUN=$(ls -t data/logs/hybond_[0-9]*.log 2>/dev/null | head -1)
+# Staleness check via the DB's own snap_date, not a log filename's mere
+# existence (2026-08-23, suspend/resume cron-gap follow-up): a run can start
+# -- creating today's log -- and still fail partway through without ever
+# writing a fresh universe_snapshot row, which the old log-date check could
+# not tell apart from a genuinely fresh run. This also naturally covers the
+# "no previous logs at all" first-run case (LAST_SNAP comes back empty/null,
+# which never equals TODAY_ISO), so that special case no longer needs its
+# own branch.
+LAST_SNAP=$(sqlite3 data/db/hybond.sqlite "SELECT MAX(snap_date) FROM universe_snapshot;" 2>/dev/null)
+TODAY_ISO=$(date +%Y-%m-%d)
 
-if [ -z "$LAST_RUN" ]; then
-    echo "No previous logs found — running full pipeline"
-    bash scripts/daily_run.sh
-    exit 0
-fi
-
-# Extract date of last run
-LAST_DATE=$(basename "$LAST_RUN" | grep -o '[0-9]\{8\}')
-TODAY=$(date +%Y%m%d)
-
-if [ "$LAST_DATE" != "$TODAY" ]; then
-    echo "Last run was $LAST_DATE, today is $TODAY — running missed pipeline"
-    bash scripts/daily_run.sh
+if [ "$LAST_SNAP" != "$TODAY_ISO" ]; then
+    echo "$(date) — snap_date stale ($LAST_SNAP vs $TODAY_ISO), running catch-up pipeline"
+    bash scripts/daily_run.sh >> data/logs/startup_catch.log 2>&1
 else
-    echo "Pipeline already ran today ($LAST_DATE) — skipping full run"
+    echo "$(date) — snap_date is current ($LAST_SNAP) — skipping full run"
     echo "Running filings catch-up only"
     bash scripts/hourly_filings.sh
 fi
