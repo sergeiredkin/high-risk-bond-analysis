@@ -10,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from hybond.store import db  # noqa: E402
 from export_dashboard_data import (  # noqa: E402
-    spread_history_by_issuer, passive_issuers_export, passive_events_since)
+    spread_history_by_issuer, passive_issuers_export, passive_events_since,
+    universe_snapshot_bundle)
 
 ISSUER = "7701234567"
 
@@ -224,3 +225,64 @@ def test_passive_events_since_respects_since_date(tmp_path):
     con.close()
     assert len(events) == 1
     assert events[0]["summary"] == "Свежее"
+
+
+# ---- day1_snap_date fix (2026-08-23): universe_snapshot_bundle() must
+# surface the TRUE earliest snap_date (MIN(snap_date) across all history),
+# not just today's run date -- main() reads this back as
+# market_map["earliest_snap_date"] for the dashboard header's "Первый день".
+
+def _snapshot_row(**overrides):
+    row = dict(
+        secid="X", snap_date="2026-07-30", short_name="X", emitent_inn="INN1",
+        emitent_title="Issuer 1", mat_date="2028-01-01", offer_date=None,
+        coupon_pct=15.0, list_level=1, qualified=0, last_pct=95.0, yield_moex=20.0,
+        yield_to_offer=None, accrued_int=0.0, volume=1000.0, num_trades=50,
+        duration_moex=365.0, ytm=0.20, tenor_yrs=1.5, rf_rate=0.14, g_spread_bp=600.0,
+        yield_source="moex", rating="ruBB", implied_fair_spread_bp=153.0,
+        mispricing_bp=447.0, in_watchlist=1, signal_excluded=0,
+        mod_dur=1.0, aey_base=0.20, aey_stress=0.19, aey_bull=0.22,
+        aey_base_risk_adj=0.174,
+    )
+    row.update(overrides)
+    return row
+
+
+def test_earliest_snap_date_is_min_not_latest(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    # Real gap between the true history start and today's run date --
+    # exactly the bug scenario (2026-07-27 earliest vs 2026-08-06 "current run").
+    db.insert_universe_snapshot(con, **_snapshot_row(snap_date="2026-07-27"))
+    db.insert_universe_snapshot(con, **_snapshot_row(snap_date="2026-08-06"))
+    con.commit()
+
+    bundle = universe_snapshot_bundle(con)
+    con.close()
+
+    assert bundle["earliest_snap_date"] == "2026-07-27"
+    assert bundle["earliest_snap_date"] != "2026-08-06"  # must not be the latest/current run date
+
+
+def test_earliest_snap_date_matches_raw_min_query(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    for d in ("2026-07-27", "2026-07-30", "2026-08-06"):
+        db.insert_universe_snapshot(con, **_snapshot_row(secid=f"X-{d}", snap_date=d))
+    con.commit()
+
+    bundle = universe_snapshot_bundle(con)
+    raw_min = con.execute("SELECT MIN(snap_date) m FROM universe_snapshot").fetchone()["m"]
+    con.close()
+    assert bundle["earliest_snap_date"] == raw_min
+
+
+def test_earliest_snap_date_none_when_no_universe_history(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    bundle = universe_snapshot_bundle(con)
+    con.close()
+    assert bundle["earliest_snap_date"] is None

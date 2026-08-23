@@ -572,7 +572,7 @@ def universe_snapshot_bundle(con) -> dict:
     if not latest:
         empty = {"snap_date": None, "bonds": []}
         return {"universe_now": empty, "universe_week_ago": empty,
-                "universe_month_ago": empty, "rf_curve": [],
+                "universe_month_ago": empty, "rf_curve": [], "earliest_snap_date": None,
                 "fair_value_bp_by_tier": {}, "yield_inflection_by_rating": {},
                 "yield_inflection_ceiling_multiple": None,
                 "yield_inflection_caution_multiple": None,
@@ -647,7 +647,7 @@ def universe_snapshot_bundle(con) -> dict:
         for rating, row in inflection_table.items()
     }
 
-    return {**buckets, "rf_curve": rf_curve,
+    return {**buckets, "rf_curve": rf_curve, "earliest_snap_date": earliest,
             "fair_value_bp_by_tier": fair_value_bp_by_tier,
             "yield_inflection_by_rating": yield_inflection_by_rating,
             "yield_inflection_ceiling_multiple": round(ceiling_mult, 2),
@@ -1164,7 +1164,7 @@ def main() -> None:
 
     out = {
         "generated_at": report.get("snap_date"),
-        "day1_snap_date": report.get("snap_date"),
+        "day1_snap_date": market_map["earliest_snap_date"],
         "day2_snap_date": issuers[0]["snap_date"] if issuers else None,
         # Wall-clock time this export ran, distinct from day2_snap_date (the
         # DB's data snapshot date) -- one answers "how fresh is the HTML
