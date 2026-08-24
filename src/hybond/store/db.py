@@ -739,6 +739,16 @@ def seen_market_note_hashes(con) -> set:
     return {r["body_hash"] for r in con.execute("SELECT body_hash FROM market_note")}
 
 
+def seen_market_note_urls(con) -> set:
+    """URLs already stored in market_note (Google News RSS Monitoring task,
+    2026-08-24) -- an explicit URL-based dedup on top of insert_market_note's
+    own body_hash INSERT OR IGNORE, since a source can occasionally reword a
+    headline for the same URL (Google News does this) which would otherwise
+    slip past body_hash dedup as a "new" duplicate item."""
+    return {r["url"] for r in con.execute(
+        "SELECT DISTINCT url FROM market_note WHERE url IS NOT NULL")}
+
+
 def unclassified_market_notes(con, issuer_id: str | None = None) -> list:
     q = "SELECT * FROM market_note WHERE severity IS NULL"
     args: tuple = ()

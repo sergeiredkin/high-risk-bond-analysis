@@ -21,6 +21,14 @@ echo "=== filings run $(date) ===" >> "$LOG"
 # a :30 classify burst caused a real "database is locked" failure).
 PYTHONPATH=src python -m hybond scrape --smartlab >> "$LOG" 2>&1
 PYTHONPATH=src python -m hybond market-notes >> "$LOG" 2>&1
+# Google News RSS per tier=1 issuer (2026-08-24): one HTTP request per
+# issuer with a 2s sleep between them (see scrape/google_news.py), so this
+# adds roughly (tier=1 issuer count x 2s) to the hourly run -- noticeably
+# heavier than the two static feed pulls above, but still well inside the
+# hourly window. cmd_google_news never raises on a single issuer's fetch
+# failure (per-issuer fault isolation, same as market-notes' per-feed
+# isolation), so `set -e` above won't abort this script over one bad fetch.
+PYTHONPATH=src python -m hybond google-news >> "$LOG" 2>&1
 # Auto-classify via local Ollama (classify_ollama.py): --limit 20 caps each
 # hourly run so the backlog clears gradually without hogging the GPU during
 # other work. classify_filing() catches its own network/parse errors and

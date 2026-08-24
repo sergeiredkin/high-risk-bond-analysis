@@ -122,6 +122,18 @@ def cmd_market_notes(_args) -> int:
     return 0
 
 
+def cmd_google_news(args) -> int:
+    from . import scrape_pipeline
+    result = scrape_pipeline.run_google_news(limit=args.limit)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"\n{result['new']} new market note(s) out of {result['parsed']} parsed "
+          f"across {result['scanned']} issuer(s), {result['skipped_dup']} skipped "
+          f"(already stored). {len(result['errors'])} error(s).", file=sys.stderr)
+    for e in result["errors"]:
+        print(f"  ERROR {e}", file=sys.stderr)
+    return 1 if result["errors"] and result["new"] == 0 and result["parsed"] == 0 else 0
+
+
 def _print_queue_sections(view: dict, issuer_names: dict[str, str] | None = None) -> None:
     """Shared three-section rendering for `queue` and `market-notes-queue`:
     priority first (needs attention soonest), then the actually-actionable
@@ -1210,6 +1222,12 @@ def main(argv=None) -> int:
                         help="Ingest smart-lab.ru's general news RSS feed into market_note "
                              "(secondary business-news signal, distinct from filing/event)")
     pm.set_defaults(func=cmd_market_notes)
+    pgn = sub.add_parser("google-news",
+                         help="Fetch Google News RSS per tier=1 issuer, storing new items as "
+                              "market_note (severity/category NULL, classified later)")
+    pgn.add_argument("--limit", type=int, default=None,
+                      help="only process the first N tier=1 issuers this run (default: all)")
+    pgn.set_defaults(func=cmd_google_news)
     pu = sub.add_parser("universe", help="Full MOEX corporate-bond universe screen + G-spread + mispricing")
     pu.add_argument("--refresh-emitent-map", action="store_true",
                      help="force a fresh paginated SECID->ИНН fetch instead of the cached "

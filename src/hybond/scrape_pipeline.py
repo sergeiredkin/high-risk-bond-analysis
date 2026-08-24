@@ -17,6 +17,7 @@ needed for the default path.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from datetime import date
@@ -287,6 +288,80 @@ def run_market_notes(snap_date: date | None = None) -> dict:
 
     con.close()
     result["error"] = "; ".join(errors) if errors else None
+    return result
+
+
+def run_google_news(snap_date: date | None = None, limit: int | None = None) -> dict:
+    """Google News RSS per-issuer monitoring (`hybond google-news`, Google
+    News RSS Monitoring task, 2026-08-24): fetches news for every tier=1
+    watchlist issuer, storing genuinely new items as market_note (severity/
+    category NULL, same later-classify convention as run_market_notes()'s
+    other feeds).
+
+    Unlike run_market_notes()'s market-wide feeds, this is one HTTP request
+    PER issuer -- SLEEP_BETWEEN_ISSUERS_S between requests (2s) to stay
+    under Google's rate limiting, so a full tier=1 run takes roughly
+    (issuer count x 2s) at minimum; `limit` caps how many issuers are
+    processed in one run (--limit N) for a quicker manual/interactive check,
+    the hourly cron path omits it and processes the whole tier=1 list.
+
+    One issuer's fetch failing (after google_news.fetch_issuer_news()'s own
+    internal timeout retries are exhausted) is recorded in result['errors']
+    and does not block the remaining issuers -- same per-item fault
+    isolation as run_market_notes()'s per-feed try/except.
+
+    Dedup is belt-and-suspenders: seen_urls (an explicit URL pre-check, the
+    task's own stated dedup rule) skips a known URL before even attempting
+    an insert, on top of insert_market_note's own body_hash INSERT OR
+    IGNORE (still needed for the case of two DIFFERENT issuer queries
+    incidentally surfacing the same URL within one run, which the
+    once-per-run seen_urls set already covers, but keeps as defense in
+    depth rather than relying on a single dedup path)."""
+    from .scrape import google_news as gn
+    snap_date = snap_date or date.today()
+
+    con = db.connect()
+    db.init_db(con)
+    db.init_market_note(con)
+
+    issuers = db.list_issuers_by_tier(con, 1)
+    if limit is not None:
+        issuers = issuers[:limit]
+
+    seen_urls = db.seen_market_note_urls(con)
+    result = {"snap_date": snap_date.isoformat(), "scanned": len(issuers),
+              "parsed": 0, "new": 0, "skipped_dup": 0, "errors": []}
+
+    for i, row in enumerate(issuers):
+        issuer_id, name = row["issuer_id"], row["name"]
+        try:
+            items = gn.fetch_issuer_news(name, issuer_id)
+        except Exception as e:  # noqa: BLE001 -- one issuer's failure must not block the rest
+            result["errors"].append(f"{name} ({issuer_id}): {e}")
+            items = []
+        result["parsed"] += len(items)
+        for item in items:
+            if item["url"] in seen_urls:
+                result["skipped_dup"] += 1
+                continue
+            body_hash = hashlib.sha1(
+                f"{item['title']}|{item['url']}".encode("utf-8")).hexdigest()[:16]
+            inserted = db.insert_market_note(
+                con, source=gn.SOURCE, issuer_id=issuer_id,
+                occurred=item["published"], headline=item["title"], summary=None,
+                url=item["url"], severity=None, category=None, confidence=None,
+                fetched_on=snap_date.isoformat(), body_hash=body_hash,
+                feed_url=gn.build_url(name))
+            if inserted:
+                result["new"] += 1
+                seen_urls.add(item["url"])
+            else:
+                result["skipped_dup"] += 1
+        con.commit()
+        if i < len(issuers) - 1:
+            time.sleep(gn.SLEEP_BETWEEN_ISSUERS_S)
+
+    con.close()
     return result
 
 
