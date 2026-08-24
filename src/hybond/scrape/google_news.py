@@ -25,6 +25,7 @@ would be pure duplication.
 from __future__ import annotations
 
 import logging
+import re
 import urllib.parse
 from datetime import timezone
 from email.utils import parsedate_to_datetime
@@ -41,6 +42,21 @@ BASE_URL = "https://news.google.com/rss/search"
 QUERY_KEYWORDS = "облигации OR дефолт OR рейтинг OR оферта OR суд"
 SLEEP_BETWEEN_ISSUERS_S = 2.0
 MAX_RETRIES = 3
+
+# Legal-form prefixes stripped when deriving a default alias from an
+# issuer's full legal name (e.g. 'АО "РОЛЬФ"' -> 'РОЛЬФ') -- same set
+# smartlab_news.py's NEWS_ALIASES entries implicitly encode by hand.
+_LEGAL_FORM_RE = re.compile(r'^(ООО|ОАО|ЗАО|АО|ПАО|ИП)\s+', re.IGNORECASE)
+
+
+def _default_alias(issuer_name: str) -> str:
+    name = _LEGAL_FORM_RE.sub("", issuer_name.strip())
+    return name.strip('"\'«»').strip()
+
+
+def _title_matches(title: str, aliases: list[str]) -> bool:
+    lowered = title.lower()
+    return any(alias.lower() in lowered for alias in aliases if alias)
 
 
 def build_url(issuer_name: str) -> str:
@@ -90,20 +106,37 @@ def parse_feed(xml_text: str) -> list[dict]:
 
 
 def fetch_issuer_news(issuer_name: str, inn: str, backend: Backend | None = None,
-                       max_retries: int = MAX_RETRIES) -> list[dict]:
-    """Fetch + parse Google News RSS for one issuer. Retries up to
-    `max_retries` times on a network timeout only (requests.exceptions.
-    Timeout/ConnectionError) -- a non-timeout failure (bad XML, non-200
-    status, which HttpBackend.get() raises as a plain RuntimeError) is not
-    transient and is not worth retrying, so it propagates immediately."""
+                       max_retries: int = MAX_RETRIES,
+                       issuer_aliases: list[str] | None = None) -> list[dict]:
+    """Fetch + parse Google News RSS for one issuer, then keep only items
+    whose title actually mentions the issuer.
+
+    The query's OR-clause (see QUERY_KEYWORDS) is a disjunction across the
+    whole query string, not a per-issuer AND -- Google News can and does
+    return an item that matches one of the credit keywords (e.g. "дефолт")
+    without mentioning this issuer at all (a market-wide "Волна дефолтов
+    2026" roundup surfacing for every single issuer query is the concrete
+    case this filter exists for). `issuer_aliases` defaults to a single
+    alias derived from `issuer_name` by stripping the legal-form prefix and
+    quotes (e.g. 'АО "РОЛЬФ"' -> 'РОЛЬФ'); pass explicit aliases (e.g.
+    smartlab_news.py's NEWS_ALIASES entries for this issuer_id) for names
+    whose public/brand form differs from the legal name.
+
+    Retries up to `max_retries` times on a network timeout only (requests.
+    exceptions.Timeout/ConnectionError) -- a non-timeout failure (bad XML,
+    non-200 status, which HttpBackend.get() raises as a plain RuntimeError)
+    is not transient and is not worth retrying, so it propagates
+    immediately."""
     import requests
     backend = backend or HttpBackend()
     url = build_url(issuer_name)
+    aliases = issuer_aliases if issuer_aliases is not None else [_default_alias(issuer_name)]
     last_error: Exception | None = None
     for attempt in range(1, max_retries + 1):
         try:
             xml_text = backend.get(url)
-            return parse_feed(xml_text)
+            items = parse_feed(xml_text)
+            return [it for it in items if _title_matches(it["title"], aliases)]
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             last_error = e
             logger.warning("google_news fetch attempt %d/%d timed out for %s (%s): %s",

@@ -122,7 +122,11 @@ def test_fetch_issuer_news_retries_on_timeout_then_succeeds():
     ])
     items = gn.fetch_issuer_news("Тест Компани", ISSUER, backend=backend, max_retries=3)
     assert backend.calls == 3
-    assert len(items) == 3  # all 3 items have both title+link
+    # 3 items parse (title+link), but only 2 mention "Тест Компани" in the
+    # title -- the issuer-relevance filter (Google News Issuer-Name Filter
+    # task, 2026-08-24) drops "Новость без даты", which parses fine but
+    # never mentions the issuer.
+    assert len(items) == 2
 
 
 def test_fetch_issuer_news_gives_up_after_max_retries():
@@ -142,6 +146,68 @@ def test_fetch_issuer_news_does_not_retry_non_timeout_error():
     with pytest.raises(RuntimeError, match="404"):
         gn.fetch_issuer_news("Тест Компани", ISSUER, backend=backend, max_retries=3)
     assert backend.calls == 1  # no retry for a non-timeout error
+
+
+# ---- issuer-name relevance filter (Google News Issuer-Name Filter task, 2026-08-24) --
+
+# Shaped like the real complaint: a market-wide roundup that matches the
+# query's OR-clause (mentions "дефолт") without mentioning this issuer at
+# all, alongside one genuinely relevant item.
+OFF_TOPIC_FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+  <item>
+    <title>Волна дефолтов 2026: что происходит на рынке ВДО</title>
+    <link>https://news.google.com/rss/articles/CBMi9</link>
+    <pubDate>Mon, 24 Aug 2026 09:00:00 GMT</pubDate>
+  </item>
+  <item>
+    <title>РОЛЬФ допустил техдефолт по купону - РБК</title>
+    <link>https://news.google.com/rss/articles/CBMi10</link>
+    <pubDate>Mon, 24 Aug 2026 10:00:00 GMT</pubDate>
+  </item>
+</channel>
+</rss>
+"""
+
+
+def test_default_alias_strips_legal_form_and_quotes():
+    assert gn._default_alias('АО "РОЛЬФ"') == "РОЛЬФ"
+    assert gn._default_alias('ООО «Тест Компани»') == "Тест Компани"
+    assert gn._default_alias("Тест Компани") == "Тест Компани"
+
+
+def test_fetch_issuer_news_drops_items_not_mentioning_issuer():
+    backend = _FakeBackend([OFF_TOPIC_FIXTURE])
+    items = gn.fetch_issuer_news('АО "РОЛЬФ"', "5047254063", backend=backend)
+    assert len(items) == 1
+    assert items[0]["url"] == "https://news.google.com/rss/articles/CBMi10"
+
+
+def test_fetch_issuer_news_explicit_aliases_override_default():
+    xml = """<rss><channel>
+      <item><title>SMLT отчиталась за 2 квартал</title>
+             <link>https://x/1</link></item>
+      <item><title>Не имеет отношения к делу</title>
+             <link>https://x/2</link></item>
+    </channel></rss>"""
+    backend = _FakeBackend([xml])
+    # "Самолёт" alone would match neither title -- explicit aliases (e.g.
+    # smartlab_news.NEWS_ALIASES' brand-ticker entries) let a caller widen
+    # the match beyond the derived default.
+    items = gn.fetch_issuer_news("Самолёт", "9731004688", backend=backend,
+                                  issuer_aliases=["SMLT", "Самолёт"])
+    assert len(items) == 1
+    assert items[0]["url"] == "https://x/1"
+
+
+def test_fetch_issuer_news_title_match_is_case_insensitive():
+    xml = """<rss><channel>
+      <item><title>рольф допустил техдефолт</title><link>https://x/1</link></item>
+    </channel></rss>"""
+    backend = _FakeBackend([xml])
+    items = gn.fetch_issuer_news('АО "РОЛЬФ"', "5047254063", backend=backend)
+    assert len(items) == 1
 
 
 # ---- URL dedup (db.seen_market_note_urls + scrape_pipeline.run_google_news) --

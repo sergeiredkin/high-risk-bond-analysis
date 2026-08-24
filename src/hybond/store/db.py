@@ -717,6 +717,14 @@ def init_market_note(con) -> None:
     cols = {r["name"] for r in con.execute("PRAGMA table_info(market_note)")}
     if "feed_url" not in cols:
         con.execute("ALTER TABLE market_note ADD COLUMN feed_url TEXT")
+    # classified_by (Google News Noise Pre-Filter task, 2026-08-24): mirrors
+    # event.classified_by (added in the block above this function) -- lets a
+    # row say HOW it was classified (e.g. 'keyword_filter' for the instant
+    # fast-path below, or 'ollama:<model>' for the GPU path, see
+    # _auto_classify_pass in __main__.py), not just what it was classified
+    # as. Previously market_note had no equivalent column at all.
+    if "classified_by" not in cols:
+        con.execute("ALTER TABLE market_note ADD COLUMN classified_by TEXT")
     con.commit()
 
 
@@ -760,10 +768,69 @@ def unclassified_market_notes(con, issuer_id: str | None = None) -> list:
 
 def set_market_note_classification(
     con, note_id: int, severity: str, category: str, confidence: float,
+    classified_by: str | None = None,
 ) -> None:
     con.execute(
-        "UPDATE market_note SET severity=?, category=?, confidence=? WHERE note_id=?",
-        (severity, category, confidence, note_id))
+        "UPDATE market_note SET severity=?, category=?, confidence=?, classified_by=? "
+        "WHERE note_id=?",
+        (severity, category, confidence, classified_by, note_id))
+
+
+# --- Google News market_note noise pre-filter (2026-08-24) -------------------
+# Distinct from classify_utils.py's NOISE_PATTERNS/queue_bucket(): that
+# module is a QUEUE-DISPLAY filter only and never writes to the DB (see its
+# own docstring). This is the opposite polarity too -- NOISE_PATTERNS lists
+# phrases that MARK something noise; CREDIT_KEYWORDS lists phrases that must
+# be PRESENT for a Google News item to be considered credit-relevant at all.
+# That inversion matters here specifically because a Google News search for
+# "{issuer name} облигации OR дефолт OR ..." matches loosely on the issuer
+# name alone -- most results are ordinary business/market news about the
+# company with none of the OR-keywords actually in the headline, so a
+# NOISE-pattern-match approach (flag if X appears) would badly under-filter
+# this source; requiring a credit keyword to be present is the correct
+# direction for this feed.
+CREDIT_KEYWORDS = [
+    "дефолт", "банкротство", "рейтинг", "оферта", "суд", "просрочка",
+    "иск", "арест", "взыскание", "реструктуризация", "мораторий",
+    "ликвидация", "задолженность", "неплатёж", "технический дефолт",
+    "кредитор", "облигации", "купон", "погашение", "рефинансирование",
+]
+
+
+def is_google_news_noise(headline: str | None, summary: str | None) -> bool:
+    """True if neither headline nor summary contains any CREDIT_KEYWORDS
+    substring (case-insensitive) -- the fast-path noise signal for
+    source='google_news' market_note rows, applied BEFORE the GPU
+    classifier (see skip_noise_google_news() and __main__._auto_classify_pass)."""
+    text = f"{headline or ''} {summary or ''}".lower()
+    return not any(kw in text for kw in CREDIT_KEYWORDS)
+
+
+def unclassified_google_news(con) -> list:
+    return con.execute(
+        "SELECT * FROM market_note WHERE severity IS NULL AND source='google_news' "
+        "ORDER BY occurred DESC").fetchall()
+
+
+def skip_noise_google_news(con, rows) -> int:
+    """Bulk-classify Google News market_note rows that matched no
+    CREDIT_KEYWORDS as noise, without invoking the GPU classifier.
+    category='routine' (NOT 'noise') -- same convention skip_noise_filings()
+    already uses: 'routine' is the taxonomy CATEGORY for routine content,
+    'noise' is only ever a SEVERITY (see classify_ollama.py's
+    VALID_CATEGORIES). A literal category='noise' would introduce a value
+    outside the shared taxonomy the dashboard's EVENT_CATEGORY_RU map and
+    2000+ manually classified rows all key on.
+    `rows` are market_note rows already confirmed source='google_news' and
+    matched by is_google_news_noise() -- this function does not re-check
+    either condition; callers (cmd_auto_classify, `hybond queue
+    --skip-noise-fast`) must filter first."""
+    for r in rows:
+        set_market_note_classification(
+            con, r["note_id"], severity="noise", category="routine",
+            confidence=1.0, classified_by="keyword_filter")
+    con.commit()
+    return len(rows)
 
 
 def insert_event(con, **f) -> int:

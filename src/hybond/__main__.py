@@ -207,6 +207,37 @@ def cmd_queue(args) -> int:
         con.close()
         return 0
 
+    if args.skip_noise_fast:
+        # Google News Noise Pre-Filter task (2026-08-24): the same
+        # keyword pre-filter _auto_classify_pass() already applies
+        # automatically every auto-classify run, exposed here as an
+        # on-demand bulk pass over the ENTIRE pending google_news queue in
+        # one shot -- for clearing a backlog without waiting for the next
+        # cron cycle, or just to see the noise/GPU split right now.
+        db.init_market_note(con)
+        all_gn = db.unclassified_google_news(con)
+        noise_rows = [r for r in all_gn if db.is_google_news_noise(r["headline"], r["summary"])]
+        gpu_count = len(all_gn) - len(noise_rows)
+        if not noise_rows:
+            print(f"Нет Google News записей, подходящих под keyword-фильтр — нечего "
+                  f"пропускать ({gpu_count} останутся в очереди GPU).")
+            con.close()
+            return 0
+        print(f"{len(noise_rows)} Google News note(s) match no credit keyword and will be "
+              f"marked classified (category=routine, severity=noise, "
+              f"classified_by=keyword_filter) without GPU. {gpu_count} will remain queued "
+              f"for GPU classification.")
+        answer = input("Продолжить? [y/N]: ").strip().lower()
+        if answer != "y":
+            print("Отменено.")
+            con.close()
+            return 0
+        n = db.skip_noise_google_news(con, noise_rows)
+        print(f"Marked {n} Google News note(s) as routine/noise via keyword filter. "
+              f"{gpu_count} remain for GPU classification.")
+        con.close()
+        return 0
+
     con.close()
     # JSON dump kept as-is (hy-event-classify reads each row's "source"
     # field from this -- see the skill's Inputs section) -- the three
@@ -251,6 +282,28 @@ def _auto_classify_pass(con, args) -> dict:
     from .classify_ollama import MODEL, classify_filing, needs_review
     from .store import db
 
+    stats = {"processed": 0, "classified": 0, "skipped_noise": 0,
+             "skipped_confidence": 0, "failed": 0, "needs_review": 0,
+             "prefiltered_noise": 0}
+
+    # Google News keyword noise pre-filter (2026-08-24): instant, GPU-free
+    # classification for source='google_news' market_note rows with no
+    # CREDIT_KEYWORDS match (db.is_google_news_noise()/skip_noise_google_news()).
+    # Run every pass (cheap: one SELECT + substring match, no Ollama call),
+    # BEFORE notes are fetched below -- a prefiltered row is already
+    # severity IS NOT NULL by the time get_auto_classify_market_notes()
+    # runs, so it's excluded from `notes` automatically, never reaching the
+    # GPU loop. AZIPI filings (the separate `filing`/`event` queue above)
+    # are never touched by this -- it only ever looks at market_note rows.
+    # Skipped entirely in --dry-run: dry-run must not write anything.
+    if args.source != "filing" and not args.dry_run:
+        gn_noise_rows = [r for r in db.unclassified_google_news(con)
+                          if db.is_google_news_noise(r["headline"], r["summary"])]
+        if gn_noise_rows:
+            db.skip_noise_google_news(con, gn_noise_rows)
+            stats["prefiltered_noise"] = len(gn_noise_rows)
+            stats["processed"] += len(gn_noise_rows)
+
     # --limit is a COMBINED budget across both queues, not per-queue -- each
     # real classification call measured at 52-77s (see classify_ollama.py),
     # so a per-queue limit could silently double a cron run's worst-case
@@ -261,9 +314,6 @@ def _auto_classify_pass(con, args) -> dict:
     remaining = None if args.limit is None else max(0, args.limit - len(filings))
     notes = ([] if args.source == "filing" else
              db.get_auto_classify_market_notes(con, limit=remaining, priority_only=args.priority_only))
-
-    stats = {"processed": 0, "classified": 0, "skipped_noise": 0,
-             "skipped_confidence": 0, "failed": 0, "needs_review": 0}
 
     # NOT batched via classify_filings_batch (classify_ollama.py) -- tried
     # it live against this machine's real Ollama/qwen3.5 build (2026-08-20)
@@ -334,14 +384,17 @@ def _auto_classify_pass(con, args) -> dict:
                 continue
 
             review = needs_review(result["severity"], result["confidence"])
-            # market_note has no classified_by/needs_review columns (Part 1
-            # only extended `event`) -- set_market_note_classification()
-            # writes the three columns it does have; confidence still gates
-            # the write above.
+            # market_note has no needs_review column (Part 1 only extended
+            # `event`) -- confidence still gates the write above.
+            # classified_by (Google News Noise Pre-Filter task, 2026-08-24)
+            # mirrors insert_event's classified_by=f"ollama:{MODEL}" above,
+            # so a GPU-classified market_note row is now distinguishable
+            # from a keyword_filter one (see db.skip_noise_google_news()).
             if not args.dry_run:
                 db.set_market_note_classification(
                     con, note["note_id"], severity=result["severity"],
-                    category=result["category"], confidence=result["confidence"])
+                    category=result["category"], confidence=result["confidence"],
+                    classified_by=f"ollama:{MODEL}")
 
             if result["severity"] == "noise":
                 stats["skipped_noise"] += 1
@@ -366,7 +419,8 @@ def cmd_auto_classify(args) -> int:
 
     pause = getattr(args, "pause", None)
     total = {"processed": 0, "classified": 0, "skipped_noise": 0,
-              "skipped_confidence": 0, "failed": 0, "needs_review": 0}
+              "skipped_confidence": 0, "failed": 0, "needs_review": 0,
+              "prefiltered_noise": 0}
     interrupted = False
 
     try:
@@ -431,7 +485,8 @@ def cmd_auto_classify(args) -> int:
 
     print(f"Processed: {total['processed']}")
     print(f"Classified: {total['classified']} events written")
-    print(f"Noise (skipped): {total['skipped_noise']}")
+    print(f"Noise, GPU-classified (skipped): {total['skipped_noise']}")
+    print(f"Noise, keyword pre-filter (Google News, no GPU): {total['prefiltered_noise']}")
     print(f"Low confidence (skipped): {total['skipped_confidence']}")
     print(f"Failed (API error): {total['failed']}")
     print(f"Needs review: {total['needs_review']}")
@@ -1183,6 +1238,11 @@ def main(argv=None) -> int:
                      help="bulk-mark all noise-pattern-matching filings as classified "
                           "(category=routine, severity=noise) without running them "
                           "through hy-event-classify -- prompts for confirmation first")
+    pq.add_argument("--skip-noise-fast", action="store_true",
+                     help="bulk-mark all source=google_news market_note rows with no "
+                          "CREDIT_KEYWORDS match as classified (category=routine, "
+                          "severity=noise, classified_by=keyword_filter) without GPU -- "
+                          "prompts for confirmation first; reports noise vs. GPU-queued counts")
     pq.set_defaults(func=cmd_queue)
 
     pmq = sub.add_parser("market-notes-queue",
