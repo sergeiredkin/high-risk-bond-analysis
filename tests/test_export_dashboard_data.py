@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from hybond.store import db  # noqa: E402
 from export_dashboard_data import (  # noqa: E402
     spread_history_by_issuer, passive_issuers_export, passive_events_since,
-    universe_snapshot_bundle)
+    universe_snapshot_bundle, RATING_TREND_VALUE, rating_trend,
+    rating_history_by_issuer)
 
 ISSUER = "7701234567"
 
@@ -286,3 +287,122 @@ def test_earliest_snap_date_none_when_no_universe_history(tmp_path):
     bundle = universe_snapshot_bundle(con)
     con.close()
     assert bundle["earliest_snap_date"] is None
+
+
+# ---- Rating Trajectory task (2026-08-24) ------------------------------------
+
+def test_rating_trend_value_covers_all_20_ratings():
+    expected = {
+        "ruAAA": 20, "ruAA+": 19, "ruAA": 18, "ruAA-": 17, "ruA+": 16, "ruA": 15, "ruA-": 14,
+        "ruBBB+": 13, "ruBBB": 12, "ruBBB-": 11, "ruBB+": 10, "ruBB": 9, "ruBB-": 8,
+        "ruB+": 7, "ruB": 6, "ruB-": 5, "ruCCC": 4, "ruCC": 3, "ruC": 2, "ruD": 1,
+    }
+    assert RATING_TREND_VALUE == expected
+    assert len(RATING_TREND_VALUE) == 20
+
+
+def test_rating_trend_none_for_empty_history():
+    assert rating_trend([]) is None
+
+
+def test_rating_trend_flat_for_single_data_point():
+    history = [{"date": "2026-06-20", "rating": "ruBB+", "agency": "НКР"}]
+    r = rating_trend(history)
+    assert r["direction"] == "flat"
+    assert r["tooltip"] == "ruBB+ (НКР)"
+
+
+def test_rating_trend_up_on_upgrade():
+    history = [
+        {"date": "2024-06-01", "rating": "ruBB-", "agency": "НКР"},
+        {"date": "2025-06-15", "rating": "ruBB", "agency": "НКР"},
+        {"date": "2026-06-20", "rating": "ruBB+", "agency": "НКР"},
+    ]
+    r = rating_trend(history)
+    assert r["direction"] == "up"
+    assert r["tooltip"] == "ruBB- → ruBB → ruBB+ (НКР)"
+
+
+def test_rating_trend_down_on_downgrade():
+    history = [
+        {"date": "2025-06-15", "rating": "ruBB+", "agency": "АКРА"},
+        {"date": "2026-06-20", "rating": "ruBB-", "agency": "АКРА"},
+    ]
+    r = rating_trend(history)
+    assert r["direction"] == "down"
+
+
+def test_rating_trend_flat_when_unchanged():
+    history = [
+        {"date": "2025-06-15", "rating": "ruBBB", "agency": "АКРА"},
+        {"date": "2026-06-20", "rating": "ruBBB", "agency": "АКРА"},
+    ]
+    r = rating_trend(history)
+    assert r["direction"] == "flat"
+
+
+def test_rating_trend_flat_for_unrecognised_rating():
+    history = [
+        {"date": "2025-06-15", "rating": "какой-то мусор", "agency": "АКРА"},
+        {"date": "2026-06-20", "rating": "ruBBB", "agency": "АКРА"},
+    ]
+    r = rating_trend(history)
+    assert r["direction"] == "flat"
+
+
+RH_ISSUER = "7701234599"
+
+
+def _rh_con(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_rating(con)
+    db.upsert_issuer(con, RH_ISSUER, "Rating History Test Co")
+    return con
+
+
+def test_rating_history_by_issuer_ordered_ascending(tmp_path):
+    con = _rh_con(tmp_path)
+    db.upsert_rating(con, issuer_id=RH_ISSUER, agency="НКР", rating="ruBB+",
+                     outlook="stable", action="confirmed", rated_on="2026-06-20", source="manual")
+    db.upsert_rating(con, issuer_id=RH_ISSUER, agency="НКР", rating="ruBB-",
+                     outlook="stable", action="assigned", rated_on="2024-06-01", source="manual")
+    db.upsert_rating(con, issuer_id=RH_ISSUER, agency="НКР", rating="ruBB",
+                     outlook="stable", action="confirmed", rated_on="2025-06-15", source="manual")
+    con.commit()
+
+    history = rating_history_by_issuer(con, [RH_ISSUER])[RH_ISSUER]
+    con.close()
+    assert [h["date"] for h in history] == ["2024-06-01", "2025-06-15", "2026-06-20"]
+    assert [h["rating"] for h in history] == ["ruBB-", "ruBB", "ruBB+"]
+    assert all(h["agency"] == "НКР" for h in history)
+
+
+def test_rating_history_by_issuer_excludes_manual_agency(tmp_path):
+    """agency='manual' is the watchlist-seed placeholder, not a real rating
+    action -- must never appear in the exported trajectory."""
+    con = _rh_con(tmp_path)
+    db.upsert_rating(con, issuer_id=RH_ISSUER, agency="АКРА", rating="ruA-",
+                     outlook="stable", action="confirmed", rated_on="2026-01-01", source="manual")
+    db.upsert_rating(con, issuer_id=RH_ISSUER, agency="manual", rating="ruBB",
+                     outlook=None, action=None, rated_on="2026-07-27", source="manual")
+    con.commit()
+
+    history = rating_history_by_issuer(con, [RH_ISSUER])[RH_ISSUER]
+    con.close()
+    assert len(history) == 1
+    assert history[0]["agency"] == "АКРА"
+
+
+def test_rating_history_by_issuer_empty_for_no_history(tmp_path):
+    con = _rh_con(tmp_path)
+    con.commit()
+    history = rating_history_by_issuer(con, [RH_ISSUER])
+    con.close()
+    assert history.get(RH_ISSUER, []) == []
+
+
+def test_rating_history_by_issuer_empty_issuer_ids_list(tmp_path):
+    con = _rh_con(tmp_path)
+    con.commit()
+    assert rating_history_by_issuer(con, []) == {}

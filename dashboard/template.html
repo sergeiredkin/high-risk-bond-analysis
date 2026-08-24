@@ -1133,6 +1133,14 @@
   .iw-name { font-weight: 500; font-size: 14px; flex: 1 1 auto; min-width: 0; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
   .iw-rating { color: var(--text-muted); font-size: 13px; flex-shrink: 0; width: 64px; }
+  .iw-rating-trend { margin-left: 3px; cursor: help; font-weight: 700; }
+  .iw-rating-timeline { margin-top: 10px; }
+  .iw-rating-timeline-row { display: flex; gap: 10px; font-size: 13px; padding: 3px 0;
+    color: var(--text-secondary); align-items: baseline; }
+  .iw-rating-timeline-date { color: var(--text-muted); width: 88px; flex-shrink: 0; }
+  .iw-rating-timeline-rating { font-weight: 600; color: var(--text-primary); width: 64px; flex-shrink: 0; }
+  .iw-rating-timeline-agency { color: var(--text-muted); }
+  .iw-rating-timeline-more { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
   .iw-aey { color: #C9A227; font-size: 13px; flex-shrink: 0; width: 60px; text-align: right; }
   .iw-status { color: var(--text-secondary); font-size: 13px; flex-shrink: 0; width: 140px; text-align: right; }
   .iw-arrow { flex-shrink: 0; width: 1.2em; text-align: center; color: var(--text-muted); }
@@ -4801,6 +4809,31 @@ function issuerMetaRowHtml(iss) {
   </div>`;
 }
 
+// Rating trend arrow (Rating Trajectory task, 2026-08-24): iss.rating_trend
+// is precomputed server-side (export_dashboard_data.rating_trend()) from
+// iss.rating_history -- direction is already resolved there so this stays
+// pure presentation (arrow glyph + color), no re-derivation of "up/down"
+// logic in JS.
+// JS mirror of export_dashboard_data.RATING_TREND_VALUE -- the backend only
+// precomputes the trend for the LAST transition (iss.rating_trend, used for
+// the card arrow above); the drawer timeline below needs a per-row arrow
+// for EVERY transition in the sequence, which is cheap enough to just
+// re-derive here rather than exporting one flag per history row.
+const RATING_TREND_VALUE_JS = {
+  ruAAA: 20, 'ruAA+': 19, ruAA: 18, 'ruAA-': 17, 'ruA+': 16, ruA: 15, 'ruA-': 14,
+  'ruBBB+': 13, ruBBB: 12, 'ruBBB-': 11, 'ruBB+': 10, ruBB: 9, 'ruBB-': 8,
+  'ruB+': 7, ruB: 6, 'ruB-': 5, ruCCC: 4, ruCC: 3, ruC: 2, ruD: 1,
+};
+const RATING_TREND_ARROW = { up: '↑', down: '↓', flat: '→' };
+const RATING_TREND_COLOR = { up: 'var(--verdict-green)', down: 'var(--verdict-red)', flat: 'var(--text-muted)' };
+function ratingTrendHtml(iss) {
+  const t = iss.rating_trend;
+  if (!t) return '';
+  const arrow = RATING_TREND_ARROW[t.direction] || '→';
+  const color = RATING_TREND_COLOR[t.direction] || 'var(--text-muted)';
+  return `<span class="iw-rating-trend" style="color:${color}" title="${escapeHtml(t.tooltip || '')}">${arrow}</span>`;
+}
+
 function renderIssuerRows() {
   const el = document.getElementById('issuerRowsView');
   if (!DATA.issuers.length) {
@@ -4834,7 +4867,7 @@ function renderIssuerRows() {
         <span class="iw-dot" style="background:${dotColor}" title="${v ? v.label : 'Недостаточно данных'}"></span>
         <span class="health-dot" style="background:${healthColor}" title="${escapeHtml(healthTitle)}"></span>
         <span class="iw-name">${escapeHtml(iss.name)}</span>
-        <span class="iw-rating">${iss.rating || '—'}</span>
+        <span class="iw-rating">${iss.rating || '—'}${ratingTrendHtml(iss)}</span>
         <span class="iw-aey" title="${escapeHtml(AEY_RISK_ADJ_TOOLTIP)}" style="cursor:help">${aey}</span>
         <span class="iw-status">${status}</span>
         <span class="iw-arrow">${isOpen ? '▼' : '▶'}</span>
@@ -4924,9 +4957,42 @@ function renderPassiveIssuers() {
 }
 renderPassiveIssuers();
 
+// Rating history timeline (bond detail drawer, Rating Trajectory task,
+// 2026-08-24): mobile collapses to the last 3 actions (window.innerWidth <=
+// 640, same breakpoint the collapsed-row cards themselves use) -- evaluated
+// once at render time, same pattern every other viewport-conditional render
+// in this file already uses (see e.g. heroMobile/tickerMobile above), not a
+// resize listener.
+function ratingHistoryTimelineHtml(iss) {
+  const history = iss.rating_history || [];
+  if (!history.length) return '';
+  const mobile = window.innerWidth <= 640;
+  const shown = mobile ? history.slice(-3) : history;
+  const rows = shown.map((h, i) => {
+    const prevVal = i > 0 ? RATING_TREND_VALUE_JS[shown[i - 1].rating] : undefined;
+    const curVal = RATING_TREND_VALUE_JS[h.rating];
+    let arrow = '';
+    if (i > 0 && prevVal != null && curVal != null) {
+      arrow = curVal > prevVal
+        ? `<span style="color:var(--verdict-green)">↑</span>`
+        : curVal < prevVal ? `<span style="color:var(--verdict-red)">↓</span>` : '';
+    }
+    return `<div class="iw-rating-timeline-row">
+      <span class="iw-rating-timeline-date">${escapeHtml(h.date)}</span>
+      <span class="iw-rating-timeline-rating">${escapeHtml(h.rating)}</span>
+      <span class="iw-rating-timeline-agency">${escapeHtml(h.agency)}</span>
+      ${arrow}
+    </div>`;
+  }).join('');
+  const more = mobile && history.length > 3
+    ? `<div class="iw-rating-timeline-more">Показаны последние 3 из ${history.length} действий</div>` : '';
+  return `<div class="iw-rating-timeline"><b>История рейтинга</b>${rows}${more}</div>`;
+}
+
 function renderIssuerDetail(iss) {
   let html = '';
   if (iss.note) html += `<p style="margin:0 0 10px;color:var(--text-secondary)">${iss.note}</p>`;
+  html += ratingHistoryTimelineHtml(iss);
   html += pillarPanelHtml(iss);
   if (iss.flags_today && iss.flags_today.length) {
     html += `<div><b>Флаги детектора изменений (сравнение с предыдущим днём):</b><br>` +

@@ -499,6 +499,68 @@ def _aey_risk_decomposition_pct(aey_base: float | None, rating: str | None) -> d
     }
 
 
+# Rating Trajectory task (2026-08-24): a presentation-only numeric scale for
+# up/down trend detection on the dashboard, deliberately separate from
+# default_probs.RATING_ORDER/rating_rank -- that one is ranked worst-first
+# (0=ruAAA) for PD lookups and has no ruD entry (no observed defaults at
+# that grade in the Эксперт РА table it's built from). This one is exactly
+# the scale specified for the Rating Trajectory task: higher = better,
+# ruD=1 included so a full default is still a valid (if extreme) data point.
+RATING_TREND_VALUE: dict[str, int] = {
+    "ruAAA": 20, "ruAA+": 19, "ruAA": 18, "ruAA-": 17, "ruA+": 16, "ruA": 15, "ruA-": 14,
+    "ruBBB+": 13, "ruBBB": 12, "ruBBB-": 11, "ruBB+": 10, "ruBB": 9, "ruBB-": 8,
+    "ruB+": 7, "ruB": 6, "ruB-": 5, "ruCCC": 4, "ruCC": 3, "ruC": 2, "ruD": 1,
+}
+
+
+def rating_trend(history: list[dict]) -> dict | None:
+    """Trend arrow direction + tooltip from a rating_history list (as built
+    by rating_history_by_issuer() below): compares only the LAST transition
+    (most recent two entries) for direction -- "last action was an upgrade/
+    downgrade" per the task spec -- but the tooltip chains the full
+    trajectory. Returns None for an issuer with no rating history at all
+    (nothing to show); 'flat'/grey for a single data point or an
+    unrecognised rating on either side of the last transition."""
+    if not history:
+        return None
+    tooltip = " → ".join(h["rating"] for h in history) + f" ({history[-1]['agency']})"
+    if len(history) < 2:
+        return {"direction": "flat", "tooltip": tooltip}
+    prev_val = RATING_TREND_VALUE.get(history[-2]["rating"])
+    cur_val = RATING_TREND_VALUE.get(history[-1]["rating"])
+    if prev_val is None or cur_val is None:
+        direction = "flat"
+    elif cur_val > prev_val:
+        direction = "up"
+    elif cur_val < prev_val:
+        direction = "down"
+    else:
+        direction = "flat"
+    return {"direction": direction, "tooltip": tooltip}
+
+
+def rating_history_by_issuer(con, issuer_ids: list[str]) -> dict[str, list[dict]]:
+    """All rating rows (every agency, including superseded/is_current=0 --
+    the point is the full historical trajectory, not just the current
+    winner) for the given issuers, ordered oldest-first. Excludes
+    agency='manual' -- that's the watchlist-seed placeholder agency (see
+    promotion_audit.py's comment on the same convention), and its rows carry
+    a bulk backfill date (2026-07-27 for essentially every issuer) that is
+    not a real rating action; including it would show a spurious, often
+    wrong-direction "action" on that date for almost every issuer."""
+    if not issuer_ids:
+        return {}
+    placeholders = ",".join("?" * len(issuer_ids))
+    out: dict[str, list[dict]] = {}
+    for r in con.execute(
+        f"SELECT issuer_id, agency, rating, rated_on FROM rating "
+        f"WHERE issuer_id IN ({placeholders}) AND agency != 'manual' "
+        f"ORDER BY issuer_id, rated_on ASC", issuer_ids):
+        out.setdefault(r["issuer_id"], []).append(
+            {"date": r["rated_on"], "rating": r["rating"], "agency": r["agency"]})
+    return out
+
+
 def ofz_bundle(con, scenarios: dict) -> dict:
     """Real OFZ data (ofz_pipeline.py, `hybond ofz`) + carry/roll-down
     projections under the same base/stress/bull CBR scenarios used
@@ -1065,6 +1127,9 @@ def main() -> None:
             "SELECT issuer_id, MAX(computed_on) AS computed_on FROM pillars_snapshot "
             "GROUP BY issuer_id")
     }
+    # rating_history/rating_trend (Rating Trajectory task, 2026-08-24).
+    rating_history_by_issuer_map = rating_history_by_issuer(
+        con, [r["issuer_id"] for r in tier1_rows])
     spread_history, spread_history_labels = spread_history_by_issuer(
         con, [r["issuer_id"] for r in tier1_rows], date.today().isoformat())
     fcounts = filing_counts_by_issuer(con)
@@ -1187,6 +1252,8 @@ def main() -> None:
             "pillars_date": pillars_date_by_issuer.get(issuer_id),
             "rating_date": rating_row["rated_on"] if rating_row else None,
             "verified_on": rating_row["verified_on"] if rating_row else None,
+            "rating_history": rating_history_by_issuer_map.get(issuer_id, []),
+            "rating_trend": rating_trend(rating_history_by_issuer_map.get(issuer_id, [])),
         })
     issuers_passive = passive_issuers_export(con, tier2_rows, watchlist, universe.get("snap_date"))
     notes = data_notes(con, watchlist)
