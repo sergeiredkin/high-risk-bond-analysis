@@ -231,7 +231,12 @@ def test_watchlist_promote_cli(tmp_path, monkeypatch, capsys):
     con.commit()
     con.close()
 
-    rc = cli.cmd_watchlist_promote(Namespace(inn="111", tier=1, reason="upgraded"))
+    # force=True: this test is about the tier-change plumbing, not the
+    # pre-promotion audit (a bare issuer with no financials/universe data
+    # always carries a "no financial data found" warning, which would
+    # otherwise stop at an interactive y/n prompt -- see
+    # test_promotion_audit_cli.py for audit-specific coverage).
+    rc = cli.cmd_watchlist_promote(Namespace(inn="111", tier=1, reason="upgraded", force=True))
     assert rc == 0
     con = db.connect()
     row = con.execute("SELECT watchlist_tier FROM issuer WHERE issuer_id='111'").fetchone()

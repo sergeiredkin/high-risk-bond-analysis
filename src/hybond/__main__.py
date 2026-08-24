@@ -690,7 +690,54 @@ def cmd_watchlist_demote(args) -> int:
 
 
 def cmd_watchlist_promote(args) -> int:
-    return _cmd_watchlist_tier_change(args, to_tier=args.tier)
+    from . import promotion_audit
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_pillars(con)
+    db.init_market_note(con)
+
+    issuer_row = con.execute(
+        "SELECT name FROM issuer WHERE issuer_id=?", (args.inn,)).fetchone()
+    if issuer_row is None:
+        print(f"no issuer row with issuer_id={args.inn!r}", file=sys.stderr)
+        con.close()
+        return 1
+    issuer_name = issuer_row["name"]
+
+    audit = promotion_audit.run_audit(con, args.inn)
+    print(promotion_audit.format_report(audit, issuer_name=issuer_name))
+    print(f"\nSTATUS: {audit['status']}")
+
+    reason = args.reason
+    if audit["blocking"]:
+        if not args.force:
+            print("\nBLOCKED — re-run with --force to override.", file=sys.stderr)
+            con.close()
+            return 1
+        print("\nBLOCKED conditions present — proceeding because --force was passed.",
+              file=sys.stderr)
+        reason = f"{reason} [FORCED past blocking audit: {'; '.join(audit['blocking'])}]"
+    elif audit["warnings"] and not args.force:
+        print("\nWARNINGS FOUND", file=sys.stderr)
+        answer = input("Proceed? (y/n): ").strip().lower()
+        if answer != "y":
+            print("Отменено.")
+            con.close()
+            return 0
+
+    try:
+        result = db.set_watchlist_tier(con, args.inn, args.tier, reason=reason)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        con.close()
+        return 1
+    con.commit()
+    con.close()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
 
 
 def cmd_discover(args) -> int:
@@ -1161,6 +1208,9 @@ def main(argv=None) -> int:
                       help="target tier (only 1 is meaningful here -- use "
                            "watchlist-demote to go the other way)")
     pwp.add_argument("--reason", required=True, help="free-text reason for the promotion")
+    pwp.add_argument("--force", action="store_true",
+                      help="proceed past a BLOCKED pre-promotion audit result "
+                           "(the override is recorded in the stored reason)")
     pwp.set_defaults(func=cmd_watchlist_promote)
     pdis = sub.add_parser("discover",
                           help="On-demand audit: MOEX-discovered bonds vs. watchlist.json "

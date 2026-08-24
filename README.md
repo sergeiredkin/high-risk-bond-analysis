@@ -121,8 +121,12 @@ hybond promote [--rating-floor] [--n-before-cap] [--cap] [--target]
                                      manual-candidate -> real-issuer path
 hybond watchlist-demote <inn> --reason REASON
                                      move an active (tier=1) issuer to passive (tier=2)
-hybond watchlist-promote <inn> --reason REASON [--tier 1]
-                                     move a passive (tier=2) issuer to active (tier=1)
+hybond watchlist-promote <inn> --reason REASON [--tier 1] [--force]
+                                     move a passive (tier=2) issuer to active (tier=1);
+                                     runs a pre-promotion audit (G-spread trend, YTM,
+                                     critical events, detector flags, market notes,
+                                     pillar freshness) first -- BLOCKED conditions need
+                                     --force, WARNINGS prompt for confirmation
 hybond discover [watchlist.json]    MOEX-vs-watchlist.json coverage diff
 
 --- Company scan (ad hoc due-diligence on issuers outside the watchlist) ---
