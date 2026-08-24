@@ -1055,6 +1055,16 @@ def main() -> None:
             "SELECT issuer_id, health_status, health_reason FROM issuer "
             "WHERE watchlist_tier = 1")
     }
+    # pillars_date (Analytical Status Metadata task, 2026-08-24): last date
+    # ANY pillars_snapshot was computed for the issuer, regardless of fiscal
+    # period -- MAX(computed_on) across all period rows, not tied to a
+    # specific report.
+    pillars_date_by_issuer = {
+        r["issuer_id"]: r["computed_on"]
+        for r in con.execute(
+            "SELECT issuer_id, MAX(computed_on) AS computed_on FROM pillars_snapshot "
+            "GROUP BY issuer_id")
+    }
     spread_history, spread_history_labels = spread_history_by_issuer(
         con, [r["issuer_id"] for r in tier1_rows], date.today().isoformat())
     fcounts = filing_counts_by_issuer(con)
@@ -1167,6 +1177,16 @@ def main() -> None:
                 issuer_id, {"health_status": "green"})["health_status"],
             "health_reason": health_by_issuer.get(
                 issuer_id, {"health_reason": None})["health_reason"],
+            # Analytical Status Metadata task (2026-08-24): pillars_date is a
+            # fresh MAX(computed_on) lookup (pillars_snapshot has no other
+            # home in this loop); rating_date/verified_on reuse rating_row,
+            # already fetched above for rating_detail -- verified_on is
+            # rating.verified_on (when THIS rating was last cross-checked),
+            # not a separate issuer-level field, which the schema has no
+            # equivalent of.
+            "pillars_date": pillars_date_by_issuer.get(issuer_id),
+            "rating_date": rating_row["rated_on"] if rating_row else None,
+            "verified_on": rating_row["verified_on"] if rating_row else None,
         })
     issuers_passive = passive_issuers_export(con, tier2_rows, watchlist, universe.get("snap_date"))
     notes = data_notes(con, watchlist)

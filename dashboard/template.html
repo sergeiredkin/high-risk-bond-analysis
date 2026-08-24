@@ -1138,9 +1138,13 @@
   .iw-arrow { flex-shrink: 0; width: 1.2em; text-align: center; color: var(--text-muted); }
   .iw-detail { display: none; padding: 0 14px 14px; background: var(--bg-surface); }
   .iw-detail.open { display: block; }
+  .iw-meta { display: flex; gap: 12px; padding: 0 12px 8px 32px; font-size: 11.5px;
+    color: var(--text-muted); flex-wrap: wrap; }
+  .iw-meta span { cursor: help; }
   @media (max-width: 640px) {
     .iw-status { display: none; }
     .iw-rating { width: auto; }
+    .iw-meta { font-size: 10.5px; padding-left: 12px; gap: 8px; }
   }
   /* ---- Passive monitoring (tier=2) collapsed rows, Вотчлист tab -------- */
   .iw-tier2-badge { flex-shrink: 0; font-size: 11px; padding: 2px 7px; border-radius: 10px;
@@ -4770,6 +4774,33 @@ function onFiltersChanged() {
   renderIssuerRows();
 }
 
+// Analytical status metadata row (Вотчлист tab, 2026-08-24): pillars_date/
+// rating_date/verified_on are all "when was this fact last established"
+// dates, not "as of" market data -- staleness thresholds are absolute
+// (180d/365d/90d), not tied to DATA.day2_snap_date the way market-data
+// freshness elsewhere on the dashboard is. verified_on reuses rating.
+// verified_on ("when this rating was last cross-checked") -- issuer has no
+// equivalent field of its own in the schema.
+const IW_META_STALE_DAYS = { pillars: 180, rating: 365, verified: 90 };
+function iwMetaItem(icon, label, dateStr, asOf, staleDays) {
+  if (!dateStr) return `<span title="${escapeHtml(label)}: нет данных">${icon} —</span>`;
+  const days = daysBetween(dateStr, asOf);
+  const stale = days != null && days > staleDays;
+  const shown = stale ? '⚠️' : icon;
+  const title = stale
+    ? `${label}: ${dateStr} — устарело (${days} дн. > ${staleDays})`
+    : `${label}: ${dateStr}`;
+  return `<span title="${escapeHtml(title)}">${shown} ${dateStr}</span>`;
+}
+function issuerMetaRowHtml(iss) {
+  const asOf = iss.snap_date || DATA.day2_snap_date;
+  return `<div class="iw-meta">
+    ${iwMetaItem('📊', 'Финансовые данные', iss.pillars_date, asOf, IW_META_STALE_DAYS.pillars)}
+    ${iwMetaItem('🏷', 'Рейтинг', iss.rating_date, asOf, IW_META_STALE_DAYS.rating)}
+    ${iwMetaItem('✓', 'Верификация', iss.verified_on, asOf, IW_META_STALE_DAYS.verified)}
+  </div>`;
+}
+
 function renderIssuerRows() {
   const el = document.getElementById('issuerRowsView');
   if (!DATA.issuers.length) {
@@ -4808,6 +4839,7 @@ function renderIssuerRows() {
         <span class="iw-status">${status}</span>
         <span class="iw-arrow">${isOpen ? '▼' : '▶'}</span>
       </div>
+      ${issuerMetaRowHtml(iss)}
       <div class="iw-detail${isOpen ? ' open' : ''}"></div>
     </div>`;
   }).join('')}</div>`;
