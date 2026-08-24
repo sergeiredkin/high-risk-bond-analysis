@@ -605,6 +605,7 @@
   .sort-arrow { opacity: .5; font-size: 12px; margin-left: 3px; }
   .flag-chip { display:inline-block; background: color-mix(in srgb, var(--critical) 12%, var(--surface-1));
     color: var(--critical); border-radius: 6px; padding: 2px 7px; font-size: 12px; margin-right:4px; }
+  .health-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
   .table-scroll { overflow-x: auto; }
 
   /* ---- tabs ---- */
@@ -672,6 +673,8 @@
   .filter-reset-btn { padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border);
     background: none; color: var(--text-secondary); font-size: 12.5px; cursor: pointer; }
   .filter-reset-btn:hover { color: var(--critical); border-color: var(--critical); }
+  .filter-reset-btn.filter-active { border-color: var(--gold-primary); color: var(--gold-primary); }
+  .filter-reset-btn.filter-active:hover { border-color: var(--gold-hover); color: var(--gold-hover); }
   .filter-chips-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .filter-chips-row:empty { margin-top: 0; }
   .filter-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 10px;
@@ -4626,7 +4629,24 @@ const FILTER_DEFS = [
   { key: 'refinancing', label: 'Рефинансирование', allLabel: 'Все' },
 ];
 
-let watchlistFilters = { sector: '', risk: '', rating: '', duration: '', refinancing: '' };
+let watchlistFilters = { sector: '', risk: '', rating: '', duration: '', refinancing: '', problemOnly: false };
+
+// health_status (Watchlist Health Monitoring task, revised 2026-08-24):
+// green/yellow/orange/red set by `hybond scan-watchlist-health` on every
+// tier=1 issuer -- a distinct axis from the AEY-based verdict (VERDICT_DOT_
+// COLOR above), shown as a second dot on each watchlist row rather than a
+// separate collapsed section, so all issuers stay visible with severity at
+// a glance.
+const HEALTH_STATUS_COLOR = {
+  green: 'var(--verdict-green)', yellow: 'var(--verdict-yellow)',
+  orange: 'var(--verdict-orange)', red: 'var(--verdict-red)',
+};
+const HEALTH_STATUS_LABEL = { green: 'green', yellow: 'yellow', orange: 'orange', red: 'red' };
+function issuerHealthStatus(iss) { return iss.health_status || 'green'; }
+function isProblemIssuer(iss) {
+  const s = issuerHealthStatus(iss);
+  return s === 'red' || s === 'orange';
+}
 
 function filterOptionsFor(defKey) {
   if (defKey === 'sector') {
@@ -4654,6 +4674,7 @@ function issuerMatchesFilters(iss) {
   if (watchlistFilters.duration
       && durationBucketKey(issuerAvgDurationYrs(iss)) !== watchlistFilters.duration) return false;
   if (watchlistFilters.refinancing && refinancingBucketKey(iss) !== watchlistFilters.refinancing) return false;
+  if (watchlistFilters.problemOnly && !isProblemIssuer(iss)) return false;
   return true;
 }
 
@@ -4662,7 +4683,7 @@ function filteredWatchlistIssuers() {
 }
 
 function activeFilterCount() {
-  return FILTER_DEFS.filter(d => watchlistFilters[d.key]).length;
+  return FILTER_DEFS.filter(d => watchlistFilters[d.key]).length + (watchlistFilters.problemOnly ? 1 : 0);
 }
 
 function renderFilterBar() {
@@ -4679,12 +4700,16 @@ function renderFilterBar() {
       ${opts.map(([k, label]) => `<option value="${escapeHtml(k)}"${k === active ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}
     </select>`;
   }).join('')
+    + `<button type="button" class="filter-reset-btn${watchlistFilters.problemOnly ? ' filter-active' : ''}" id="problemOnlyBtn">${watchlistFilters.problemOnly ? '✓ ' : ''}Только проблемные</button>`
     + `<button type="button" class="filter-reset-btn" id="filterResetBtn" style="display:${activeFilterCount() ? '' : 'none'}">Сбросить фильтры</button>`;
 
   chipsEl.innerHTML = FILTER_DEFS.filter(d => watchlistFilters[d.key]).map(d => {
     const label = filterValueLabel(d.key, watchlistFilters[d.key]);
     return `<span class="filter-chip">${escapeHtml(d.label)}: ${escapeHtml(label)}<button type="button" data-clear="${d.key}" title="Убрать фильтр">×</button></span>`;
-  }).join('');
+  }).join('')
+    + (watchlistFilters.problemOnly
+        ? `<span class="filter-chip">Только проблемные<button type="button" id="problemOnlyClear" title="Убрать фильтр">×</button></span>`
+        : '');
 
   const total = DATA.issuers.length;
   const shown = filteredWatchlistIssuers().length;
@@ -4699,6 +4724,17 @@ function renderFilterBar() {
   const resetBtn = document.getElementById('filterResetBtn');
   if (resetBtn) resetBtn.addEventListener('click', () => {
     FILTER_DEFS.forEach(d => { watchlistFilters[d.key] = ''; });
+    watchlistFilters.problemOnly = false;
+    onFiltersChanged();
+  });
+  const problemOnlyBtn = document.getElementById('problemOnlyBtn');
+  if (problemOnlyBtn) problemOnlyBtn.addEventListener('click', () => {
+    watchlistFilters.problemOnly = !watchlistFilters.problemOnly;
+    onFiltersChanged();
+  });
+  const problemOnlyClear = document.getElementById('problemOnlyClear');
+  if (problemOnlyClear) problemOnlyClear.addEventListener('click', () => {
+    watchlistFilters.problemOnly = false;
     onFiltersChanged();
   });
   chipsEl.querySelectorAll('button[data-clear]').forEach(btn => {
@@ -4742,12 +4778,17 @@ function renderIssuerRows() {
     const v = issuerWorstVerdict(iss);
     const bond = issuerBestBond(iss);
     const dotColor = VERDICT_DOT_COLOR[v ? v.level : 'gray'];
+    const health = issuerHealthStatus(iss);
+    const healthColor = HEALTH_STATUS_COLOR[health];
+    const healthTitle = iss.health_reason
+      ? `Health: ${HEALTH_STATUS_LABEL[health]} — ${iss.health_reason}` : `Health: ${HEALTH_STATUS_LABEL[health]}`;
     const aey = bond && bond.aey_base_risk_adj_pct != null ? `${bond.aey_base_risk_adj_pct.toFixed(1)}%` : '—';
     const status = issuerStatusLine(iss);
     const isOpen = lastExpanded === iss.issuer_id;
     return `<div class="iw-row-wrap${isOpen ? ' iw-open' : ''}" data-issuer="${iss.issuer_id}">
       <div class="iw-row">
         <span class="iw-dot" style="background:${dotColor}" title="${v ? v.label : 'Недостаточно данных'}"></span>
+        <span class="health-dot" style="background:${healthColor}" title="${escapeHtml(healthTitle)}"></span>
         <span class="iw-name">${escapeHtml(iss.name)}</span>
         <span class="iw-rating">${iss.rating || '—'}</span>
         <span class="iw-aey" title="${escapeHtml(AEY_RISK_ADJ_TOOLTIP)}" style="cursor:help">${aey}</span>

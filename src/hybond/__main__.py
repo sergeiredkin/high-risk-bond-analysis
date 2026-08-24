@@ -740,6 +740,71 @@ def cmd_watchlist_promote(args) -> int:
     return 0
 
 
+def cmd_scan_watchlist_health(args) -> int:
+    """Watchlist Health Monitoring task (2026-08-24; thresholds revised
+    2026-08-24): scans every tier=1 issuer, auto-demotes on a hard/confirmed
+    signal (no confirmation -- meant to run unattended from daily_run.sh),
+    and sets issuer.health_status to green/yellow/orange/red otherwise. See
+    src/hybond/watchlist_health.py for the signal definitions themselves."""
+    import hashlib
+    from . import watchlist_health
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_pillars(con)
+    db.init_market_note(con)
+    db.init_issuer_bond(con)
+    db.init_rating(con)
+
+    today = date.today().isoformat()
+    scan = watchlist_health.scan_watchlist(con, today)
+
+    demoted = []
+    by_status = {"red": [], "orange": [], "yellow": [], "green": []}
+    for r in scan["issuers"]:
+        issuer_id, name = r["issuer_id"], r["name"]
+        if r["hard_reasons"]:
+            reason = f"Auto-demoted by scan-watchlist-health: {'; '.join(r['hard_reasons'])}"
+            db.set_watchlist_tier(con, issuer_id, 2, reason=reason)
+            db.set_issuer_health_status(con, issuer_id, "red", reason=reason)
+            headline = f"{name}: автодемоция (scan-watchlist-health) — {'; '.join(r['hard_reasons'])}"
+            db.insert_market_note(
+                con, source="watchlist_health_scan", issuer_id=issuer_id,
+                occurred=today, headline=headline, summary=headline, url=None,
+                severity="critical", category=None, confidence=1.0,
+                fetched_on=today,
+                body_hash=hashlib.sha1(f"{headline}|{today}".encode("utf-8")).hexdigest()[:16])
+            demoted.append({"issuer_id": issuer_id, "name": name, "reasons": r["hard_reasons"]})
+        else:
+            db.set_issuer_health_status(con, issuer_id, r["health_status"], reason=r["health_reason"])
+            by_status[r["health_status"]].append(
+                {"issuer_id": issuer_id, "name": name, "reason": r["health_reason"]})
+    con.commit()
+
+    result = {
+        "as_of": today, "scanned": len(scan["issuers"]),
+        "demoted": demoted,
+        "red": by_status["red"], "orange": by_status["orange"],
+        "yellow": by_status["yellow"], "green_count": len(by_status["green"]),
+    }
+    con.close()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"\n{len(demoted)} auto-demoted; among remaining tier=1: "
+          f"{len(by_status['red'])} RED, {len(by_status['orange'])} ORANGE, "
+          f"{len(by_status['yellow'])} YELLOW, {len(by_status['green'])} GREEN.",
+          file=sys.stderr)
+    for d in demoted:
+        print(f"  DEMOTED {d['name']} ({d['issuer_id']}): {'; '.join(d['reasons'])}",
+              file=sys.stderr)
+    for status in ("red", "orange", "yellow"):
+        for r in by_status[status]:
+            print(f"  {status.upper()} {r['name']} ({r['issuer_id']}): {r['reason']}",
+                  file=sys.stderr)
+    return 0
+
+
 def cmd_discover(args) -> int:
     from . import discover
     report = discover.run_gap_check(Path(args.watchlist))
@@ -1212,6 +1277,11 @@ def main(argv=None) -> int:
                       help="proceed past a BLOCKED pre-promotion audit result "
                            "(the override is recorded in the stored reason)")
     pwp.set_defaults(func=cmd_watchlist_promote)
+    pswh = sub.add_parser("scan-watchlist-health",
+                           help="Scan every tier=1 issuer for hard-demotion/soft-flag "
+                                "signals (unattended -- meant to run daily after "
+                                "`hybond run`, no confirmation prompts)")
+    pswh.set_defaults(func=cmd_scan_watchlist_health)
     pdis = sub.add_parser("discover",
                           help="On-demand audit: MOEX-discovered bonds vs. watchlist.json "
                                "coverage, per issuer (manual tool, not part of daily_run.sh)")

@@ -1046,6 +1046,15 @@ def main() -> None:
     # edisclosure_id per issuer_id, not the list of which issuers appear.
     tier1_rows = db.list_issuers_by_tier(con, 1)
     tier2_rows = db.list_issuers_by_tier(con, 2)
+    # health_status/health_reason (Watchlist Health Monitoring task,
+    # 2026-08-24): list_issuers_by_tier()'s SELECT is shared by several
+    # callers, so this is a separate lookup rather than widening that query.
+    health_by_issuer = {
+        r["issuer_id"]: {"health_status": r["health_status"], "health_reason": r["health_reason"]}
+        for r in con.execute(
+            "SELECT issuer_id, health_status, health_reason FROM issuer "
+            "WHERE watchlist_tier = 1")
+    }
     spread_history, spread_history_labels = spread_history_by_issuer(
         con, [r["issuer_id"] for r in tier1_rows], date.today().isoformat())
     fcounts = filing_counts_by_issuer(con)
@@ -1154,6 +1163,10 @@ def main() -> None:
             "six_pillars_delta": fl.get("six_pillars_delta", {}),
             "thesis": thesis,
             "filing_counts": fcounts.get(issuer_id, {"total": 0, "classified": 0}),
+            "health_status": health_by_issuer.get(
+                issuer_id, {"health_status": "green"})["health_status"],
+            "health_reason": health_by_issuer.get(
+                issuer_id, {"health_reason": None})["health_reason"],
         })
     issuers_passive = passive_issuers_export(con, tier2_rows, watchlist, universe.get("snap_date"))
     notes = data_notes(con, watchlist)

@@ -38,6 +38,14 @@ if [ "$(date +%u)" = "7" ]; then
 fi
 PYTHONPATH=src python -m hybond universe $UNIVERSE_FLAGS >> "$LOG" 2>&1
 
+# Watchlist health scan (2026-08-24): hard-demotes/soft-flags tier=1 issuers
+# off today's just-refreshed universe_snapshot/spread_snapshot. Placed here
+# (after `hybond universe`, not immediately after `hybond run` above) --
+# its YTM checks read universe_snapshot, which `hybond run` doesn't write at
+# all (only universe_pipeline.py's `hybond universe` does); running it right
+# after `hybond run` would check YTM against yesterday's snapshot.
+PYTHONPATH=src python -m hybond scan-watchlist-health >> "$LOG" 2>&1
+
 # Phase 2 promotion screen: rank vdo_scope over rating floor -> liquidity
 # floor -> AEY-risk-adj -> issuer concentration cap, into a deep-monitoring
 # candidate shortlist. Pure read over today's just-refreshed universe_snapshot

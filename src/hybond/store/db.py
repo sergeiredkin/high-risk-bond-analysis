@@ -204,6 +204,19 @@ def init_db(con: sqlite3.Connection) -> None:
         con.execute("ALTER TABLE issuer ADD COLUMN watchlist_tier INTEGER NOT NULL DEFAULT 2")
         con.execute("UPDATE issuer SET watchlist_tier = 1 WHERE active = 1")
         con.execute("UPDATE issuer SET watchlist_tier = 2 WHERE active = 0 OR active IS NULL")
+    # issuer: health_status/health_reason -- color-coded output of `hybond
+    # scan-watchlist-health` (Watchlist Health Monitoring task, 2026-08-24;
+    # revised from an earlier needs_review boolean to a 4-level
+    # green/yellow/orange/red scale so a dashboard card can show severity at
+    # a glance, not just "flagged or not"). Distinct from event.needs_review
+    # (per-filing classification review queue, added above) -- this one is
+    # issuer-level and recomputed fresh on every health-scan run, not a
+    # one-time manual-review queue.
+    issuer_cols = {r["name"] for r in con.execute("PRAGMA table_info(issuer)")}
+    if "health_status" not in issuer_cols:
+        con.execute("ALTER TABLE issuer ADD COLUMN health_status TEXT NOT NULL DEFAULT 'green'")
+    if "health_reason" not in issuer_cols:
+        con.execute("ALTER TABLE issuer ADD COLUMN health_reason TEXT")
     con.execute("""
         CREATE TABLE IF NOT EXISTS watchlist_tier_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -268,6 +281,22 @@ def set_watchlist_tier(con, issuer_id: str, to_tier: int, reason: str | None = N
         (issuer_id, from_tier, to_tier, reason, changed_at))
     return {"id": cur.lastrowid, "issuer_id": issuer_id, "from_tier": from_tier,
             "to_tier": to_tier, "reason": reason, "changed_at": changed_at}
+
+
+HEALTH_STATUSES = {"green", "yellow", "orange", "red"}
+
+
+def set_issuer_health_status(con, issuer_id: str, status: str, reason: str | None = None) -> None:
+    """Set issuer.health_status + health_reason -- the color-coded output of
+    `hybond scan-watchlist-health`. Called fresh every scan run for every
+    tier=1 issuer (including a reset back to 'green' with reason=None when
+    no signal fires), so a stale reason string can never survive past a
+    resolved signal."""
+    if status not in HEALTH_STATUSES:
+        raise ValueError(f"status must be one of {sorted(HEALTH_STATUSES)}, got {status!r}")
+    con.execute(
+        "UPDATE issuer SET health_status=?, health_reason=? WHERE issuer_id=?",
+        (status, reason if status != "green" else None, issuer_id))
 
 
 def list_issuers_by_tier(con, watchlist_tier: int | tuple[int, ...] | list[int]) -> list[dict]:

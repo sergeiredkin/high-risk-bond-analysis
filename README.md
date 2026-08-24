@@ -127,6 +127,19 @@ hybond watchlist-promote <inn> --reason REASON [--tier 1] [--force]
                                      critical events, detector flags, market notes,
                                      pillar freshness) first -- BLOCKED conditions need
                                      --force, WARNINGS prompt for confirmation
+hybond scan-watchlist-health        unattended tier=1 health scan (run daily after
+                                     `hybond universe`): auto-demotes only on a
+                                     confirmed signal (critical insolvency/default
+                                     event, delisting, YTM>300%), otherwise sets
+                                     issuer.health_status to green/yellow/orange/red
+                                     -- RED: YTM>150%, G-spread +100%/7d & >2000bp,
+                                     critical event in 3d, possible ФНС account
+                                     block (keyword heuristic); ORANGE: YTM 60-150%,
+                                     G-spread +50%/30d, rating -2 notches/90d,
+                                     high-severity event in 14d; YELLOW: YTM 30-60%,
+                                     G-spread +30%/30d, rating outlook turned
+                                     negative, medium-severity event in 7d -- see
+                                     src/hybond/watchlist_health.py
 hybond discover [watchlist.json]    MOEX-vs-watchlist.json coverage diff
 
 --- Company scan (ad hoc due-diligence on issuers outside the watchlist) ---
