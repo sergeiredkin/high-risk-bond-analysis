@@ -773,7 +773,20 @@
   @media (max-width: 768px) {
     .spravka-toc-mobile { display: block; }
     .spravka-toc { display: none; }
-    .spravka-layout { flex-direction: column; }
+    /* align-items: flex-start (set above for the desktop row layout, where
+       .spravka-toc needs to size to its own content, not stretch to the
+       tallest column) leaves .spravka-content's cross size (width, once
+       flex-direction flips to column) unconstrained -- a block-level flex
+       item with align-self != stretch is sized by shrink-to-fit against the
+       nested flex chain (.spravka-content -> .spravka-search -> its flex:1
+       input, whose min-width defaults to auto), which some engines resolve
+       wider than the actual containing block instead of clamping to it,
+       overflowing the 375px viewport. `stretch` gives .spravka-content (and
+       therefore .spravka-search below it) the flex container's own,
+       already-viewport-constrained width as a definite size, removing the
+       shrink-to-fit ambiguity entirely. */
+    .spravka-layout { flex-direction: column; align-items: stretch; }
+    .spravka-content { width: 100%; min-width: 0; }
   }
 
   /* ---- universe screener ---- */
