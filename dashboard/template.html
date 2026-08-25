@@ -141,7 +141,7 @@
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     font-size: 15px; line-height: 1.5;
   }
-  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 80px; }
+  .wrap { max-width: 100%; padding: 24px 20px 80px; }
   header.top { display: flex; justify-content: space-between; align-items: flex-start;
     gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
   h1 { font-size: 22px; margin: 0 0 4px; }
@@ -607,6 +607,11 @@
     color: var(--critical); border-radius: 6px; padding: 2px 7px; font-size: 12px; margin-right:4px; }
   .health-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
   .table-scroll { overflow-x: auto; }
+  /* Full-width layout task (2026-08-25): explicit safety net -- table {
+     width:100% } and .card already had no max-width, so this was already
+     true in practice once .wrap's own cap was lifted, but the task named
+     #marketTable specifically, so pin it rather than rely on inheritance. */
+  #marketTableView, #marketTable { width: 100%; max-width: none; }
 
   /* ---- Vertical sidebar navigation (Navigation Shell task, 2026-08-25) --
      Replaces the horizontal .tab-bar (desktop) and .mobile-tab-bar
@@ -1218,12 +1223,30 @@
   .iw-meta { display: flex; gap: 12px; padding: 0 16px 10px 20px; font-size: 11.5px;
     color: var(--text-muted); flex-wrap: wrap; }
   .iw-meta span { cursor: help; }
+  /* ---- Вотчлист card grid (Full-width/Mobile task, 2026-08-25): scoped to
+     #sec-table specifically so the passive-monitoring list (same .iw-rows/
+     .iw-row-wrap markup, #passiveIssuersView) keeps its single-column list
+     layout -- only the active-monitoring table becomes a card grid. ---- */
+  #sec-table .iw-rows {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 12px;
+    padding: 4px;
+  }
+  #sec-table .iw-row-wrap {
+    width: 100%;
+    margin-bottom: 0; /* grid `gap` already spaces rows -- the flex-column
+      list's own margin-bottom would double up on top of it */
+  }
   @media (max-width: 640px) {
+    #sec-table .iw-rows { grid-template-columns: 1fr; }
     .iw-status { display: none; }
     .iw-rating { width: auto; }
-    .iw-meta { font-size: 10.5px; padding-left: 14px; gap: 8px; }
+    .iw-meta { font-size: 13px; padding-left: 14px; gap: 8px; }
     .iw-pillars-row { padding-left: 14px; gap: 10px; }
-    .iw-row { padding: 10px 12px; }
+    .iw-pillar-bar { width: 40px; }
+    .iw-pillar-label, .iw-pillar-score, .iw-health-reason { font-size: 13px; }
+    .iw-row { padding: 8px 12px; min-height: 44px; box-sizing: border-box; }
   }
 
   /* ---- Issuer detail drawer (Вотчлист card redesign, 2026-08-25): replaces
@@ -1246,7 +1269,18 @@
     align-items: center; justify-content: center; }
   .iw-drawer-close:hover { color: var(--text-primary); border-color: var(--gold-primary); }
   .iw-drawer-title { font-size: 15px; font-weight: 600; margin: 0 28px 12px 0; }
-  @media (max-width: 640px) { .iw-drawer { width: 100%; } }
+  /* Mobile: full-width bottom sheet instead of a right-side panel -- same
+     .open class/JS, just a different closed transform (translateY instead
+     of translateX) and edge (bottom instead of right). */
+  @media (max-width: 640px) {
+    .iw-drawer {
+      top: auto; right: 0; bottom: 0; left: 0; width: 100%; height: 85vh;
+      border-left: none; border-top: 1px solid var(--border);
+      border-radius: 14px 14px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,0.35);
+      transform: translateY(100%);
+    }
+    .iw-drawer.open { transform: translateY(0); }
+  }
   /* ---- Passive monitoring (tier=2) collapsed rows, Вотчлист tab -------- */
   .iw-tier2-badge { flex-shrink: 0; font-size: 11px; padding: 2px 7px; border-radius: 10px;
     background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--bg-border); }
@@ -1339,6 +1373,25 @@
     .logo-subtitle { display: none; }
     /* Fix 6: font slider isn't practical on touch -- theme toggle stays. */
     .font-slider-control { display: none; }
+  }
+  /* ---- Touch targets, mobile (Full-width/Mobile task, 2026-08-25): the
+     small toolbar-style buttons across Вотчлист/Рынок (subnav, time/view
+     toggles, .uni-btn actions, collapse toggles, drawer close) size to
+     their text at desktop density (~28-32px tall) -- bump to the 44px
+     minimum on touch viewports without touching desktop sizing. Scoped to
+     the specific classes actually used in these two tabs' toolbars, not a
+     blanket button rule, to avoid resizing controls elsewhere (e.g. the
+     ЦБ РФ/Портфель tabs' own already-verified button sizing) as a side
+     effect of this task. ---- */
+  @media (max-width: 768px) {
+    .subnav-btn, .time-btn, .view-btn, .uni-btn, .filter-toggle-btn,
+    .mkt-collapse-toggle {
+      min-height: 44px;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    /* Circular icon button -- width+height, not min-height, so it stays a
+       circle instead of stretching into a pill. */
+    .iw-drawer-close { width: 44px; height: 44px; }
   }
 </style>
 </head>
