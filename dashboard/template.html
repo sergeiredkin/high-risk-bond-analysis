@@ -608,6 +608,55 @@
   .health-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
   .table-scroll { overflow-x: auto; }
 
+  /* ---- Vertical sidebar navigation (Navigation Shell task, 2026-08-25) --
+     Replaces the horizontal .tab-bar (desktop) and .mobile-tab-bar
+     (mobile) with one fixed, responsive nav: a 64px left rail on desktop
+     that collapses to a fixed bottom bar (icons only) under 768px -- same
+     breakpoint every other mobile rule in this file already uses. One set
+     of markup/JS for both, not two navs to keep in sync.
+     Token mapping: the task spec named generic tokens (--bg-secondary,
+     --border-color, --bg-hover) that don't exist in this file's actual
+     palette -- mapped to the closest real equivalents already used by
+     .tab-btn/.subnav-btn's own active/hover states: --bg-surface (surface
+     fill), --border (hairline), --bg-elevated (hover lift), --gold-primary
+     (exists verbatim, used as specified). z-index 190: above the old
+     .mobile-tab-bar's 150 (now removed) and .subnav-bar's sticky 40, below
+     the bond-detail-drawer modal's 200 so a full-screen drawer still
+     covers the rail. */
+  .sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 64px;
+    background: var(--bg-surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: stretch; z-index: 190;
+    overflow-y: auto; scrollbar-width: none; }
+  .sidebar::-webkit-scrollbar { display: none; }
+  .sidebar-item { background: none; border: none; border-left: 3px solid transparent;
+    padding: 12px 4px 10px; display: flex; flex-direction: column; align-items: center;
+    gap: 4px; cursor: pointer; color: var(--text-secondary); position: relative;
+    flex-shrink: 0; font-family: inherit; }
+  .sidebar-item .si-icon { font-size: 20px; line-height: 1; position: relative; }
+  .sidebar-item .si-label { font-size: 11px; line-height: 1.15; text-align: center; }
+  .sidebar-item:hover { background: var(--bg-elevated); }
+  .sidebar-item.active { border-left-color: var(--gold-primary); color: var(--gold-primary);
+    background: var(--gold-muted); }
+  .sidebar-settings { margin-top: auto; border-top: 1px solid var(--border); }
+  .si-badge-dot { position: absolute; top: -1px; right: 10px; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--verdict-red); border: 1.5px solid var(--bg-surface); }
+  .si-badge-count { position: absolute; top: -6px; right: 2px; min-width: 15px; height: 15px;
+    padding: 0 3px; border-radius: 8px; background: var(--verdict-red); color: #fff;
+    font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; }
+  @media (min-width: 769px) {
+    body { margin-left: 64px; }
+  }
+  @media (max-width: 768px) {
+    .sidebar { top: auto; left: 0; right: 0; bottom: 0; height: 58px; width: auto;
+      flex-direction: row; border-right: none; border-top: 1px solid var(--border);
+      overflow-y: visible; }
+    .sidebar-item { flex: 1; padding: 6px 2px; border-left: none;
+      border-top: 3px solid transparent; }
+    .sidebar-item.active { border-left-color: transparent; border-top-color: var(--gold-primary); }
+    .sidebar-item .si-label { display: none; }
+    .sidebar-settings { margin-top: 0; border-top: none; }
+  }
+
   /* ---- tabs ---- */
   .tab-bar { display: flex; gap: 4px; }
   .tab-btn {
@@ -1052,7 +1101,14 @@
   /* ---- Theme toggle + font-size slider: same nav row, left of the
      disclosure pill -- see applyTheme()/applyFontScale() near the top of
      the script block for the localStorage-backed logic. */
-  .theme-font-controls { display: flex; align-items: center; gap: 10px; margin: 8px 4px 8px 0; }
+  .theme-font-controls { display: flex; align-items: center; gap: 10px; margin: 8px 4px 8px 0;
+    border-radius: 8px; transition: background-color .3s, box-shadow .3s; }
+  /* Sidebar "Настройки" click target -- brief pulse, added/removed via
+     setTimeout in the sidebarSettingsBtn listener (Navigation Shell task,
+     2026-08-25). No new settings panel; this just calls out the existing
+     theme/font controls the click scrolled to. */
+  .theme-font-controls.settings-highlight { background: var(--gold-muted);
+    box-shadow: 0 0 0 2px var(--gold-primary); }
   .theme-toggle-btn { display: flex; align-items: center; justify-content: center;
     width: 30px; height: 30px; border: 1px solid var(--bg-border); background: var(--bg-elevated);
     color: var(--text-secondary); border-radius: var(--radius-btn); cursor: pointer; padding: 0; }
@@ -1158,24 +1214,13 @@
   .iw-tier2-badge { flex-shrink: 0; font-size: 11px; padding: 2px 7px; border-radius: 10px;
     background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--bg-border); }
 
-  /* ---- Mobile bottom tab bar --------------------------------------------- */
-  .mobile-tab-bar { display: none; }
+  /* ---- Mobile bottom nav clearance ---------------------------------------
+     The old .mobile-tab-bar (58px, its own fixed bottom bar) was removed
+     (Navigation Shell task, 2026-08-25) -- .sidebar now IS the bottom bar
+     under 768px (see its own @media rule above), same 58px height, so this
+     body padding still applies unchanged. */
   @media (max-width: 768px) {
     body { padding-bottom: 58px; }
-    .mobile-tab-bar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 150;
-      background: var(--bg-surface); border-top: 1px solid var(--bg-border); height: 58px; }
-    .mtb-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 2px; border: none; background: none; color: var(--text-secondary); font-size: 14px;
-      cursor: pointer; position: relative; }
-    .mtb-btn span { line-height: 1; }
-    .mtb-btn.active { color: var(--gold-primary); }
-    .mtb-more-popover { display: none; position: absolute; bottom: 58px; right: 8px; flex-direction: column;
-      background: var(--bg-elevated); border: 1px solid var(--bg-border); border-radius: var(--radius-card);
-      box-shadow: var(--shadow-card); overflow: hidden; min-width: 140px; }
-    .mtb-more-popover.open { display: flex; }
-    .mtb-more-popover button { border: none; background: none; color: var(--text-primary); text-align: left;
-      padding: 10px 14px; font-size: 13px; cursor: pointer; }
-    .mtb-more-popover button:hover { background: var(--gold-muted); color: var(--gold-primary); }
   }
 
   /* ---- Home screen (landing view -- NOT a 5th tab, see gotoTab()/
@@ -1261,6 +1306,39 @@
 </style>
 </head>
 <body data-disclosure="standard">
+<!-- Vertical sidebar navigation (Navigation Shell task, 2026-08-25) --
+     replaces the old horizontal .tab-bar/.mobile-tab-bar. Fixed, persistent
+     across all tabs like the ticker bar below. data-shortcut matches the
+     1-6 keyboard shortcuts wired near gotoTab() in the script block --
+     Настройки has no shortcut digit (only 6 content sections + settings,
+     spec covers 1-6 only). data-tab values match gotoTab()'s existing tab
+     names exactly; Главная has no data-tab (calls showHomeScreen()
+     directly, same as the existing #backToHomeLink). -->
+<nav class="sidebar" id="sidebar">
+  <button type="button" class="sidebar-item" id="sidebarHomeBtn" data-shortcut="1" title="Главная (1)">
+    <span class="si-icon">🏠</span><span class="si-label">Главная</span>
+  </button>
+  <button type="button" class="sidebar-item" data-tab="watchlist" data-shortcut="2" title="Вотчлист (2)">
+    <span class="si-icon">📊<span class="si-badge-count" id="sidebarWatchlistBadge" style="display:none"></span></span>
+    <span class="si-label">Вотчлист</span>
+  </button>
+  <button type="button" class="sidebar-item" data-tab="market" data-shortcut="3" title="Рынок (3)">
+    <span class="si-icon">🔍</span><span class="si-label">Рынок</span>
+  </button>
+  <button type="button" class="sidebar-item" data-tab="cbr" data-shortcut="4" title="ЦБ РФ (4)">
+    <span class="si-icon">🏦<span class="si-badge-dot" id="sidebarCbrBadge" style="display:none"></span></span>
+    <span class="si-label">ЦБ РФ</span>
+  </button>
+  <button type="button" class="sidebar-item" data-tab="portfolio" data-shortcut="5" title="Портфель (5)">
+    <span class="si-icon">💼</span><span class="si-label">Портфель</span>
+  </button>
+  <button type="button" class="sidebar-item" data-tab="spravka" data-shortcut="6" title="Справка (6)">
+    <span class="si-icon">📚</span><span class="si-label">Справка</span>
+  </button>
+  <button type="button" class="sidebar-item sidebar-settings" id="sidebarSettingsBtn" title="Настройки">
+    <span class="si-icon">⚙️</span><span class="si-label">Настройки</span>
+  </button>
+</nav>
 <!-- Ticker bar: persistent across all tabs (lives outside .wrap's tab-panel
      switching), built once from existing exports -- see computeMarketPulse()
      and renderTicker() near the top-level script block below. -->
@@ -1274,13 +1352,9 @@
   </header>
 
   <div class="tab-bar-row">
-    <div class="tab-bar">
-      <button class="tab-btn active" data-tab="watchlist">Вотчлист</button>
-      <button class="tab-btn" data-tab="market">Рынок</button>
-      <button class="tab-btn" data-tab="cbr">ЦБ РФ</button>
-      <button class="tab-btn" data-tab="portfolio">Портфель</button>
-      <button class="tab-btn" data-tab="spravka">Справка</button>
-    </div>
+    <!-- Old horizontal .tab-bar removed (Navigation Shell task, 2026-08-25)
+         -- replaced by the fixed .sidebar nav above. Kept .tab-bar-row as
+         the container for theme-font-controls/disclosure-pill, unchanged. -->
     <div class="theme-font-controls">
       <button type="button" class="theme-toggle-btn" id="themeToggle" title="Переключить тему" aria-label="Переключить тему"></button>
       <div class="font-slider-control" id="fontSliderControl">
@@ -1760,16 +1834,17 @@
 
     <section id="sec-primary-placements">
       <h2>Первичные размещения</h2>
-      <p class="section-note">Решения МОЕХ по листингу за последние 30 дней, отфильтрованные до сигналов размещения (регистрация выпуска, итоги размещения, начало торгов) — MOEX Listing RSS (<code>source=moex_listing</code>). Предстоящие/самые свежие — золотым, прошедшие — приглушены.</p>
+      <p class="section-note">Объявления о размещениях за последние 30 дней — Google News (в основном republished Smart-Lab, <code>source=google_news</code>), отфильтровано до реальных сигналов нового выпуска (не рутинные выплаты купона). Предстоящие/самые свежие — золотым, прошедшие — приглушены.</p>
       <div class="card table-scroll"><table id="placementsTable"></table></div>
-      <!-- Step 1 audit for this task (2026-08-25) found moex_listing rows
-           have issuer_id=NULL (rss_generic.py stores this feed market-wide,
-           not issuer-matched) and `summary` truncated to ~200 chars by
-           MOEX's own RSS feed before ingestion -- issuer/rating/YTM/amount
-           aren't parseable from what's stored today. Per explicit user
-           decision: ship date+headline+source only, no fabricated/empty
-           columns, with this note instead. -->
-      <p class="section-note" style="margin-top:8px">Структурированные данные по размещениям (эмитент, доходность, объём) появятся после расширения парсера источников.</p>
+      <!-- Switched from moex_listing to google_news (2026-08-25 follow-up
+           task) -- audit found moex_listing structurally couldn't carry
+           issuer/YTM (issuer_id NULL, summary truncated ~200 chars), while
+           google_news/Smart-Lab headlines often do. Эмитент/Доходность are
+           BEST-EFFORT extraction (NEWS_ALIASES match + a YTM regex), not
+           guaranteed for every row -- live audit found ~33%/~19% hit rates
+           respectively across genuine placement-signal headlines. "—" means
+           not confidently extractable, never a guess. -->
+      <p class="section-note" style="margin-top:8px">Эмитент/Доходность — по возможности извлечены из заголовка (сопоставление с известными эмитентами вотчлиста + разбор «YTM N%»), не для каждой строки. «—» означает, что уверенно извлечь не удалось — не догадка.</p>
     </section>
 
     <section id="sec-spread-delta">
@@ -2090,20 +2165,14 @@
   </footer>
 </div>
 
-<!-- Mobile bottom tab bar: hidden by default, shown only under 768px (see
-     .mobile-tab-bar media query) -- desktop keeps the top .tab-bar only,
-     not a duplicate nav. -->
-<nav class="mobile-tab-bar" id="mobileTabBar">
-  <button type="button" class="mtb-btn" data-mtab="market">📈<span>Рынок</span></button>
-  <button type="button" class="mtb-btn active" data-mtab="watchlist">👁<span>Вотчлист</span></button>
-  <button type="button" class="mtb-btn" data-mtab="portfolio">💼<span>Портфель</span></button>
-  <button type="button" class="mtb-btn" id="mtbMoreBtn">⋯<span>Ещё</span></button>
-  <div class="mtb-more-popover" id="mtbMorePopover">
-    <button type="button" data-mtab="cbr">🏦 ЦБ РФ</button>
-    <button type="button" data-mtab-ofz="1">📄 ОФЗ</button>
-    <button type="button" data-mtab="spravka">📖 Справка</button>
-  </div>
-</nav>
+<!-- Old .mobile-tab-bar removed (Navigation Shell task, 2026-08-25) -- the
+     #sidebar nav (top of body) collapses into the mobile bottom bar itself
+     under 768px, one shared nav for both breakpoints. The old "Ещё"
+     popover's ОФЗ shortcut (an instrument toggle inside Рынок, not a real
+     tab) has no equivalent on the new sidebar -- ОФЗ stays reachable via
+     Рынок's own instrument toggle, unaffected; see this task's report for
+     why it's not one of the sidebar's items (the given spec lists 6 fixed
+     sections + settings, not ОФЗ). -->
 
 <div class="tooltip" id="tooltip"></div>
 
@@ -3913,10 +3982,15 @@ function deltaCellHtml(v) {
   return `<span style="color:${color}">${arrow} ${Math.abs(Math.round(v))}бп</span>`;
 }
 let spreadDeltaSortKey = 'delta7', spreadDeltaSortDir = -1;
-// Первичные размещения (Primary Placements task, 2026-08-25): thin table --
-// date + truncated headline + source link only, per Step 1 audit findings
-// (see export_dashboard_data.py's primary_placements() docstring for why
-// issuer/rating/YTM/amount columns don't exist here).
+// Первичные размещения (Primary Placements task, 2026-08-25; switched to
+// google_news source in a same-day follow-up task): Эмитент/Доходность are
+// best-effort extraction from the headline (see export_dashboard_data.py's
+// primary_placements() docstring) -- "—" means not confidently extracted,
+// not a guess. issuer_id (when present, via NEWS_ALIASES) is exported but
+// not yet wired to any cross-navigation in the UI -- no existing hook to
+// scroll to a specific issuer row from another tab (tr.issuer-row's CSS
+// exists but no row currently carries that class), so this stays plain
+// text until/unless that's added deliberately.
 const PLACEMENT_HEADLINE_TRUNCATE = 80;
 function renderPlacementsTable() {
   const table = document.getElementById('placementsTable');
@@ -3928,7 +4002,7 @@ function renderPlacementsTable() {
     return;
   }
   const now = new Date();
-  let html = `<thead><tr><th>Дата</th><th>Заголовок</th><th>Источник</th></tr></thead><tbody>`;
+  let html = `<thead><tr><th>Дата</th><th>Эмитент</th><th>Заголовок</th><th>Доходность</th><th>Источник</th></tr></thead><tbody>`;
   rows.forEach(r => {
     const d = r.date ? new Date(r.date) : null;
     const isUpcoming = d && !isNaN(d) && d > now;
@@ -3938,11 +4012,14 @@ function renderPlacementsTable() {
       ? headline.slice(0, PLACEMENT_HEADLINE_TRUNCATE) + '…' : headline;
     const rowStyle = isUpcoming ? ' style="background:rgba(212,175,55,0.14)"'
       : ' style="color:var(--text-muted)"';
+    const issuerCell = r.issuer ? escapeHtml(r.issuer) : '—';
     const link = r.url
-      ? `<a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">MOEX ↗</a>` : '—';
+      ? `<a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">Источник ↗</a>` : '—';
     html += `<tr${rowStyle}>
       <td>${dateStr}</td>
+      <td>${issuerCell}</td>
       <td title="${escapeHtml(headline)}">${escapeHtml(truncated)}</td>
+      <td>${r.ytm ? escapeHtml(r.ytm) : '—'}</td>
       <td>${link}</td>
     </tr>`;
   });
@@ -5283,18 +5360,20 @@ initSubnav('watchlistSubnav');
 initSubnav('marketSubnav');
 
 // ================= Tabs =================
-// Single shared tab-switch function -- the top .tab-bar, the ticker bar's
-// clickable items, the Market Pulse tiles, and the mobile bottom tab bar
-// all call this instead of each re-implementing the same active-class /
-// panel-visibility toggling (four call sites, one implementation).
+// Single shared tab-switch function -- the sidebar nav, the ticker bar's
+// clickable items, and the Market Pulse tiles all call this instead of
+// each re-implementing the same active-class / panel-visibility toggling.
 const HOME_LAST_VIEW_KEY = 'hybond-last-view';
 
 function gotoTab(tab, opts) {
   document.getElementById('homeScreen').style.display = 'none';
   document.getElementById('backToHomeLink').style.display = 'block';
   localStorage.setItem(HOME_LAST_VIEW_KEY, 'tab-' + tab);
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  document.querySelectorAll('.mtb-btn[data-mtab]').forEach(b => b.classList.toggle('active', b.dataset.mtab === tab));
+  // Navigation Shell task (2026-08-25): .tab-btn/.mtb-btn (the old
+  // horizontal tab bar and mobile bottom bar) are gone -- .sidebar-item is
+  // the one nav element left, used at both breakpoints (it collapses into
+  // a bottom bar under 768px via its own @media rule, not a second nav).
+  document.querySelectorAll('.sidebar-item[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
   // canvas-based charts compute their size from getBoundingClientRect(),
   // which is 0 while their tab-panel is display:none -- redraw once the
@@ -5314,51 +5393,75 @@ function gotoTab(tab, opts) {
     });
   }
 }
-document.querySelectorAll('.tab-btn').forEach(btn => {
+document.querySelectorAll('.sidebar-item[data-tab]').forEach(btn => {
   btn.addEventListener('click', () => gotoTab(btn.dataset.tab));
 });
 
 // ---- Home screen (landing view) -- show/hide, NOT a 5th tab. gotoTab()
 // above always hides it; this is the only place that shows it again. ----
 function showHomeScreen() {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.mtb-btn[data-mtab]').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item[data-tab]').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('backToHomeLink').style.display = 'none';
   document.getElementById('homeScreen').style.display = '';
+  document.getElementById('sidebarHomeBtn').classList.add('active');
   localStorage.setItem(HOME_LAST_VIEW_KEY, 'home');
   renderHomeScreen();
 }
 document.getElementById('backToHomeLink').addEventListener('click', showHomeScreen);
+document.getElementById('sidebarHomeBtn').addEventListener('click', showHomeScreen);
 
-// ---- Mobile bottom tab bar: same gotoTab(), plus the "Ещё" overflow
-// popover for ЦБ РФ/ОФЗ (ОФЗ isn't its own top-level tab -- it's the
-// instrument toggle inside Рынок, see gotoTab's opts.instrument). ----
-document.querySelectorAll('.mtb-btn[data-mtab]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.getElementById('mtbMorePopover').classList.remove('open');
-    gotoTab(btn.dataset.mtab);
-  });
+// ---- Sidebar keyboard shortcuts (1-6, Navigation Shell task, 2026-08-25):
+// digit keys match each item's data-shortcut. Ignored while typing in an
+// input/textarea/select or a contenteditable (this dashboard has several
+// text inputs -- company-scan search, custom OFZ scenario rate/date, font
+// size -- a bare "3" while typing a scenario rate must not hijack the tab). ----
+document.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+  const btn = document.querySelector(`.sidebar-item[data-shortcut="${e.key}"]`);
+  if (!btn) return;
+  btn.click();
 });
-document.getElementById('mtbMoreBtn').addEventListener('click', (e) => {
-  e.stopPropagation();
-  document.getElementById('mtbMorePopover').classList.toggle('open');
+
+// ---- Sidebar "Настройки": no dedicated settings panel exists in this
+// dashboard -- per the task spec ("don't build new settings UI, just link
+// to what exists"), scrolls to the existing theme/font-size controls
+// (.theme-font-controls, in the header) and gives them a brief highlight
+// so the click has a visible effect. ----
+document.getElementById('sidebarSettingsBtn').addEventListener('click', () => {
+  const target = document.querySelector('.theme-font-controls');
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  target.classList.add('settings-highlight');
+  setTimeout(() => target.classList.remove('settings-highlight'), 1600);
 });
-document.querySelectorAll('#mtbMorePopover button[data-mtab]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.getElementById('mtbMorePopover').classList.remove('open');
-    gotoTab(btn.dataset.mtab);
-  });
-});
-document.querySelector('#mtbMorePopover button[data-mtab-ofz]').addEventListener('click', () => {
-  document.getElementById('mtbMorePopover').classList.remove('open');
-  gotoTab('market', { instrument: 'ofz' });
-});
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.mtb-more-popover, #mtbMoreBtn')) {
-    document.getElementById('mtbMorePopover').classList.remove('open');
+
+// ---- Sidebar badges (Navigation Shell task, 2026-08-25) --------------------
+// Вотчлист: count of tier=1 issuers with health_status='red' (DATA.issuers
+// IS the tier=1 list -- see main()'s tier1_rows loop in
+// export_dashboard_data.py). ЦБ РФ: red dot if the next CBR meeting is
+// <=3 days out -- DATA.cbr has no precomputed day-count field (the task
+// spec assumed 'next_meeting_days'; the real field is 'next_meeting', a
+// plain ISO date), so the day-count is computed here from that date.
+function renderSidebarBadges() {
+  const redCount = (DATA.issuers || []).filter(i => i.health_status === 'red').length;
+  const wlBadge = document.getElementById('sidebarWatchlistBadge');
+  if (wlBadge) {
+    wlBadge.style.display = redCount > 0 ? '' : 'none';
+    wlBadge.textContent = redCount > 9 ? '9+' : String(redCount);
   }
-});
+  const nextMeeting = DATA.cbr && DATA.cbr.next_meeting;
+  let daysToMeeting = null;
+  if (nextMeeting) {
+    const ms = new Date(nextMeeting + 'T00:00:00') - new Date(new Date().toDateString());
+    daysToMeeting = Math.round(ms / 86400000);
+  }
+  const cbrBadge = document.getElementById('sidebarCbrBadge');
+  if (cbrBadge) cbrBadge.style.display = (daysToMeeting != null && daysToMeeting <= 3 && daysToMeeting >= 0) ? '' : 'none';
+}
+renderSidebarBadges();
 
 // ================= Home screen (landing view) =============================
 // Renders from DATA + existing exposed functions only -- no new computation,
@@ -6785,7 +6888,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       alert('Текущая выборка пуста — нечего передавать в Портфель.');
       return;
     }
-    const portfolioBtn = document.querySelector('.tab-btn[data-tab="portfolio"]');
+    const portfolioBtn = document.querySelector('.sidebar-item[data-tab="portfolio"]');
     if (portfolioBtn) portfolioBtn.click();
     if (window.__pfLoadFromMarketSelection) window.__pfLoadFromMarketSelection(secids);
   });
@@ -6945,7 +7048,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
     if (link) {
       link.addEventListener('click', (e) => {
         e.preventDefault();
-        const cbrBtn = document.querySelector('.tab-btn[data-tab="cbr"]');
+        const cbrBtn = document.querySelector('.sidebar-item[data-tab="cbr"]');
         if (cbrBtn) cbrBtn.click();
         if (window.__cbrJumpToMeeting) window.__cbrJumpToMeeting(scen.source_meeting);
       });
