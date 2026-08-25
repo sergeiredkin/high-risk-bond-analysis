@@ -1458,8 +1458,8 @@
       <button type="button" class="theme-toggle-btn" id="themeToggle" title="Переключить тему" aria-label="Переключить тему"></button>
       <div class="font-slider-control" id="fontSliderControl">
         <span>Шрифт:</span>
-        <input type="range" id="fontSizeSlider" min="90" max="130" step="5" value="100" aria-label="Размер шрифта">
-        <span class="font-slider-readout" id="fontSizeReadout">100%</span>
+        <input type="range" id="fontSizeSlider" min="90" max="180" step="5" value="120" aria-label="Размер шрифта">
+        <span class="font-slider-readout" id="fontSizeReadout">120%</span>
       </div>
     </div>
     <button class="disclosure-pill" id="disclosureToggle" title="Уровень детализации карточки вердикта на вкладке «Вотчлист» (Part D) — прототип, другие страницы пока не затронуты">Детализация: стандарт</button>
@@ -2382,7 +2382,7 @@ function applyFontScale(pct) {
   localStorage.setItem(FONT_SCALE_KEY, pct);
 }
 fontSizeSlider.addEventListener('input', () => applyFontScale(+fontSizeSlider.value));
-applyFontScale(parseInt(localStorage.getItem(FONT_SCALE_KEY), 10) || 100);
+applyFontScale(parseInt(localStorage.getItem(FONT_SCALE_KEY), 10) || 120);
 
 // AEY glossary box (Вотчлист + Рынок tabs): one shared expand/collapse
 // state across both instances -- toggling either one toggles both, kept in
@@ -3138,13 +3138,32 @@ document.getElementById('subtitle').textContent =
   `  ·  ${DATA.issuers.length} эмитентов в списке наблюдения`;
 document.getElementById('genTime').textContent = DATA.generated_at || '';
 
+// "О данных" methodology boxes (Font slider + О данных task, 2026-08-25):
+// collapsed by default behind one toggle -- these are methodology notes,
+// not daily-monitoring info, and were the first thing rendered in this tab
+// before Обзор/Портфельный рейтинг/the issuer table itself. (These live in
+// #sec-notes, inside #tab-watchlist -- not the actual #homeScreen, which
+// has no data_notes rendering of its own; Вотчлист is simply the tab a
+// returning user lands back on by default via HOME_LAST_VIEW_KEY, which is
+// presumably what read as "home screen".)
 const notesEl = document.getElementById('sec-notes');
 notesEl.innerHTML = `
-  <div class="banner"><b>О данных (Slice 1/2).</b> ${DATA.data_notes.slice1_slice2}</div>
-  <div class="banner"><b>О данных (Slice 3).</b> ${DATA.data_notes.slice3}</div>
-  <div class="banner"><b>О данных (Slice 4).</b> ${DATA.data_notes.slice4}</div>
-  ${DATA.pd_table_meta ? `<div class="banner"><b>Модель PD/LGD.</b> PD: ${DATA.pd_table_meta.source} Таблица 7 (${DATA.pd_table_meta.dated.split('-').reverse().join('.')}) · LGD: ${DATA.pd_table_meta.lgd} (эмпир. ВДО, Федресурс 2022–2026)</div>` : ''}
+  <button type="button" class="uni-btn mkt-collapse-toggle" id="dataNotesToggleBtn" aria-expanded="false">ℹ О данных и методологии ▾</button>
+  <div id="dataNotesBody" style="display:none">
+    <div class="banner"><b>О данных (Slice 1/2).</b> ${DATA.data_notes.slice1_slice2}</div>
+    <div class="banner"><b>О данных (Slice 3).</b> ${DATA.data_notes.slice3}</div>
+    <div class="banner"><b>О данных (Slice 4).</b> ${DATA.data_notes.slice4}</div>
+    ${DATA.pd_table_meta ? `<div class="banner"><b>Модель PD/LGD.</b> PD: ${DATA.pd_table_meta.source} Таблица 7 (${DATA.pd_table_meta.dated.split('-').reverse().join('.')}) · LGD: ${DATA.pd_table_meta.lgd} (эмпир. ВДО, Федресурс 2022–2026)</div>` : ''}
+  </div>
 `;
+document.getElementById('dataNotesToggleBtn').addEventListener('click', () => {
+  const body = document.getElementById('dataNotesBody');
+  const btn = document.getElementById('dataNotesToggleBtn');
+  const nowHidden = body.style.display !== 'none';
+  body.style.display = nowHidden ? 'none' : '';
+  btn.setAttribute('aria-expanded', String(!nowHidden));
+  btn.textContent = nowHidden ? 'ℹ О данных и методологии ▾' : 'ℹ О данных и методологии ▴';
+});
 
 // ---------- stat tiles ----------
 const pricedBonds = DATA.issuers.flatMap(i => i.bonds).filter(b => b.ytm_pct !== null);
