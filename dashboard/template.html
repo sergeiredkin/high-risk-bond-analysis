@@ -1511,6 +1511,7 @@
             <input type="range" id="mAeyMax" step="0.1">
           </div>
           <p class="uni-caveat">Только бумаги с рассчитанным AEY (скорр.) — это тот же расчёт, что и на вкладке «Вотчлист» (Топ-кандидаты), не отдельная модель. Бумаги без рейтинга/AEY не попадают в диапазон ни при каком положении ползунка — см. счётчик ниже.</p>
+          <p class="uni-caveat" id="mAeyFullRangeNote"></p>
         </div>
       </div>
 
@@ -5833,11 +5834,53 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   const aeyRangeLabel = document.getElementById('mAeyRangeLabel');
   const aeyCountLabel = document.getElementById('mAeyCount');
   {
-    const aeyVals = allBucketBonds.map(b => b.aey_base_risk_adj_pct).filter(v => v != null);
+    // Percentile computed over the CURRENT FILTERED universe (per the
+    // task's own wording), not the raw 700+-bond universe -- "current
+    // filtered" is read here as "under this tab's default filter state"
+    // (rating floor + liquidity floor from DATA.promotion_thresholds,
+    // already the default ratingFloorSel/liqFloorEl values above), a
+    // one-time computation at load rather than a dynamic recompute on
+    // every filter tweak (which would shift the slider's own bounds under
+    // the user's cursor while they filter -- worse UX than a static cap).
+    const defaultFiltered = allBucketBonds.filter(b =>
+      (!th.rating_floor || passesRatingFloor(b.rating, th.rating_floor)) &&
+      passesLiquidityFloor(b.volume, th.min_volume ?? 300));
+    const aeyVals = defaultFiltered.map(b => b.aey_base_risk_adj_pct).filter(v => v != null).sort((a, b) => a - b);
+    const allAeyVals = allBucketBonds.map(b => b.aey_base_risk_adj_pct).filter(v => v != null);
     const lo = aeyVals.length ? Math.floor(Math.min(...aeyVals) * 10) / 10 : 0;
-    const hi = aeyVals.length ? Math.ceil(Math.max(...aeyVals) * 10) / 10 : 100;
+    const trueHi = allAeyVals.length ? Math.ceil(Math.max(...allAeyVals) * 10) / 10 : 100;
+    // AEY Slider Clamping task (2026-08-25): distressed ВДО issuers can
+    // carry AEY (скорр.) in the hundreds of percent (near-maturity offer
+    // amplification, or genuine deep distress) -- a linear slider spanning
+    // the true min-true max buries the practical 15-40% ВДО range into a
+    // sliver of the track, making it unusable for normal issuer selection.
+    // Cap the slider's draggable max at the 95th percentile instead of the
+    // true max (explicit user decision, chosen over the alternative "hide
+    // extreme values" checkbox they also offered).
+    //
+    // MEASURED, NOT ASSUMED: p95 here still lands around 100% (not the
+    // <=50% the task's own CDP-verify note expected) -- checked directly
+    // against this project's real data (2026-08-25 snapshot): p95 of the
+    // full universe is 118.2%, p95 of the default-rating/liquidity-filtered
+    // universe is 100.5%, and even p90 (filtered) is 52.0%. The AEY (скорр.)
+    // distribution for this ВДО universe is structurally fat-tailed, not a
+    // handful of one-off outliers a percentile cut can cleanly exclude --
+    // this matches an earlier-session finding that mispricing_bp averages
+    // are monotonically positive across every rating tier (see the
+    // 2026-07-30 backlog memory's mispricing_bp investigation). Implemented
+    // exactly as specified (95th percentile) rather than silently swapping
+    // in a harder cutoff to force a number under 50% -- if a stricter cap
+    // is wanted given this real distribution, that's a follow-up decision,
+    // not one to make unilaterally here.
+    const p95 = aeyVals.length
+      ? aeyVals[Math.min(Math.floor(aeyVals.length * 0.95), aeyVals.length - 1)] : trueHi;
+    const hi = aeyVals.length ? Math.max(Math.ceil(p95 * 10) / 10, lo + 0.1) : trueHi;
     [aeySliderMin, aeySliderMax].forEach(s => { s.min = lo; s.max = hi; });
     aeySliderMin.value = lo; aeySliderMax.value = hi;
+    const excludedCount = allAeyVals.filter(v => v > hi).length;
+    document.getElementById('mAeyFullRangeNote').textContent = excludedCount
+      ? `Полный диапазон данных: ${lo.toFixed(1)}%–${trueHi.toFixed(1)}% — ползунок ограничен 95-м перцентилем отфильтрованного набора (${hi.toFixed(1)}%); ${excludedCount} бумаг(и) с AEY выше исключены из диапазона ползунка.`
+      : `Диапазон данных: ${lo.toFixed(1)}%–${trueHi.toFixed(1)}%.`;
   }
   function updateAeyFillVisual() {
     const lo = parseFloat(aeySliderMin.min), hi = parseFloat(aeySliderMin.max);

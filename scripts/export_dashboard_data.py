@@ -15,6 +15,7 @@ Does not compute anything new — pure aggregation for the dashboard renderer
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -26,6 +27,7 @@ from hybond.classify_utils import queue_bucket  # noqa: E402
 from hybond.compute.default_probs import (  # noqa: E402
     DEFAULT_PROBS, LGD, RATING_ORDER, RECOVERY_RATE, implied_fair_spread_bp, lookup)
 from hybond.compute import inflection  # noqa: E402
+from hybond.scrape.smartlab_news import NEWS_ALIASES  # noqa: E402
 from hybond.store import db  # noqa: E402
 from hybond import portfolio  # noqa: E402
 from hybond import promote  # noqa: E402
@@ -277,41 +279,80 @@ def market_wide_notes(con) -> list[dict]:
     return out
 
 
-# moex_listing headlines that actually signal a placement event (new-issue
-# registration, placement results, start of trading) -- the feed also
-# carries delisting/list-tier-change notices (market_wide_notes() already
-# surfaces the whole feed in the general market feed), which don't belong
-# in a PLACEMENTS calendar.
-PLACEMENT_HEADLINE_PATTERNS = ("регистрации выпуска", "итоги выпуска", "начале торгов")
+# google_news headlines that actually signal a NEW bond placement (not a
+# routine coupon payment on an already-outstanding issue, which dominates
+# this feed's "купон"-matching rows -- "Компания X выплатила N-й купон" is
+# the single most common headline shape and is explicitly excluded below).
+_PLACEMENT_INCLUDE_RE = [re.compile(p, re.IGNORECASE) for p in (
+    r"размеща", r"размещение\s+облигаци", r"новый\s+выпуск",
+    r"первичк", r"календарь\s+первич",
+)]
+_PLACEMENT_EXCLUDE_RE = [re.compile(p, re.IGNORECASE) for p in (
+    r"выплати", r"\d+[-–]?(й|го)\s*купон", r"опроверг",
+)]
+_QUOTED_NAME_RE = re.compile(r"[«\"]([^»\"]{2,40})[»\"]")
+_YTM_RE = re.compile(r"YTM\s*([\d]+[,.]?\d*)\s*%", re.IGNORECASE)
+
+
+def _is_placement_headline(headline: str) -> bool:
+    return (any(p.search(headline) for p in _PLACEMENT_INCLUDE_RE)
+            and not any(p.search(headline) for p in _PLACEMENT_EXCLUDE_RE))
+
+
+def _extract_placement_issuer(headline: str) -> tuple[str | None, str | None]:
+    """(issuer_name, issuer_id). Prefers a NEWS_ALIASES match (the same
+    name/brand -> watchlist issuer_id table smartlab_news.py already
+    maintains and validates) -- confident, links to a real issuer_id. Falls
+    back to the first «quoted»/"quoted" span in the headline as a display-
+    only name with no issuer_id, since that's frequently the company name
+    even for issuers with no NEWS_ALIASES entry. Returns (None, None) rather
+    than guessing when neither matches."""
+    for name, issuer_id in NEWS_ALIASES.items():
+        if name in headline:
+            return name, issuer_id
+    m = _QUOTED_NAME_RE.search(headline)
+    return (m.group(1), None) if m else (None, None)
+
+
+def _extract_ytm(headline: str) -> str | None:
+    m = _YTM_RE.search(headline)
+    return m.group(1).replace(",", ".") + "%" if m else None
 
 
 def primary_placements(con, today: str) -> list[dict]:
-    """Первичные размещения task (2026-08-25): the thinnest-honest slice of
-    market_note(source='moex_listing') the current data actually supports --
-    date + headline + url only.
+    """Первичные размещения task (2026-08-25), updated same day per a
+    follow-up task: switched from market_note(source='moex_listing') to
+    source='google_news' after a data audit found moex_listing structurally
+    can't support issuer/YTM (issuer_id NULL, summary truncated to ~200
+    chars -- see git history for that finding) while google_news actually
+    carries usable placement text (republished Smart-Lab content, tagged
+    "- Smart-Lab" in the headline, arriving via the Google News RSS pipeline
+    rather than smartlab_news.py's own direct scrape -- source='smartlab_news'
+    itself only had 2 matching rows in a live audit, both coupon-payment
+    news, not placements).
 
-    Step 1 audit for this task found two structural gaps that rule out the
-    task's originally-specced issuer/rating/YTM/amount columns:
-    issuer_id is NULL on every moex_listing row (rss_generic.py stores this
-    feed market-wide, not issuer-matched -- see that module's own
-    docstring), and `summary` is truncated to ~200 chars by MOEX's own
-    cat=104 RSS feed before it ever reaches this pipeline, cutting off
-    before the issuer name/rate/amount that follow in the full notice.
-    Emitting those columns from what's stored today would mean fabricating
-    them, so per explicit user decision this export (and the dashboard
-    section reading it) ships without them until the ingestion side is
-    extended to fetch full notice text and match issuers.
+    Filtered to headlines that read as an actual NEW placement (see
+    _is_placement_headline) -- google_news/Smart-Lab content is dominated by
+    routine "N-й купон выплачен" notices on already-outstanding issues,
+    which are explicitly excluded, not just under-matched.
 
-    Window: last 30 days through next 14 days (per spec) -- the upper bound
-    is currently a no-op since `occurred` is always in the past (these are
-    RSS items already published), kept for when/if MOEX ever forward-dates
-    an announcement."""
+    issuer/ytm are BEST-EFFORT, not comprehensive: live audit (2026-08-25)
+    found 21 genuine placement-signal rows in the current DB, of which 7
+    (33%) got a confident NEWS_ALIASES issuer match and 4 (19%) got a YTM
+    regex match -- real signal, not full coverage. Never fabricated: a
+    headline that doesn't match either pattern gets issuer=null/ytm=null,
+    not a guessed value.
+
+    Window: last 30 days through next 14 days (per the original spec) --
+    the upper bound is currently a no-op since `occurred` is always in the
+    past (these are RSS items already published), kept for when/if a source
+    ever forward-dates an announcement."""
     try:
         lo = (date.fromisoformat(today) - timedelta(days=30)).isoformat()
         hi = (date.fromisoformat(today) + timedelta(days=14)).isoformat()
         rows = con.execute(
             "SELECT occurred, headline, url FROM market_note "
-            "WHERE source='moex_listing' AND occurred >= ? AND occurred <= ? "
+            "WHERE source='google_news' AND occurred >= ? AND occurred <= ? "
             "ORDER BY occurred DESC", (lo, hi)
         ).fetchall()
     except Exception:  # noqa: BLE001 -- market_note may not exist yet
@@ -319,9 +360,14 @@ def primary_placements(con, today: str) -> list[dict]:
     out = []
     for r in rows:
         headline = r["headline"] or ""
-        if not any(p in headline.lower() for p in PLACEMENT_HEADLINE_PATTERNS):
+        if not _is_placement_headline(headline):
             continue
-        out.append({"date": r["occurred"], "headline": headline, "url": r["url"]})
+        issuer_name, issuer_id = _extract_placement_issuer(headline)
+        out.append({
+            "date": r["occurred"], "headline": headline, "url": r["url"],
+            "issuer": issuer_name, "issuer_id": issuer_id,
+            "ytm": _extract_ytm(headline),
+        })
     return out
 
 
