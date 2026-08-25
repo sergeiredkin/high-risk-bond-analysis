@@ -134,6 +134,30 @@ def cmd_google_news(args) -> int:
     return 1 if result["errors"] and result["new"] == 0 and result["parsed"] == 0 else 0
 
 
+def cmd_backfill_ratings(args) -> int:
+    if args.agency != "nkr":
+        print(f"--agency {args.agency!r} not supported yet (only 'nkr').", file=sys.stderr)
+        return 1
+    from . import scrape_pipeline
+    result = scrape_pipeline.run_nkr_backfill(inn=args.inn)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"\n{result['total_new']} new historical rating action(s) across "
+          f"{len(result['new_by_issuer'])} of {result['scanned']} scanned issuer(s). "
+          f"{len(result['not_found'])} not found on ratings.ru, "
+          f"{len(result['errors'])} error(s).", file=sys.stderr)
+    if result["new_by_issuer"]:
+        print("\nMulti-point trajectories backfilled:", file=sys.stderr)
+        for name, n in result["new_by_issuer"].items():
+            print(f"  {name}: +{n}", file=sys.stderr)
+    for w in result["newer_than_current"]:
+        print(f"  WARNING (stale current rating?) {w}", file=sys.stderr)
+    for nf in result["not_found"]:
+        print(f"  NOT FOUND {nf}", file=sys.stderr)
+    for e in result["errors"]:
+        print(f"  ERROR {e}", file=sys.stderr)
+    return 1 if result["errors"] and result["total_new"] == 0 else 0
+
+
 def _print_queue_sections(view: dict, issuer_names: dict[str, str] | None = None) -> None:
     """Shared three-section rendering for `queue` and `market-notes-queue`:
     priority first (needs attention soonest), then the actually-actionable
@@ -1288,6 +1312,15 @@ def main(argv=None) -> int:
     pgn.add_argument("--limit", type=int, default=None,
                       help="only process the first N tier=1 issuers this run (default: all)")
     pgn.set_defaults(func=cmd_google_news)
+    pbr = sub.add_parser("backfill-ratings",
+                         help="Backfill historical rating actions for issuers with an active "
+                              "rating from a supported agency (currently: nkr / ratings.ru), "
+                              "so the rating-trajectory arrow has real multi-point history")
+    pbr.add_argument("--agency", required=True, choices=["nkr"],
+                      help="which agency's history to backfill (only 'nkr' supported today)")
+    pbr.add_argument("--inn", default=None,
+                      help="restrict to one issuer_id/ИНН instead of every qualifying tier=1 issuer")
+    pbr.set_defaults(func=cmd_backfill_ratings)
     pu = sub.add_parser("universe", help="Full MOEX corporate-bond universe screen + G-spread + mispricing")
     pu.add_argument("--refresh-emitent-map", action="store_true",
                      help="force a fresh paginated SECID->ИНН fetch instead of the cached "

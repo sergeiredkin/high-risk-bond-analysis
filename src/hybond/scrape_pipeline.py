@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import sqlite3
 import time
 from datetime import date
 from pathlib import Path
@@ -360,6 +361,124 @@ def run_google_news(snap_date: date | None = None, limit: int | None = None) -> 
         con.commit()
         if i < len(issuers) - 1:
             time.sleep(gn.SLEEP_BETWEEN_ISSUERS_S)
+
+    con.close()
+    return result
+
+
+NKR_SLEEP_BETWEEN_ISSUERS_S = 2.0
+
+
+def run_nkr_backfill(inn: str | None = None) -> dict:
+    """НКР historical rating backfill (`hybond backfill-ratings --agency nkr`,
+    Rating History Backfill task, 2026-08-25): for every tier=1 issuer that
+    currently carries an active (is_current=1) НКР rating, look the issuer
+    up on ratings.ru by name and insert any of its historical rating
+    ACTIONS this project's `rating` table doesn't already have.
+
+    Scope is deliberately "issuers already carrying a live НКР rating" per
+    the task spec, not "every tier=1 issuer" -- looking up an issuer НКР
+    never rated on the bulk listing would either find nothing (wasted
+    request) or, worse, risk a wrong-company match on a common name.
+
+    Issuer discovery fetches ratings.ru's bulk `/ratings/issuers/` listing
+    ONCE up front (nkr.fetch_issuers_page()/parse_issuers(), the same
+    already-proven bulk source this project's earlier НКР pass used to
+    apply 22 current ratings on 2026-07-31) and resolves every issuer's
+    slug against that one in-memory table via nkr.find_issuer_slug(...,
+    rows=...) -- not a live per-issuer /search/ request, which was tried
+    first and dropped (it returned zero results for a short name like
+    'АПРИ' that the bulk listing found immediately).
+
+    `inn` restricts the run to one issuer_id (the task's own --inn flag),
+    otherwise every qualifying tier=1 issuer is processed with
+    NKR_SLEEP_BETWEEN_ISSUERS_S between requests (politeness -- same
+    2s-between-issuers convention as run_google_news()).
+
+    insert_historical_rating() is idempotent on the (issuer_id, agency,
+    rated_on) primary key, so "skip if row already exists" (the task's own
+    requirement) needs no separate existence check here -- re-running this
+    against an issuer already fully backfilled inserts nothing new.
+
+    Flags (result['newer_than_current']) any scraped action dated AFTER
+    this project's current is_current=1 row for that issuer+agency -- that
+    would mean our "current" rating is actually stale, which is a real
+    data-integrity finding worth surfacing, not something this backfill
+    (scoped to HISTORY, not to refreshing the current rating) silently
+    fixes on its own."""
+    from .scrape import nkr
+
+    con = db.connect()
+    db.init_db(con)
+    db.init_rating(con)
+
+    query = ("SELECT DISTINCT r.issuer_id, i.name, r.rated_on AS current_rated_on "
+             "FROM rating r JOIN issuer i ON i.issuer_id = r.issuer_id "
+             "WHERE r.agency=? AND r.is_current=1 AND i.watchlist_tier=1")
+    params: list = [nkr.AGENCY]
+    if inn is not None:
+        query += " AND r.issuer_id=?"
+        params.append(inn)
+    issuers = con.execute(query, params).fetchall()
+
+    result = {"scanned": len(issuers), "total_new": 0, "new_by_issuer": {},
+              "not_found": [], "newer_than_current": [], "errors": []}
+    if not issuers:
+        con.close()
+        return result
+
+    bulk_rows = nkr.parse_issuers(nkr.fetch_issuers_page(snapshot=False))
+
+    for i, row in enumerate(issuers):
+        issuer_id, name = row["issuer_id"], row["name"]
+        try:
+            slug = nkr.find_issuer_slug(name, rows=bulk_rows)
+            if slug is None:
+                result["not_found"].append(f"{name} ({issuer_id})")
+                continue
+            actions = nkr.fetch_issuer_ratings(slug)
+        except Exception as e:  # noqa: BLE001 -- one issuer's failure must not block the rest
+            result["errors"].append(f"{name} ({issuer_id}): {e}")
+            continue
+
+        new_count = 0
+        for a in actions:
+            if row["current_rated_on"] and a["rated_on"] > row["current_rated_on"]:
+                result["newer_than_current"].append(
+                    f"{name} ({issuer_id}): scraped {a['rated_on']} ({a['rating']}) is "
+                    f"newer than our current row ({row['current_rated_on']})")
+            # db.connect()'s 5s busy_timeout can still lose a race against a
+            # long-held writer (the hourly/30-min auto-classify cron holds
+            # its connection open for 30-40+ min at a time -- see that
+            # connect()'s own comment) -- retried here rather than letting
+            # one transient collision abort the whole remaining tier=1 run.
+            for attempt in range(5):
+                try:
+                    inserted = db.insert_historical_rating(
+                        con, issuer_id=issuer_id, agency=nkr.AGENCY, rating=a["rating"],
+                        outlook=a["outlook"], action=a["action"], rated_on=a["rated_on"],
+                        source=nkr.SOURCE)
+                    break
+                except sqlite3.OperationalError as e:
+                    if "locked" not in str(e).lower() or attempt == 4:
+                        raise
+                    time.sleep(3)
+            if inserted:
+                new_count += 1
+        for attempt in range(5):
+            try:
+                con.commit()
+                break
+            except sqlite3.OperationalError as e:
+                if "locked" not in str(e).lower() or attempt == 4:
+                    raise
+                time.sleep(3)
+        if new_count:
+            result["new_by_issuer"][name] = new_count
+            result["total_new"] += new_count
+
+        if i < len(issuers) - 1:
+            time.sleep(NKR_SLEEP_BETWEEN_ISSUERS_S)
 
     con.close()
     return result

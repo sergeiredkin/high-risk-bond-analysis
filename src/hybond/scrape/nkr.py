@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Protocol
 
@@ -175,3 +176,163 @@ def match_by_name(target_name: str, rows: list[NkrRating]) -> NkrRating | None:
         if row.name_core == target_core:
             return row
     return None
+
+
+# =============================================================================
+# Rating History Backfill task (2026-08-25): the bulk listing above only
+# gives each issuer's CURRENT rating (255/258 issuers, one snapshot in
+# time) -- this section adds the per-issuer PAST-actions trail (assigned/
+# upgraded/downgraded/confirmed/withdrawn, one per historical press
+# release), which the bulk page doesn't carry at all.
+#
+# Issuer discovery reuses fetch_issuers_page()/parse_issuers()/
+# match_by_name() above rather than ratings.ru's own /search/ endpoint: a
+# live search was tried first and dropped -- it returned zero "Эмитенты"
+# results for a short/common name like 'АПРИ' (confirmed live), where the
+# bulk listing + the already-proven normalize_name() core-name match found
+# it immediately. One extra alias-stripping step is needed on top of
+# normalize_name() for issuers whose `issuer.name` carries a trailing
+# brand alias this project adds but ratings.ru's own name never has (e.g.
+# 'Каршеринг Руссия (Делимобиль)' -> match against 'Каршеринг Руссия').
+#
+# Confirmed live against ПЛАЗА-Телеком (a tier=2 issuer already carrying 2
+# rating rows in this project's DB from unrelated manual entry): the
+# per-issuer page returned 4 actions whose 2 most recent dates/values
+# reconciled exactly with those 2 existing rows.
+# =============================================================================
+
+SOURCE = "nkr_historical"
+AGENCY = "НКР"
+
+_TRAILING_PAREN_RE = re.compile(r"\s*\([^)]*\)\s*$")
+
+_ACTION_VERBS = {
+    "присвоило": "assigned",
+    "повысило": "upgraded",
+    "понизило": "downgraded",
+    "подтвердило": "confirmed",
+    "отозвало": "withdrawn",
+}
+
+_OUTLOOK_RE_DASH = re.compile(r"прогноз\s*[—-]\s*([а-яё]+)", re.IGNORECASE)
+_OUTLOOK_RE_PHRASE = re.compile(r"со?\s+([а-яё]+)\s+прогнозом", re.IGNORECASE)
+# "со стабильным прогнозом" (instrumental case) -> "стабильный" (nominative),
+# matching this project's own existing rating.outlook convention.
+_OUTLOOK_NOMINATIVE = {
+    "стабильным": "стабильный", "позитивным": "позитивный",
+    "негативным": "негативный", "развивающимся": "развивающийся",
+}
+
+
+def find_issuer_slug(issuer_name: str, rows: list[NkrRating] | None = None,
+                      backend: Backend | None = None) -> str | None:
+    """Resolve an `issuer.name` value to its ratings.ru slug via the bulk
+    listing (fetched fresh if `rows` isn't passed in -- callers backfilling
+    many issuers in one run should fetch_issuers_page()/parse_issuers()
+    once and pass `rows` through to avoid refetching the 258-row page per
+    issuer)."""
+    if rows is None:
+        rows = parse_issuers(fetch_issuers_page(backend, snapshot=False))
+    stripped = _TRAILING_PAREN_RE.sub("", issuer_name.strip())
+    match = match_by_name(stripped, rows)
+    return match.slug if match else None
+
+
+def _extract_action(title: str) -> str | None:
+    lower = title.lower()
+    for verb, action in _ACTION_VERBS.items():
+        if verb in lower:
+            return action
+    return None
+
+
+def _extract_outlook(title: str) -> str | None:
+    m = _OUTLOOK_RE_DASH.search(title) or _OUTLOOK_RE_PHRASE.search(title)
+    if not m:
+        return None
+    raw = m.group(1).lower()
+    return _OUTLOOK_NOMINATIVE.get(raw, raw)
+
+
+class _RateItemsParser(HTMLParser):
+    """Extracts every `.rate-item` block from an issuer page: rating value
+    (`.rate-item__rating`), press-release title + href (`.rate-item__title`,
+    an <a>), and action date (`.rate-item__date`)."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.items: list[dict] = []
+        self._current: dict | None = None
+        self._depth = 0
+        self._capture: str | None = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        classes = attrs.get("class", "").split()
+        if tag == "div" and classes == ["rate-item"]:
+            self._current = {"rating": "", "title": "", "date": "", "href": None}
+            self._depth = 1
+            return
+        if self._current is None:
+            return
+        if tag == "div":
+            self._depth += 1
+        if "rate-item__rating" in classes:
+            self._capture = "rating"
+        elif "rate-item__title" in classes:
+            self._capture = "title"
+            self._current["href"] = attrs.get("href")
+        elif "rate-item__date" in classes:
+            self._capture = "date"
+
+    def handle_endtag(self, tag):
+        if self._current is None:
+            return
+        if self._capture and tag in ("p", "a"):
+            self._capture = None
+        if tag == "div":
+            self._depth -= 1
+            if self._depth == 0:
+                for k in ("rating", "title", "date"):
+                    self._current[k] = " ".join(self._current[k].split())
+                self.items.append(self._current)
+                self._current = None
+
+    def handle_data(self, data):
+        if self._current is not None and self._capture:
+            self._current[self._capture] += data
+
+
+def fetch_issuer_ratings(slug: str, backend: Backend | None = None) -> list[dict]:
+    """Fetch + parse the full rating-action history for one issuer slug.
+    Every dict: {rating, outlook, action, rated_on (ISO), url}. `action`/
+    `outlook` are None (never guessed) when the press-release title's
+    phrasing doesn't match a known pattern; entries whose date fails to
+    parse are dropped (a row with no date can't be a rating-history entry).
+
+    Import `import re` etc. shared with the bulk-listing code above; this
+    uses html.parser.HTMLParser rather than that section's line-oriented
+    regexes because the issuer page's `.rate-item` blocks are nested divs
+    (rating/title/date are siblings inside a wrapper), not one row per
+    `<tr>` the way the bulk table is."""
+    backend = backend or HttpBackend()
+    url = f"{BASE}/ratings/issuers/{slug}/"
+    html = backend.get(url)
+    parser = _RateItemsParser()
+    parser.feed(html)
+    out = []
+    for item in parser.items:
+        if not item["rating"] or not item["date"]:
+            continue
+        iso_date = _to_iso_date(item["date"])
+        if iso_date is None:
+            continue
+        href = item["href"]
+        out.append({
+            "rating": _to_ru_rating(item["rating"]),
+            "outlook": _extract_outlook(item["title"]),
+            "action": _extract_action(item["title"]),
+            "rated_on": iso_date,
+            "url": f"{BASE}{href}" if href else None,
+        })
+    return out

@@ -1274,6 +1274,38 @@ def upsert_rating(con, issuer_id, agency, rating, outlook, action, rated_on,
          verified_on, needs_verification))
 
 
+def insert_historical_rating(con, issuer_id, agency, rating, outlook, action,
+                              rated_on, source, secid=None) -> bool:
+    """Backfill one SUPERSEDED rating action (Rating History Backfill task,
+    2026-08-25) -- unlike upsert_rating(), never touches is_current on any
+    row. A backfilled action is, by construction, older than whatever the
+    DB already treats as this issuer+agency's current rating (the caller
+    only backfills issuers that already have one), so it's inserted with
+    is_current=0 and left there; upsert_rating()'s supersession side-effect
+    (flip every OTHER same-agency row to is_current=0) would be actively
+    wrong to reuse here, since calling it once per historical row in date
+    order would flip the real current row to 0 on every call before the
+    next one runs.
+
+    Plain INSERT OR IGNORE on the (issuer_id, agency, rated_on) primary key
+    -- naturally idempotent, so re-running a backfill or re-scraping an
+    issuer already covered is a no-op for rows that already exist (matches
+    the task's own 'skip if row already exists' requirement without a
+    separate existence check).
+
+    needs_verification=0 and verified_on=today: scraping the agency's own
+    published rating actions IS the verification, not a placeholder pending
+    one (see verification_flags()'s docstring for the general convention
+    this mirrors)."""
+    verified_on = date.today().isoformat()
+    cur = con.execute(
+        "INSERT OR IGNORE INTO rating(issuer_id,secid,agency,rating,outlook,action,"
+        "rated_on,source,is_current,verified_on,needs_verification) "
+        "VALUES(?,?,?,?,?,?,?,?,0,?,0)",
+        (issuer_id, secid, agency, rating, outlook, action, rated_on, source, verified_on))
+    return cur.rowcount > 0
+
+
 def retire_rating(con, issuer_id: str, agency: str) -> None:
     """Explicitly mark an issuer's current rating under one agency as no
     longer current -- needed when superseding a 'manual' bootstrap row with
