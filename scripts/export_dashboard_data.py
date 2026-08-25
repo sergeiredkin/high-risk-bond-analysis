@@ -277,6 +277,54 @@ def market_wide_notes(con) -> list[dict]:
     return out
 
 
+# moex_listing headlines that actually signal a placement event (new-issue
+# registration, placement results, start of trading) -- the feed also
+# carries delisting/list-tier-change notices (market_wide_notes() already
+# surfaces the whole feed in the general market feed), which don't belong
+# in a PLACEMENTS calendar.
+PLACEMENT_HEADLINE_PATTERNS = ("регистрации выпуска", "итоги выпуска", "начале торгов")
+
+
+def primary_placements(con, today: str) -> list[dict]:
+    """Первичные размещения task (2026-08-25): the thinnest-honest slice of
+    market_note(source='moex_listing') the current data actually supports --
+    date + headline + url only.
+
+    Step 1 audit for this task found two structural gaps that rule out the
+    task's originally-specced issuer/rating/YTM/amount columns:
+    issuer_id is NULL on every moex_listing row (rss_generic.py stores this
+    feed market-wide, not issuer-matched -- see that module's own
+    docstring), and `summary` is truncated to ~200 chars by MOEX's own
+    cat=104 RSS feed before it ever reaches this pipeline, cutting off
+    before the issuer name/rate/amount that follow in the full notice.
+    Emitting those columns from what's stored today would mean fabricating
+    them, so per explicit user decision this export (and the dashboard
+    section reading it) ships without them until the ingestion side is
+    extended to fetch full notice text and match issuers.
+
+    Window: last 30 days through next 14 days (per spec) -- the upper bound
+    is currently a no-op since `occurred` is always in the past (these are
+    RSS items already published), kept for when/if MOEX ever forward-dates
+    an announcement."""
+    try:
+        lo = (date.fromisoformat(today) - timedelta(days=30)).isoformat()
+        hi = (date.fromisoformat(today) + timedelta(days=14)).isoformat()
+        rows = con.execute(
+            "SELECT occurred, headline, url FROM market_note "
+            "WHERE source='moex_listing' AND occurred >= ? AND occurred <= ? "
+            "ORDER BY occurred DESC", (lo, hi)
+        ).fetchall()
+    except Exception:  # noqa: BLE001 -- market_note may not exist yet
+        return []
+    out = []
+    for r in rows:
+        headline = r["headline"] or ""
+        if not any(p in headline.lower() for p in PLACEMENT_HEADLINE_PATTERNS):
+            continue
+        out.append({"date": r["occurred"], "headline": headline, "url": r["url"]})
+    return out
+
+
 def expected_returns_by_secid(con) -> dict[str, dict]:
     """Part B projections (compute/expected_return.py), keyed by secid, each
     holding whatever of {1y, 2y, maturity} was computed. Reads the MOST
@@ -1138,6 +1186,7 @@ def main() -> None:
     mis_delta_by_secid = mispricing_delta_by_secid(con)
     events_full_by_issuer = full_events_by_issuer(con)
     market_wide = market_wide_notes(con)
+    placements = primary_placements(con, date.today().isoformat())
     expected_returns = expected_returns_by_secid(con)
 
     issuers = []
@@ -1340,6 +1389,7 @@ def main() -> None:
         "spread_history": spread_history,
         "spread_history_labels": spread_history_labels,
         "market_wide_notes": market_wide,
+        "primary_placements": placements,
         # Справка tab (2026-08-17): parsed once at build time from
         # spravka_vdo.md -- see hybond/spravka_parser.py. Dashboard is
         # self-contained (no runtime fetch), so the whole guide ships in
