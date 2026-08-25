@@ -6425,7 +6425,26 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       // unrated or CCC/B tiers the curve doesn't cover) -- those keep
       // whatever colorFor(b) already gave them, exactly as if the overlay
       // were off, rather than being forced into the neutral bucket.
-      if (mmState.fFair) {
+      //
+      // Also gated on mmState.color === 'mispricing' (Bug fix, 2026-08-25:
+      // Market Map Color System task) -- #mmFFair defaults to checked, and
+      // this override used to fire unconditionally regardless of the "Цвет"
+      // dropdown, so switching to Рейтинг/Сектор/Ликвидность/PD-разрыв
+      // visibly did nothing for any bond with a comparable rating tier
+      // (confirmed live: ~185/732 universe bonds are tier-comparable, and
+      // in the current ВДО market nearly all of those sit red-of-fair, so
+      // "all dots red regardless of dropdown" was the default view for most
+      // users). This bug predates the theme-awareness pass (commit 1fd55f6)
+      // by months -- that commit only swapped this block's hardcoded
+      // '#0ca30c'/'#d03b3b' literals for the (correctly theme-aware)
+      // fairGreenColor/fairRedColor consts already declared above in
+      // drawMap(); the override-regardless-of-color-mode behavior itself
+      // dates to the original mmState/#mmFFair feature (commit 3365955).
+      // The overlay is semantically a 3-bucket variant of the "Недооценка/
+      // переоценка" (mispricing) dropdown option, so scoping it to that one
+      // mode is the natural fix: it still recolors by fair-value delta in
+      // its own intended view, and no longer fights the other 4 modes.
+      if (mmState.fFair && mmState.color === 'mispricing') {
         const fv = fairValueDeltaBp(b);
         if (fv) {
           const threshold = Math.abs(fv.fairBp) * 0.10;
