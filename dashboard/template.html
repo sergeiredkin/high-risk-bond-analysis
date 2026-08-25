@@ -168,6 +168,13 @@
   .pf-h3-sep { border-top: 1px solid var(--bg-border); padding-top: var(--space-4); }
   h2 { font-size: 16px; margin: 0 0 4px; }
   .section-note { color: var(--text-secondary); font-size: 13px; line-height: 1.6; margin: 0 0 14px; max-width: 760px; }
+  /* Long unbroken file-path/command tokens inside inline <code> (e.g.
+     bond_screening_prompt_v3.5.1.md, src/hybond/universe_pipeline.py) have
+     no natural break point -- overflow-wrap:normal lets them push their
+     container wider than the viewport on narrow screens instead of
+     wrapping. Scoped to .section-note since that's the class actually
+     carrying these long paths throughout the dashboard. */
+  .section-note code { overflow-wrap: anywhere; }
   h2.collapsible-h2 {
     cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none;
   }
@@ -575,6 +582,14 @@
   .cs-panel { border: 1px solid var(--warning); border-radius: 10px; padding: 16px 18px;
     margin-bottom: 24px; background: color-mix(in srgb, var(--warning) 6%, var(--surface-1)); }
   .cs-panel-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+  /* Mobile overflow fix (found while CDP-verifying the card display fixes,
+     2026-08-25): flex items default to min-width:auto, so the unbreakable
+     "bond_screening_prompt_v3.5.1.md" token inside .section-note forced
+     this text column (and the whole page) 21px wider than the 375px
+     viewport -- pre-existing since this section was written, just never
+     caught until it landed in a mobile scrollWidth check. min-width:0 lets
+     the flex item shrink and the paragraph wrap normally. */
+  .cs-panel-head > div { min-width: 0; }
   .cs-panel-icon { font-size: 18px; line-height: 1.4; }
   .cs-panel h3 { margin: 0; font-size: 14.5px; }
   .cs-panel-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 6px; }
@@ -1212,14 +1227,19 @@
   .iw-status { color: var(--text-secondary); font-size: 13px; flex-shrink: 0; width: 140px; text-align: right; }
   .iw-arrow { flex-shrink: 0; width: 1.2em; text-align: center; color: var(--text-muted); }
   .iw-health-reason { font-size: 11.5px; color: var(--verdict-orange); padding: 0 16px 8px 20px; }
-  .iw-pillars-row { display: flex; gap: 16px; flex-wrap: wrap; padding: 0 16px 10px 20px; }
-  .iw-pillar { display: flex; flex-direction: column; gap: 2px; }
-  .iw-pillar-label { font-size: 9px; color: var(--text-muted); line-height: 1; }
-  .iw-pillar-bar-row { display: flex; align-items: center; gap: 5px; }
-  .iw-pillar-bar { width: 60px; height: 4px; border-radius: 2px; background: var(--bg-border);
+  /* Single-line compact layout (Card display fixes, 2026-08-25): was label
+     above + bar/score below per pillar (2 rows tall x 4 pillars); now every
+     pillar is one inline group (label, bar, score) and all 4 sit on one
+     row -- nowrap so they don't fall back to the old stacked look on a
+     narrow card, compressed further at the mobile breakpoint below. */
+  .iw-pillars-row { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
+    overflow-x: auto; padding: 0 16px 10px 20px; }
+  .iw-pillar { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .iw-pillar-label { font-size: 11px; color: var(--text-muted); line-height: 1; }
+  .iw-pillar-bar { width: 50px; height: 4px; border-radius: 2px; background: var(--bg-border);
     overflow: hidden; flex-shrink: 0; }
   .iw-pillar-bar-fill { height: 100%; border-radius: 2px; }
-  .iw-pillar-score { font-size: 10px; color: var(--text-secondary); }
+  .iw-pillar-score { font-size: 11px; color: var(--text-secondary); }
   .iw-meta { display: flex; gap: 12px; padding: 0 16px 10px 20px; font-size: 11.5px;
     color: var(--text-muted); flex-wrap: wrap; }
   .iw-meta span { cursor: help; }
@@ -1238,9 +1258,40 @@
     margin-bottom: 0; /* grid `gap` already spaces rows -- the flex-column
       list's own margin-bottom would double up on top of it */
   }
+  /* ---- Card display fixes (2026-08-25): the row's fixed-width columns
+     (rating 64px + AEY 60px + status 140px, ~360px total before the flex
+     name column even gets a share) were designed for the old full-width
+     single-column list. In a 320px-wide grid card there isn't room left for
+     the name, which is why it rendered as a barely-visible sliver even
+     though it was correctly in the DOM -- confirmed via computed-style
+     inspection: .iw-name was pinned to ~82px wide regardless of card width,
+     truncated down to a couple of characters behind the ellipsis. Fix: the
+     name gets its own full-width top line; rating/AEY/status move to a
+     second line below where they have room to breathe. Scoped to #sec-table
+     only -- the passive-monitoring list is a flat single line and doesn't
+     use .iw-row-top/.iw-row-meta at all. ---- */
+  #sec-table .iw-row {
+    flex-direction: column; align-items: stretch; gap: 6px;
+  }
+  #sec-table .iw-row-top {
+    display: flex; align-items: center; gap: 10px;
+  }
+  #sec-table .iw-name {
+    font-size: 15px; font-weight: 600; color: var(--text-primary);
+  }
+  #sec-table .iw-row-meta {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-left: 20px;
+  }
+  #sec-table .iw-row-meta .iw-rating,
+  #sec-table .iw-row-meta .iw-aey,
+  #sec-table .iw-row-meta .iw-status {
+    width: auto; text-align: left;
+  }
   @media (max-width: 640px) {
     #sec-table .iw-rows { grid-template-columns: 1fr; }
-    .iw-status { display: none; }
+    .iw-status { display: none; } /* passive-monitoring rows don't render
+      .iw-status at all; #sec-table rows keep it via .iw-row-meta wrapping
+      instead of hiding it -- this rule is now effectively passive-list-only */
     .iw-rating { width: auto; }
     .iw-meta { font-size: 13px; padding-left: 14px; gap: 8px; }
     .iw-pillars-row { padding-left: 14px; gap: 10px; }
@@ -5136,8 +5187,8 @@ document.getElementById('iwDrawerOverlay').addEventListener('click', closeIssuer
 // (>=70/>=40) per the card-redesign spec, not scoreColor()'s 4-tier scale
 // used elsewhere, since this is a glance-level summary, not the detail view.
 const IW_PILLAR_FIELDS = [
-  ['score_leverage', 'Leverage'], ['score_liquidity', 'Liquidity'],
-  ['score_refinancing', 'Refinancing'], ['score_operations', 'Operations'],
+  ['score_leverage', 'Долг', 'Leverage'], ['score_liquidity', 'Ликв', 'Liquidity'],
+  ['score_refinancing', 'Рефин', 'Refinancing'], ['score_operations', 'Опер', 'Operations'],
 ];
 function iwPillarColor(v) {
   if (v == null) return 'var(--border)';
@@ -5145,19 +5196,21 @@ function iwPillarColor(v) {
   if (v >= 40) return 'var(--verdict-yellow)';
   return 'var(--verdict-red)';
 }
+// Compact single-line layout (Card display fixes, 2026-08-25): was label
+// above + bar-and-score below per pillar (2 lines x 4 = tall) -- now
+// label/bar/score sit inline, and all 4 pillars sit in one flex row instead
+// of wrapping to their own block each.
 function iwPillarsRowHtml(iss) {
   if (!iss.pillars_date) return '';
   const sp = iss.six_pillars || {};
-  return `<div class="iw-pillars-row">${IW_PILLAR_FIELDS.map(([key, label]) => {
+  return `<div class="iw-pillars-row">${IW_PILLAR_FIELDS.map(([key, label, fullLabel]) => {
     const v = sp[key];
     const pct = v != null ? Math.max(v, 2) : 0;
-    return `<div class="iw-pillar">
+    return `<span class="iw-pillar" title="${fullLabel}">
       <span class="iw-pillar-label">${label}</span>
-      <span class="iw-pillar-bar-row">
-        <span class="iw-pillar-bar"><span class="iw-pillar-bar-fill" style="width:${pct}%;background:${iwPillarColor(v)}"></span></span>
-        <span class="iw-pillar-score">${v ?? '—'}</span>
-      </span>
-    </div>`;
+      <span class="iw-pillar-bar"><span class="iw-pillar-bar-fill" style="width:${pct}%;background:${iwPillarColor(v)}"></span></span>
+      <span class="iw-pillar-score">${v ?? '—'}</span>
+    </span>`;
   }).join('')}</div>`;
 }
 
@@ -5190,13 +5243,17 @@ function renderIssuerRows() {
     const showReason = (health === 'orange' || health === 'red') && iss.health_reason;
     return `<div class="iw-row-wrap" data-issuer="${iss.issuer_id}" style="border-left-color:${healthColor}">
       <div class="iw-row">
-        <span class="iw-dot" style="background:${dotColor}" title="${v ? v.label : 'Недостаточно данных'}"></span>
-        <span class="health-dot" style="background:${healthColor}" title="${escapeHtml(healthTitle)}"></span>
-        <span class="iw-name">${escapeHtml(iss.name)}</span>
-        <span class="iw-rating">${iss.rating || '—'}${ratingTrendHtml(iss)}</span>
-        <span class="iw-aey" title="${escapeHtml(AEY_RISK_ADJ_TOOLTIP)}" style="cursor:help">${aey}</span>
-        <span class="iw-status">${status}</span>
-        <span class="iw-arrow">▶</span>
+        <div class="iw-row-top">
+          <span class="iw-dot" style="background:${dotColor}" title="${v ? v.label : 'Недостаточно данных'}"></span>
+          <span class="health-dot" style="background:${healthColor}" title="${escapeHtml(healthTitle)}"></span>
+          <span class="iw-name">${escapeHtml(iss.name)}</span>
+          <span class="iw-arrow">▶</span>
+        </div>
+        <div class="iw-row-meta">
+          <span class="iw-rating">${iss.rating || '—'}${ratingTrendHtml(iss)}</span>
+          <span class="iw-aey" title="${escapeHtml(AEY_RISK_ADJ_TOOLTIP)}" style="cursor:help">${aey}</span>
+          <span class="iw-status">${status}</span>
+        </div>
       </div>
       ${showReason ? `<div class="iw-health-reason">${escapeHtml(iss.health_reason)}</div>` : ''}
       ${iwPillarsRowHtml(iss)}

@@ -84,7 +84,7 @@ def test_hard_demote_on_ytm_over_300(tmp_path):
 
     r = watchlist_health.scan_issuer(con, ISSUER, today=TODAY)
     con.close()
-    assert any("YTM" in h and "300" in h for h in r["hard_reasons"])
+    assert any("YTM" in h and "300" in h and "порог" in h for h in r["hard_reasons"])
 
 
 def test_hard_demote_on_delisting(tmp_path):
@@ -100,7 +100,7 @@ def test_hard_demote_on_delisting(tmp_path):
 
     r = watchlist_health.scan_issuer(con, ISSUER, today=TODAY)
     con.close()
-    assert any("delisted" in h for h in r["hard_reasons"])
+    assert any("делистинг" in h for h in r["hard_reasons"])
 
 
 def test_no_bonds_at_all_is_not_treated_as_delisted(tmp_path):
@@ -153,7 +153,7 @@ def test_red_on_gspread_move_7d(tmp_path):
     con.close()
     assert r["hard_reasons"] == []
     assert r["health_status"] == "red"
-    assert any("G-spread" in s and "7d" in s for s in r["red_reasons"])
+    assert any("G-спред" in s and "7д" in s for s in r["red_reasons"])
 
 
 def test_red_on_critical_event_3d(tmp_path):
@@ -167,7 +167,7 @@ def test_red_on_critical_event_3d(tmp_path):
     con.close()
     assert r["hard_reasons"] == []  # only insolvency/default categories are hard
     assert r["health_status"] == "red"
-    assert any("critical-severity" in s for s in r["red_reasons"])
+    assert any("критической важности" in s for s in r["red_reasons"])
 
 
 def test_red_on_fns_account_block_keyword(tmp_path):
@@ -211,7 +211,7 @@ def test_orange_on_gspread_move_30d(tmp_path):
     con.close()
     assert r["hard_reasons"] == []
     assert r["health_status"] == "orange"
-    assert any("G-spread" in s and "30d" in s for s in r["orange_reasons"])
+    assert any("G-спред" in s and "30д" in s for s in r["orange_reasons"])
 
 
 def test_orange_on_rating_drop_2_notches(tmp_path):
@@ -230,7 +230,7 @@ def test_orange_on_rating_drop_2_notches(tmp_path):
     con.close()
     assert r["hard_reasons"] == []
     assert r["health_status"] == "orange"
-    assert any("rating dropped" in s for s in r["orange_reasons"])
+    assert any("рейтинг снижен" in s for s in r["orange_reasons"])
 
 
 def test_orange_on_high_severity_event_14d(tmp_path):
@@ -244,7 +244,7 @@ def test_orange_on_high_severity_event_14d(tmp_path):
     con.close()
     assert r["hard_reasons"] == []
     assert r["health_status"] == "orange"
-    assert any("high-severity" in s for s in r["orange_reasons"])
+    assert any("высокой важности" in s for s in r["orange_reasons"])
 
 
 # ---- YELLOW ----------------------------------------------------------------------
@@ -274,7 +274,7 @@ def test_yellow_on_gspread_move_30d(tmp_path):
     con.close()
     assert r["hard_reasons"] == []
     assert r["health_status"] == "yellow"
-    assert any("G-spread" in s and "30d" in s for s in r["yellow_reasons"])
+    assert any("G-спред" in s and "30д" in s for s in r["yellow_reasons"])
 
 
 def test_yellow_on_rating_outlook_negative(tmp_path):
@@ -293,7 +293,7 @@ def test_yellow_on_rating_outlook_negative(tmp_path):
     con.close()
     assert r["hard_reasons"] == []
     assert r["health_status"] == "yellow"
-    assert any("outlook" in s for s in r["yellow_reasons"])
+    assert any("прогноз" in s and "негативный" in s for s in r["yellow_reasons"])
 
 
 def test_yellow_on_medium_severity_event_7d(tmp_path):
@@ -307,7 +307,7 @@ def test_yellow_on_medium_severity_event_7d(tmp_path):
     con.close()
     assert r["hard_reasons"] == []
     assert r["health_status"] == "yellow"
-    assert any("medium-severity" in s for s in r["yellow_reasons"])
+    assert any("средней важности" in s for s in r["yellow_reasons"])
 
 
 # ---- GREEN -----------------------------------------------------------------------

@@ -218,14 +218,14 @@ def scan_issuer(con, issuer_id: str, today: str | None = None) -> dict:
     if crit_events:
         cats = sorted({e["category"] for e in crit_events})
         hard_reasons.append(
-            f"critical event(s) category={cats} occurred in last 1 day (event_id="
+            f"критическое событие(я), категория={cats}, за последний 1 день (event_id="
             f"{[e['event_id'] for e in crit_events]})")
 
     if ytm_pct is not None and ytm_pct > YTM_DEMOTE_PCT:
-        hard_reasons.append(f"YTM {ytm_pct:.1f}% > {YTM_DEMOTE_PCT:.0f}% (effective default pricing)")
+        hard_reasons.append(f"YTM {ytm_pct:.1f}% превышает порог {YTM_DEMOTE_PCT:.0f}% (цена как при дефолте)")
 
     if is_delisted(con, issuer_id):
-        hard_reasons.append("no bonds found in current universe_snapshot snap_date (delisted)")
+        hard_reasons.append("нет бумаг в текущем срезе universe_snapshot (делистинг)")
 
     red_reasons: list[str] = []
     orange_reasons: list[str] = []
@@ -234,63 +234,63 @@ def scan_issuer(con, issuer_id: str, today: str | None = None) -> dict:
     if not hard_reasons:
         # RED
         if ytm_pct is not None and ytm_pct > RED_YTM_PCT:
-            red_reasons.append(f"YTM {ytm_pct:.1f}% > {RED_YTM_PCT:.0f}%")
+            red_reasons.append(f"YTM {ytm_pct:.1f}% превышает порог {RED_YTM_PCT:.0f}%")
 
         red_window = gspread_window_change(con, secid, RED_GSPREAD_WINDOW_DAYS, today)
         if (red_window and red_window["pct_change"] > RED_GSPREAD_REL_PCT
                 and red_window["current_bp"] > RED_GSPREAD_ABS_BP):
             red_reasons.append(
-                f"G-spread +{red_window['pct_change']:.0f}% over {RED_GSPREAD_WINDOW_DAYS}d to "
-                f"{red_window['current_bp']:.0f}bp (> {RED_GSPREAD_REL_PCT:.0f}% and "
-                f"> {RED_GSPREAD_ABS_BP:.0f}bp)")
+                f"G-спред вырос на {red_window['pct_change']:.0f}% за {RED_GSPREAD_WINDOW_DAYS}д до "
+                f"{red_window['current_bp']:.0f}бп (>{RED_GSPREAD_REL_PCT:.0f}% и "
+                f">{RED_GSPREAD_ABS_BP:.0f}бп)")
 
         crit_recent = severity_event_count(con, issuer_id, "critical", RED_CRITICAL_EVENT_LOOKBACK_DAYS, today)
         if crit_recent:
             red_reasons.append(
-                f"{crit_recent} critical-severity event(s) in last {RED_CRITICAL_EVENT_LOOKBACK_DAYS} days")
+                f"{crit_recent} событ(ие/ия) критической важности за {RED_CRITICAL_EVENT_LOOKBACK_DAYS} дней")
 
         fns_hits = fns_account_block_event(con, issuer_id, RED_FNS_LOOKBACK_DAYS, today)
         if fns_hits:
             red_reasons.append(
-                f"possible ФНС account block, keyword match ({len(fns_hits)} event(s) in last "
-                f"{RED_FNS_LOOKBACK_DAYS} days, event_id={[e['event_id'] for e in fns_hits]})")
+                f"возможная блокировка счёта ФНС, совпадение по ключевым словам ({len(fns_hits)} "
+                f"событие(й) за {RED_FNS_LOOKBACK_DAYS} дней, event_id={[e['event_id'] for e in fns_hits]})")
 
         # ORANGE
         if ytm_pct is not None and ORANGE_YTM_LOW_PCT <= ytm_pct <= ORANGE_YTM_HIGH_PCT:
-            orange_reasons.append(f"YTM {ytm_pct:.1f}% in [{ORANGE_YTM_LOW_PCT:.0f}%, {ORANGE_YTM_HIGH_PCT:.0f}%]")
+            orange_reasons.append(f"YTM {ytm_pct:.1f}% в диапазоне [{ORANGE_YTM_LOW_PCT:.0f}%, {ORANGE_YTM_HIGH_PCT:.0f}%]")
 
         orange_window = gspread_window_change(con, secid, ORANGE_GSPREAD_WINDOW_DAYS, today)
         if orange_window and orange_window["pct_change"] > ORANGE_GSPREAD_REL_PCT:
             orange_reasons.append(
-                f"G-spread +{orange_window['pct_change']:.0f}% over {ORANGE_GSPREAD_WINDOW_DAYS}d "
-                f"(> {ORANGE_GSPREAD_REL_PCT:.0f}%)")
+                f"G-спред вырос на {orange_window['pct_change']:.0f}% за {ORANGE_GSPREAD_WINDOW_DAYS}д "
+                f"(>{ORANGE_GSPREAD_REL_PCT:.0f}%)")
 
         notches = rating_drop_notches(con, issuer_id, today)
         if notches is not None and notches >= ORANGE_RATING_DROP_NOTCHES:
-            orange_reasons.append(f"rating dropped {notches} notch(es) in last {RATING_LOOKBACK_DAYS} days")
+            orange_reasons.append(f"рейтинг снижен на {notches} ступень(и) за {RATING_LOOKBACK_DAYS} дней")
 
         high_recent = severity_event_count(con, issuer_id, "high", ORANGE_HIGH_EVENT_LOOKBACK_DAYS, today)
         if high_recent:
             orange_reasons.append(
-                f"{high_recent} high-severity event(s) in last {ORANGE_HIGH_EVENT_LOOKBACK_DAYS} days")
+                f"{high_recent} событ(ие/ия) высокой важности за {ORANGE_HIGH_EVENT_LOOKBACK_DAYS} дней")
 
         # YELLOW
         if ytm_pct is not None and YELLOW_YTM_LOW_PCT <= ytm_pct < YELLOW_YTM_HIGH_PCT:
-            yellow_reasons.append(f"YTM {ytm_pct:.1f}% in [{YELLOW_YTM_LOW_PCT:.0f}%, {YELLOW_YTM_HIGH_PCT:.0f}%)")
+            yellow_reasons.append(f"YTM {ytm_pct:.1f}% в диапазоне [{YELLOW_YTM_LOW_PCT:.0f}%, {YELLOW_YTM_HIGH_PCT:.0f}%)")
 
         yellow_window = gspread_window_change(con, secid, YELLOW_GSPREAD_WINDOW_DAYS, today)
         if yellow_window and yellow_window["pct_change"] > YELLOW_GSPREAD_REL_PCT:
             yellow_reasons.append(
-                f"G-spread +{yellow_window['pct_change']:.0f}% over {YELLOW_GSPREAD_WINDOW_DAYS}d "
-                f"(> {YELLOW_GSPREAD_REL_PCT:.0f}%)")
+                f"G-спред вырос на {yellow_window['pct_change']:.0f}% за {YELLOW_GSPREAD_WINDOW_DAYS}д "
+                f"(>{YELLOW_GSPREAD_REL_PCT:.0f}%)")
 
         if rating_outlook_turned_negative(con, issuer_id):
-            yellow_reasons.append("rating outlook changed to negative")
+            yellow_reasons.append("прогноз рейтинга изменён на негативный")
 
         medium_recent = severity_event_count(con, issuer_id, "medium", YELLOW_MEDIUM_EVENT_LOOKBACK_DAYS, today)
         if medium_recent:
             yellow_reasons.append(
-                f"{medium_recent} medium-severity event(s) in last {YELLOW_MEDIUM_EVENT_LOOKBACK_DAYS} days")
+                f"{medium_recent} событ(ие/ия) средней важности за {YELLOW_MEDIUM_EVENT_LOOKBACK_DAYS} дней")
 
     if hard_reasons:
         health_status, color_reasons = "red", hard_reasons
