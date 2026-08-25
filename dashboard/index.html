@@ -875,6 +875,11 @@
   .uni-btn:hover { border-color: var(--series-1); color: var(--series-1); }
   .uni-star { color: var(--warning); }
   .uni-caveat { font-size: 12px; color: var(--text-muted); margin: 6px 0 0; }
+  /* ---- Declutter Рынок task (2026-08-25): pulse-tiles / filters collapse toggles ---- */
+  .mkt-collapse-toggle { margin-bottom: 10px; }
+  .mkt-view-row { flex-wrap: wrap; gap: 8px; }
+  .mkt-filters-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .mkt-filters-summary { font-size: 12.5px; color: var(--text-secondary); }
   #marketTable th { cursor: pointer; white-space: nowrap; }
   #marketTable td { white-space: nowrap; } /* was font-size: 12.5px -- overrode the table default below the readability-pass minimum; now inherits the 14px base */
   .uni-empty { padding: 30px; text-align: center; color: var(--text-muted); }
@@ -1545,6 +1550,58 @@
     <p class="section-note">Эмитенты tier=2 — данные собираются наравне с активным вотчлистом (МОЕХ, AZIPI, ГИР БО, шесть столпов, AEY), но без вердикта/рекомендации: известные, но не рекомендованные к позиции (подтверждённый дефолт, снятые с рассмотрения кандидаты и т.п.).</p>
     <div id="passiveIssuersView"></div>
   </section>
+
+  <!-- Moved here from Рынок (Declutter Рынок task, 2026-08-25): this is
+       about adding an issuer to the watchlist, not about screening the
+       market universe -- belongs with the other watchlist-membership
+       sections above, not buried at the bottom of the market screener. -->
+  <section id="sec-company-scan">
+    <h2>Проверить кандидата</h2>
+    <div class="cs-panel">
+      <div class="cs-panel-head">
+        <span class="cs-panel-icon">🔍</span>
+        <div>
+          <p class="section-note" style="margin:2px 0 0">Для эмитента, которого ещё нет в базе hybond — живой веб-поиск (агентства, MOEX, суды) по оригинальному промпту <code>bond_screening_prompt_v3.5.1.md</code>, не по данным БД. Результат помечен отдельно от карточек, построенных на данных hybond, и не сохраняется в базу.</p>
+        </div>
+      </div>
+      <div class="cs-subhead">Кандидаты на проверку (авто, из ВДО-скрининга) <span id="csCandidatesCount" class="cs-subhead-count"></span></div>
+      <p class="section-note" style="margin:2px 0 8px">Не в вотчлисте и не в базе hybond, проходит ВДО-скрининг (спред/ликвидность ≤35% YTM), в разумном окне до погашения, и без рейтинга / с рейтингом, требующим проверки. Только выявление — клик по «Проверить» заполняет поле ниже для разового живого запроса в браузере (без сохранения в БД). <b>Для сохранённого результата: попросите Claude Code запустить скилл company-scan для этого эмитента</b> — веб-поиск самим Claude Code, без API-ключа, результат пишется прямо в <code>company_scan_result</code>. Тот же список кандидатов доступен без браузера через <code>hybond scan-candidates-list</code>.</p>
+      <div id="csCandidatesList" class="cs-chip-list"></div>
+
+      <div id="csRescanBlock" style="display:none">
+        <div class="cs-subhead">Требуют повторной проверки <span id="csRescanCount" class="cs-subhead-count"></span></div>
+        <p class="section-note" style="margin:2px 0 8px">Уже проверялись раньше, но данные hybond по эмитенту с тех пор изменились (новый рейтинг НКР/НРА/Эксперт РА, новая раскрытая информация на AZIPI) — старый результат скана мог устареть.</p>
+        <div id="csRescanList" class="cs-chip-list"></div>
+      </div>
+
+      <div class="cs-manual-row">
+        <span class="section-note" style="margin:0">Компании нет в списке выше?</span>
+        <button type="button" class="cs-manual-toggle-btn" id="csManualToggle">Указать вручную</button>
+      </div>
+      <div class="cs-panel-row" id="csManualRow" style="display:none">
+        <input type="text" id="companyScanInput" class="cs-input" placeholder="Название компании или ИНН, напр. «Альфа Дон Транс» или ИНН">
+        <button type="button" class="narrative-btn" id="companyScanBtn">Проверить компанию</button>
+        <button type="button" class="narrative-key-btn" id="companyScanKeyBtn">API-ключ Anthropic</button>
+      </div>
+      <span class="narrative-status" id="companyScanStatus"></span>
+      <div id="companyScanResult"></div>
+
+      <!-- Sohranённые проверки: results stored in company_scan_result, read
+           via DATA.company_scan_history -- rendered from stored markdown/
+           JSON, no API call and no key needed. Distinct from the live
+           browser scan above, which does NOT persist to the DB. Primary
+           write path is now the company-scan Claude Code skill
+           (skills/company-scan/SKILL.md, via `hybond scan-company-store`,
+           no key); the keyed `hybond scan-company`/`scan-candidates` CLI
+           path (src/hybond/company_scan_pipeline.py) still writes the same
+           table and is kept working, but is deprecated in favor of the
+           skill -- see those commands' own --help text. -->
+      <div class="cs-subhead" style="margin-top:18px">Сохранённые проверки (из БД) <span id="csHistoryCount" class="cs-subhead-count"></span></div>
+      <p class="section-note" style="margin:2px 0 8px">Карточка рисуется из уже сохранённых markdown/JSON в <code>company_scan_result</code>, без нового запроса к Anthropic. Записывается скиллом company-scan Claude Code (веб-поиск самим Claude Code, без ключа) — попросите «просканируй компанию X» или «прогони company-scan по кандидатам». Один скан на эмитента (последний) отображается здесь; полная история — прямой запрос к БД.</p>
+      <div id="csHistoryList" class="cs-chip-list"></div>
+      <div id="csHistoryResult"></div>
+    </div>
+  </section>
   </div>
 
   <div class="tab-panel" id="tab-market">
@@ -1569,8 +1626,12 @@
 
       <!-- Market Pulse tiles: unfiltered market-wide snapshot (same numbers
            the ticker bar shows), separate from #mStats below which reflects
-           the CURRENTLY FILTERED set -- see computeMarketPulse(). -->
-      <div class="pulse-tiles" id="pulseTiles">
+           the CURRENTLY FILTERED set -- see computeMarketPulse(). Collapsed
+           by default (Declutter Рынок task, 2026-08-25) -- the tiles still
+           render into the DOM on page load (renderPulseTiles() doesn't
+           check visibility), only the initial display state changes. -->
+      <button type="button" class="uni-btn mkt-collapse-toggle" id="pulseToggleBtn" aria-expanded="false">📊 Пульс рынка ▾</button>
+      <div class="pulse-tiles" id="pulseTiles" style="display:none">
         <div class="pulse-tile skeleton"></div>
         <div class="pulse-tile skeleton"></div>
         <div class="pulse-tile skeleton"></div>
@@ -1585,15 +1646,20 @@
       </div>
 
       <div id="corpMarketWrap">
-      <div class="uni-actions" style="margin-bottom:10px">
+      <!-- Unified table/map control row (Declutter Рынок task): time bucket
+           and table/map view were already one flex row via .uni-actions'
+           space-between, just visually loose -- tightened with a divider
+           and icons on the view buttons so it reads as one compact control,
+           not two separate groups. -->
+      <div class="uni-actions mkt-view-row" style="margin-bottom:10px">
         <div class="time-toggle" id="marketTimeToggle">
           <button type="button" class="time-btn active" data-key="universe_now">Сейчас</button>
           <button type="button" class="time-btn" data-key="universe_week_ago">−1 нед.</button>
           <button type="button" class="time-btn" data-key="universe_month_ago">−1 мес.</button>
         </div>
         <div class="view-toggle" id="marketViewToggle">
-          <button type="button" class="view-btn active" data-view="table">Таблица</button>
-          <button type="button" class="view-btn" data-view="map">Карта</button>
+          <button type="button" class="view-btn active" data-view="table">☰ Таблица</button>
+          <button type="button" class="view-btn" data-view="map">🗺 Карта</button>
         </div>
       </div>
       <div class="time-note" id="marketTimeNote"></div>
@@ -1602,8 +1668,23 @@
            Портфельный рейтинг tab's candidate mode (Part C), plus maturity
            buckets (new) and the AEY dual-slider (Part C, same component
            logic) -- these four apply identically to the table and the map
-           below via one shared filteredMarketBonds(), not two copies. -->
-      <div class="uni-filters" id="marketCoreFilters">
+           below via one shared filteredMarketBonds(), not two copies.
+           Collapsed by default (Declutter Рынок task, 2026-08-25) -- toggled
+           via #marketFiltersToggleBtn below, with an always-visible active-
+           filters summary line so it's clear filters are applied without
+           expanding the panel. The task's own spec named "the existing
+           Фильтры subnav button" as the toggle, but marketSubnav has no such
+           button (its 4 items are Скринер/Хитмап/Кривая ОФЗ/Размещения,
+           confirmed unchanged per the task's own item 5) -- that's the
+           Вотчлист subnav's button. Built a dedicated toggle button instead,
+           styled like the existing "Ещё фильтры" advanced-panel toggle just
+           below, with the same badge-count component the Вотчлист filters
+           already use (.subnav-count). -->
+      <div class="mkt-filters-head">
+        <button type="button" class="uni-btn mkt-collapse-toggle" id="marketFiltersToggleBtn" aria-expanded="false">Фильтры<span class="subnav-count" id="marketFiltersBadge" style="display:none"></span> ▾</button>
+        <span class="mkt-filters-summary" id="marketFiltersSummary"></span>
+      </div>
+      <div class="uni-filters" id="marketCoreFilters" style="display:none">
         <div class="uni-filter-group">
           <div class="uni-filter-label">Рейтинг, не хуже (порог)</div>
           <select id="mRatingFloor"></select>
@@ -1908,54 +1989,6 @@
         <canvas id="spreadHistChart"></canvas>
       </div>
       <div class="legend-row" id="spreadHistLegend" style="margin-top:8px"></div>
-    </section>
-
-    <section id="sec-company-scan">
-      <h2>Проверить кандидата</h2>
-      <div class="cs-panel">
-        <div class="cs-panel-head">
-          <span class="cs-panel-icon">🔍</span>
-          <div>
-            <p class="section-note" style="margin:2px 0 0">Для эмитента, которого ещё нет в базе hybond — живой веб-поиск (агентства, MOEX, суды) по оригинальному промпту <code>bond_screening_prompt_v3.5.1.md</code>, не по данным БД. Результат помечен отдельно от карточек, построенных на данных hybond, и не сохраняется в базу.</p>
-          </div>
-        </div>
-        <div class="cs-subhead">Кандидаты на проверку (авто, из ВДО-скрининга) <span id="csCandidatesCount" class="cs-subhead-count"></span></div>
-        <p class="section-note" style="margin:2px 0 8px">Не в вотчлисте и не в базе hybond, проходит ВДО-скрининг (спред/ликвидность ≤35% YTM), в разумном окне до погашения, и без рейтинга / с рейтингом, требующим проверки. Только выявление — клик по «Проверить» заполняет поле ниже для разового живого запроса в браузере (без сохранения в БД). <b>Для сохранённого результата: попросите Claude Code запустить скилл company-scan для этого эмитента</b> — веб-поиск самим Claude Code, без API-ключа, результат пишется прямо в <code>company_scan_result</code>. Тот же список кандидатов доступен без браузера через <code>hybond scan-candidates-list</code>.</p>
-        <div id="csCandidatesList" class="cs-chip-list"></div>
-
-        <div id="csRescanBlock" style="display:none">
-          <div class="cs-subhead">Требуют повторной проверки <span id="csRescanCount" class="cs-subhead-count"></span></div>
-          <p class="section-note" style="margin:2px 0 8px">Уже проверялись раньше, но данные hybond по эмитенту с тех пор изменились (новый рейтинг НКР/НРА/Эксперт РА, новая раскрытая информация на AZIPI) — старый результат скана мог устареть.</p>
-          <div id="csRescanList" class="cs-chip-list"></div>
-        </div>
-
-        <div class="cs-manual-row">
-          <span class="section-note" style="margin:0">Компании нет в списке выше?</span>
-          <button type="button" class="cs-manual-toggle-btn" id="csManualToggle">Указать вручную</button>
-        </div>
-        <div class="cs-panel-row" id="csManualRow" style="display:none">
-          <input type="text" id="companyScanInput" class="cs-input" placeholder="Название компании или ИНН, напр. «Альфа Дон Транс» или ИНН">
-          <button type="button" class="narrative-btn" id="companyScanBtn">Проверить компанию</button>
-          <button type="button" class="narrative-key-btn" id="companyScanKeyBtn">API-ключ Anthropic</button>
-        </div>
-        <span class="narrative-status" id="companyScanStatus"></span>
-        <div id="companyScanResult"></div>
-
-        <!-- Sohranённые проверки: results stored in company_scan_result, read
-             via DATA.company_scan_history -- rendered from stored markdown/
-             JSON, no API call and no key needed. Distinct from the live
-             browser scan above, which does NOT persist to the DB. Primary
-             write path is now the company-scan Claude Code skill
-             (skills/company-scan/SKILL.md, via `hybond scan-company-store`,
-             no key); the keyed `hybond scan-company`/`scan-candidates` CLI
-             path (src/hybond/company_scan_pipeline.py) still writes the same
-             table and is kept working, but is deprecated in favor of the
-             skill -- see those commands' own --help text. -->
-        <div class="cs-subhead" style="margin-top:18px">Сохранённые проверки (из БД) <span id="csHistoryCount" class="cs-subhead-count"></span></div>
-        <p class="section-note" style="margin:2px 0 8px">Карточка рисуется из уже сохранённых markdown/JSON в <code>company_scan_result</code>, без нового запроса к Anthropic. Записывается скиллом company-scan Claude Code (веб-поиск самим Claude Code, без ключа) — попросите «просканируй компанию X» или «прогони company-scan по кандидатам». Один скан на эмитента (последний) отображается здесь; полная история — прямой запрос к БД.</p>
-        <div id="csHistoryList" class="cs-chip-list"></div>
-        <div id="csHistoryResult"></div>
-      </div>
     </section>
   </div>
 
@@ -5728,7 +5761,7 @@ const HOME_ACTION_ICONS = {
 function renderHomeActions() {
   const tiles = [
     { icon: 'search', label: 'Проверить компанию', desc: 'Эмитент вне вотчлиста',
-      action: () => gotoTab('market', { scrollTo: 'sec-company-scan' }) },
+      action: () => gotoTab('watchlist', { scrollTo: 'sec-company-scan' }) },
     { icon: 'scatter', label: 'Карта рынка', desc: 'Scatter-график по всей вселенной',
       action: () => { gotoTab('market'); const btn = document.querySelector('#marketViewToggle .view-btn[data-view="map"]'); if (btn) btn.click(); } },
     { icon: 'bank', label: 'ЦБ РФ и ОФЗ', desc: 'Траектория ставки, ОФЗ carry',
@@ -6884,7 +6917,58 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     } else {
       drawMap();
     }
+    renderCoreFiltersSummary();
   }
+
+  // Active-filters summary + badge (Declutter Рынок task, 2026-08-25): the
+  // 4 core gates now default to collapsed (#marketCoreFilters), so this is
+  // the only always-visible sign that a filter is applied. "Active" means
+  // "differs from this tab's own default" -- rating floor/liquidity floor
+  // default to DATA.promotion_thresholds (same defaults resetMarketFilters()
+  // restores), maturity buckets default to all-checked, AEY range defaults
+  // to the slider's own [min,max] set once at init (see the p95-clamp block
+  // above).
+  function renderCoreFiltersSummary() {
+    const parts = [];
+    const ratingDefault = th.rating_floor || '';
+    if (ratingFloorSel.value !== ratingDefault) {
+      parts.push(ratingFloorSel.value ? `Рейтинг ≥ ${ratingFloorSel.value}` : 'Рейтинг: без порога');
+    }
+    const liqDefault = th.min_volume ?? 300;
+    if (+liqFloorEl.value !== liqDefault) parts.push(`Ликвидность ≥ ${liqFloorEl.value}`);
+    const checkedBuckets = checkedValues('mMaturityBuckets');
+    if (checkedBuckets.length < bucketsPresent.length) {
+      parts.push(`Срок: ${checkedBuckets.length ? checkedBuckets.join(', ') : 'нет'}`);
+    }
+    const aeyLo = parseFloat(aeySliderMin.value), aeyHi = parseFloat(aeySliderMax.value);
+    if (aeyLo !== parseFloat(aeySliderMin.min) || aeyHi !== parseFloat(aeySliderMax.max)) {
+      parts.push(`AEY ${aeyLo.toFixed(1)}–${aeyHi.toFixed(1)}%`);
+    }
+    const summaryEl = document.getElementById('marketFiltersSummary');
+    if (summaryEl) summaryEl.textContent = parts.join(' · ');
+    const badge = document.getElementById('marketFiltersBadge');
+    if (badge) {
+      badge.style.display = parts.length ? '' : 'none';
+      badge.textContent = String(parts.length);
+    }
+  }
+
+  document.getElementById('pulseToggleBtn').addEventListener('click', () => {
+    const tiles = document.getElementById('pulseTiles');
+    const btn = document.getElementById('pulseToggleBtn');
+    const nowHidden = tiles.style.display !== 'none';
+    tiles.style.display = nowHidden ? 'none' : '';
+    btn.setAttribute('aria-expanded', String(!nowHidden));
+    btn.textContent = nowHidden ? '📊 Пульс рынка ▾' : '📊 Пульс рынка ▴';
+  });
+
+  document.getElementById('marketFiltersToggleBtn').addEventListener('click', () => {
+    const panel = document.getElementById('marketCoreFilters');
+    const btn = document.getElementById('marketFiltersToggleBtn');
+    const nowHidden = panel.style.display !== 'none';
+    panel.style.display = nowHidden ? 'none' : '';
+    btn.setAttribute('aria-expanded', String(!nowHidden));
+  });
 
   document.getElementById('mvBtnTable').addEventListener('click', () => {
     tableSubView = 'table'; localStorage.setItem(MARKET_SUBVIEW_KEY, 'table');
