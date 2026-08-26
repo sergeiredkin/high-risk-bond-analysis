@@ -731,12 +731,15 @@ def init_market_note(con) -> None:
 def insert_market_note(con, **f) -> bool:
     """Returns True if a new row was actually inserted, False if body_hash
     already existed (dedup) -- callers use this to report a 'new' count.
-    feed_url defaults to None (same optional-kwarg pattern as
+    feed_url/classified_by default to None (same optional-kwarg pattern as
     insert_spread_snapshot's yield_source) so existing callers that don't
-    pass it keep working unchanged."""
+    pass them keep working unchanged. classified_by lets a system-generated
+    caller (e.g. cmd_scan_watchlist_health's auto-demotion notes) stamp its
+    own provenance at insert time, same convention as event.classified_by."""
     f.setdefault("feed_url", None)
+    f.setdefault("classified_by", None)
     cols = ("source,issuer_id,occurred,headline,summary,url,severity,"
-            "category,confidence,fetched_on,body_hash,feed_url")
+            "category,confidence,fetched_on,body_hash,feed_url,classified_by")
     placeholders = ",".join(f":{c}" for c in cols.split(","))
     cur = con.execute(
         f"INSERT OR IGNORE INTO market_note({cols}) VALUES({placeholders})", f)

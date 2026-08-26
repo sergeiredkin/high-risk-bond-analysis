@@ -864,8 +864,8 @@ def cmd_scan_watchlist_health(args) -> int:
             db.insert_market_note(
                 con, source="watchlist_health_scan", issuer_id=issuer_id,
                 occurred=today, headline=headline, summary=headline, url=None,
-                severity="critical", category=None, confidence=1.0,
-                fetched_on=today,
+                severity="critical", category="insolvency", confidence=1.0,
+                fetched_on=today, classified_by="watchlist_health_scan",
                 body_hash=hashlib.sha1(f"{headline}|{today}".encode("utf-8")).hexdigest()[:16])
             demoted.append({"issuer_id": issuer_id, "name": name, "reasons": r["hard_reasons"]})
         else:

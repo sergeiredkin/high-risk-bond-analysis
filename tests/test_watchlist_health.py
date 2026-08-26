@@ -343,7 +343,8 @@ def test_cli_demotes_and_writes_market_note_and_log(tmp_path, monkeypatch):
     log = con.execute("SELECT reason FROM watchlist_tier_log WHERE issuer_id=?",
                       (ISSUER,)).fetchone()
     note = con.execute(
-        "SELECT severity, source FROM market_note WHERE issuer_id=? AND source='watchlist_health_scan'",
+        "SELECT severity, category, classified_by, source FROM market_note "
+        "WHERE issuer_id=? AND source='watchlist_health_scan'",
         (ISSUER,)).fetchone()
     con.close()
     assert row["watchlist_tier"] == 2
@@ -351,6 +352,13 @@ def test_cli_demotes_and_writes_market_note_and_log(tmp_path, monkeypatch):
     assert "YTM" in log["reason"]
     assert note is not None
     assert note["severity"] == "critical"
+    # Bug fix (2026-08-26): auto-demotion notes previously had category=None,
+    # which -- while not actually gating db.get_auto_classify_market_notes()
+    # (that queue's unclassified marker is severity IS NULL, already set here)
+    # -- left a system-generated note without a category or a classified_by
+    # provenance stamp, unlike every other classifier path in this codebase.
+    assert note["category"] == "insolvency"
+    assert note["classified_by"] == "watchlist_health_scan"
 
 
 def test_cli_orange_signal_does_not_demote(tmp_path, monkeypatch):

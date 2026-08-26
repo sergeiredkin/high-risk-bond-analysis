@@ -895,6 +895,28 @@
   .uni-btn:hover { border-color: var(--series-1); color: var(--series-1); }
   .uni-star { color: var(--warning); }
   .uni-caveat { font-size: 12px; color: var(--text-muted); margin: 6px 0 0; }
+  /* ---- Shared pagination component (Pagination task, 2026-08-26) ---- */
+  .pgn-wrap:empty { display: none; }
+  .pgn-count { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 8px; }
+  .pgn-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-top: 10px; outline: none; }
+  .pgn-size-label { font-size: 12.5px; color: var(--text-muted); }
+  .pgn-size-group { display: flex; gap: 4px; }
+  .pgn-size-btn { background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; min-width: 32px; }
+  .pgn-size-btn:hover { border-color: var(--gold-primary); color: var(--gold-primary); }
+  .pgn-size-btn.active { background: var(--gold-primary); border-color: var(--gold-primary); color: #1a1a1a; font-weight: 600; }
+  .pgn-nav { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+  .pgn-btn { background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 12px; font-size: 12.5px; font-weight: 600; color: var(--text-primary); cursor: pointer; }
+  .pgn-btn:hover:not(:disabled) { border-color: var(--gold-primary); color: var(--gold-primary); }
+  .pgn-btn:disabled { opacity: 0.4; cursor: default; }
+  .pgn-page-label { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
+  @media (max-width: 640px) {
+    .pgn-controls { gap: 10px; }
+    .pgn-nav { margin-left: 0; width: 100%; justify-content: space-between; }
+    .pgn-btn, .pgn-size-btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  }
   /* ---- Declutter Рынок task (2026-08-25): pulse-tiles / filters collapse toggles ---- */
   .mkt-collapse-toggle { margin-bottom: 10px; }
   .mkt-view-row { flex-wrap: wrap; gap: 8px; }
@@ -1611,7 +1633,9 @@
       </div>
     </div>
     <div class="banner" id="aeySourceBanner"></div>
+    <div id="portfolioRankPagination" class="pgn-wrap"></div>
     <div class="card table-scroll"><table id="portfolioRankTable"></table></div>
+    <div id="portfolioRankPaginationBottom" class="pgn-wrap"></div>
   </section>
 
   <section id="sec-wall" class="collapsed">
@@ -1645,8 +1669,10 @@
 
   <section id="sec-table">
     <h2>Эмитенты — сводная таблица</h2>
-    <p class="section-note">Клик по строке разворачивает детали: события, тезис, флаги детектора изменений, облигации. Shift+клик — развернуть несколько строк одновременно. Вердикт — как на вкладке «Рынок», но по эмитенту в целом: худший (наиболее консервативный) из вердиктов всех его выпусков.</p>
+    <p class="section-note">Клик по строке открывает детали в боковой панели: события, тезис, флаги детектора изменений, облигации. Вердикт — как на вкладке «Рынок», но по эмитенту в целом: худший (наиболее консервативный) из вердиктов всех его выпусков.</p>
+    <div id="issuerRowsPagination" class="pgn-wrap"></div>
     <div id="issuerRowsView"></div>
+    <div id="issuerRowsPaginationBottom" class="pgn-wrap"></div>
   </section>
 
   <section id="sec-passive-issuers" class="collapsed">
@@ -1926,9 +1952,15 @@
         <button type="button" class="mvs-btn" id="mvBtnCards" title="Карточки">⊞</button>
       </div>
       <div id="marketTableView">
+        <div id="marketTablePagination" class="pgn-wrap"></div>
         <div class="card table-scroll"><table id="marketTable"></table></div>
+        <div id="marketTablePaginationBottom" class="pgn-wrap"></div>
       </div>
-      <div id="marketCardsView" style="display:none"></div>
+      <div id="marketCardsViewOuter" style="display:none">
+        <div id="marketCardsPagination" class="pgn-wrap"></div>
+        <div id="marketCardsView"></div>
+        <div id="marketCardsPaginationBottom" class="pgn-wrap"></div>
+      </div>
 
       <div id="marketMapView" style="display:none">
         <div class="mm-controls">
@@ -2586,6 +2618,108 @@ function promptApiKey() {
 
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+}
+
+// ================= Shared pagination component (Pagination task, 2026-08-26) =================
+// One reusable instance per list. `renderFn(pageItems)` is the list's own
+// existing render logic -- unchanged -- just called with a page-sliced
+// array instead of the full one. `countContainerId` gets the "Показано
+// X–Y из N" line (rendered ABOVE the list); `controlsContainerId` gets the
+// page-size selector + Пред/След/page-label nav (rendered BELOW the list).
+// Call `.setItems(newItems)` whenever the underlying filtered/sorted list
+// changes (a filter, a sort, a page-size switch) -- it resets to page 1 by
+// default, matching "filters reset to page 1" / "page size resets to page
+// 1" from the task spec; pass `{keepPage: true}` for the one case that must
+// NOT reset (Пред/След themselves call render() directly, never setItems).
+function createPaginator(listKey, containerId, countContainerId, controlsContainerId, renderFn, options = {}) {
+  const pageSizeOptions = options.pageSizeOptions || [10, 20, 30];
+  const defaultPageSize = options.pageSize || 20;
+  const itemLabel = options.itemLabel || 'записей';
+  const storageKey = `pageSize_${listKey}`;
+  let pageSize = parseInt(localStorage.getItem(storageKey), 10) || defaultPageSize;
+  if (!pageSizeOptions.includes(pageSize)) pageSize = defaultPageSize;
+  let page = 1;
+  let items = [];
+
+  // "Left/Right when list focused": the list container itself (e.g.
+  // #issuerRowsView, #marketTable) isn't naturally focusable -- its rows
+  // are plain clickable divs/<tr>, not buttons/links -- so give the
+  // container a tabindex and listen there too, in addition to the always-
+  // focusable pagination bar built in renderControls() below.
+  const listEl = document.getElementById(containerId);
+  if (listEl) {
+    if (!listEl.hasAttribute('tabindex')) listEl.setAttribute('tabindex', '0');
+    listEl.addEventListener('keydown', (e) => {
+      if (e.target !== listEl) return; // don't hijack arrow keys typed into a child input/select
+      if (e.key === 'ArrowLeft' && page > 1) { e.preventDefault(); page--; render(); }
+      else if (e.key === 'ArrowRight' && page < totalPages()) { e.preventDefault(); page++; render(); }
+    });
+  }
+
+  function totalPages() { return Math.max(1, Math.ceil(items.length / pageSize)); }
+
+  function render() {
+    const tp = totalPages();
+    page = Math.min(Math.max(1, page), tp);
+    const start = items.length ? (page - 1) * pageSize : 0;
+    const end = Math.min(start + pageSize, items.length);
+    renderFn(items.slice(start, end));
+    renderCount(start, end);
+    renderControls(tp);
+  }
+
+  function renderCount(start, end) {
+    const el = document.getElementById(countContainerId);
+    if (!el) return;
+    const text = items.length
+      ? `Показано ${start + 1}–${end} из ${items.length} ${itemLabel}`
+      : `Показано 0 из 0 ${itemLabel}`;
+    el.innerHTML = `<div class="pgn-count">${text}</div>`;
+  }
+
+  function renderControls(tp) {
+    const el = document.getElementById(controlsContainerId);
+    if (!el) return;
+    if (!items.length) { el.innerHTML = ''; return; }
+    const sizeButtons = pageSizeOptions.map(sz =>
+      `<button type="button" class="pgn-size-btn${sz === pageSize ? ' active' : ''}" data-size="${sz}">${sz}</button>`).join('');
+    el.innerHTML = `
+      <div class="pgn-controls" tabindex="0">
+        <span class="pgn-size-label">Показать:</span>
+        <span class="pgn-size-group">${sizeButtons}</span>
+        <span class="pgn-nav">
+          <button type="button" class="pgn-btn pgn-prev"${page <= 1 ? ' disabled' : ''}>← Пред</button>
+          <span class="pgn-page-label">Страница ${page} из ${tp}</span>
+          <button type="button" class="pgn-btn pgn-next"${page >= tp ? ' disabled' : ''}>След →</button>
+        </span>
+      </div>`;
+    el.querySelectorAll('.pgn-size-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        pageSize = parseInt(btn.dataset.size, 10);
+        localStorage.setItem(storageKey, pageSize);
+        page = 1;
+        render();
+      });
+    });
+    const prevBtn = el.querySelector('.pgn-prev');
+    const nextBtn = el.querySelector('.pgn-next');
+    if (prevBtn) prevBtn.addEventListener('click', () => { if (page > 1) { page--; render(); } });
+    if (nextBtn) nextBtn.addEventListener('click', () => { if (page < totalPages()) { page++; render(); } });
+    const navEl = el.querySelector('.pgn-controls');
+    if (navEl) navEl.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' && page > 1) { e.preventDefault(); page--; render(); }
+      else if (e.key === 'ArrowRight' && page < totalPages()) { e.preventDefault(); page++; render(); }
+    });
+  }
+
+  return {
+    setItems(newItems, opts) {
+      items = newItems || [];
+      if (!opts || !opts.keepPage) page = 1;
+      render();
+    },
+    render,
+  };
 }
 
 // Sector Labels task (2026-08-17): DATA.sector_labels comes from
@@ -4568,6 +4702,13 @@ renderSpreadHistoryChart();
     return 'var(--critical)';
   }
 
+  // Pagination task (2026-08-26): sorts the full rows array and hands it to
+  // the paginator, which slices per page and calls renderPortfolioTablePage
+  // -- same split as Рынок's renderTableRows/renderTableRowsPage.
+  const portfolioRankPaginator = createPaginator(
+    'portfolio', 'portfolioRankTable', 'portfolioRankPagination', 'portfolioRankPaginationBottom',
+    renderPortfolioTablePage, { pageSizeOptions: [10, 20, 30], pageSize: 20, itemLabel: 'облигаций' });
+
   function render() {
     const sorted = rows.slice().sort((a, b) => {
       let av = a[sortKey], bv = b[sortKey];
@@ -4576,6 +4717,10 @@ renderSpreadHistoryChart();
       if (typeof av === 'string') return sortDir * String(av).localeCompare(String(bv));
       return sortDir * (av - bv);
     });
+    portfolioRankPaginator.setItems(sorted);
+  }
+
+  function renderPortfolioTablePage(sorted) {
     let html = `<thead><tr>${cols.map(([k, l]) =>
       `<th data-k="${k}"${colTitleAttr(k)}>${l}${sortKey===k ? `<span class="sort-arrow">${sortDir>0?'▲':'▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
     if (!sorted.length) {
@@ -5214,23 +5359,13 @@ function iwPillarsRowHtml(iss) {
   }).join('')}</div>`;
 }
 
-function renderIssuerRows() {
+// Builds the HTML for one PAGE of issuer cards (already page-sliced by
+// issuerRowsPaginator below) and wires their click listeners -- this is
+// exactly the old renderIssuerRows() body, just handed a page instead of
+// the full filtered list.
+function renderIssuerRowsPage(pageIssuers) {
   const el = document.getElementById('issuerRowsView');
-  if (!DATA.issuers.length) {
-    el.innerHTML = emptyStateHtml({
-      icon: 'star', title: 'Вотчлист пуст', subtitle: 'Добавьте эмитентов для отслеживания',
-    });
-    return;
-  }
-  const rows = filteredWatchlistIssuers();
-  if (!rows.length) {
-    el.innerHTML = emptyStateHtml({
-      icon: 'star', title: 'Нет эмитентов по заданным фильтрам',
-      subtitle: 'Попробуйте ослабить или сбросить фильтры выше',
-    });
-    return;
-  }
-  el.innerHTML = `<div class="iw-rows">${rows.map(iss => {
+  el.innerHTML = `<div class="iw-rows">${pageIssuers.map(iss => {
     const v = issuerWorstVerdict(iss);
     const bond = issuerBestBond(iss);
     const dotColor = VERDICT_DOT_COLOR[v ? v.level : 'gray'];
@@ -5267,6 +5402,36 @@ function renderIssuerRows() {
     const iss = DATA.issuers.find(i => i.issuer_id === issuerId);
     wrap.querySelector('.iw-row').addEventListener('click', () => openIssuerDrawer(iss));
   });
+}
+
+// Paginator instance persists across re-filters (Pagination task,
+// 2026-08-26) -- created once, fed a new items array on every filter
+// change via .setItems(), which resets to page 1 itself.
+const issuerRowsPaginator = createPaginator(
+  'watchlist', 'issuerRowsView', 'issuerRowsPagination', 'issuerRowsPaginationBottom',
+  renderIssuerRowsPage, { pageSizeOptions: [10, 20, 30], pageSize: 20, itemLabel: 'эмитентов' });
+
+function renderIssuerRows() {
+  const el = document.getElementById('issuerRowsView');
+  if (!DATA.issuers.length) {
+    el.innerHTML = emptyStateHtml({
+      icon: 'star', title: 'Вотчлист пуст', subtitle: 'Добавьте эмитентов для отслеживания',
+    });
+    document.getElementById('issuerRowsPagination').innerHTML = '';
+    document.getElementById('issuerRowsPaginationBottom').innerHTML = '';
+    return;
+  }
+  const rows = filteredWatchlistIssuers();
+  if (!rows.length) {
+    el.innerHTML = emptyStateHtml({
+      icon: 'star', title: 'Нет эмитентов по заданным фильтрам',
+      subtitle: 'Попробуйте ослабить или сбросить фильтры выше',
+    });
+    document.getElementById('issuerRowsPagination').innerHTML = '';
+    document.getElementById('issuerRowsPaginationBottom').innerHTML = '';
+    return;
+  }
+  issuerRowsPaginator.setItems(rows);
 }
 renderFilterBar();
 renderIssuerRows();
@@ -6253,6 +6418,19 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   let sortKey = 'g_spread_bp', sortDir = -1;
   let lastRows = [];
 
+  // Pagination task (2026-08-26): table and cards view are two mutually
+  // exclusive renderings of the SAME filtered+sorted `rows`, but the task
+  // spec treats them as two separate lists with their own default page-size
+  // options (screener table gets a 50 option, cards doesn't) -- so two
+  // independent paginator instances/localStorage keys, each remembering its
+  // own page position when the user switches table<->cards.
+  const marketTablePaginator = createPaginator(
+    'market', 'marketTable', 'marketTablePagination', 'marketTablePaginationBottom',
+    renderTableRowsPage, { pageSizeOptions: [10, 20, 30, 50], pageSize: 20, itemLabel: 'облигаций' });
+  const marketCardsPaginator = createPaginator(
+    'market_cards', 'marketCardsView', 'marketCardsPagination', 'marketCardsPaginationBottom',
+    renderCardsViewPage, { pageSizeOptions: [10, 20, 30], pageSize: 20, itemLabel: 'облигаций' });
+
   // The one shared filter pipeline: fixed gates (rating floor, liquidity
   // floor, maturity buckets, AEY range) AND'd with the advanced panel's
   // existing range/checkbox filters. Both the table and the map call this
@@ -6350,10 +6528,16 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   function renderTableRows(rows) {
     lastRows = rows;
     const sorted = sortRows(rows);
-    const showStar = document.getElementById('mWatchlistStar').checked;
+    marketTablePaginator.setItems(sorted);
+  }
 
-    const MAX_RENDER = 400; // keep the DOM light; stats above already reflect the full filtered set
-    const shown = sorted.slice(0, MAX_RENDER);
+  // Renders one PAGE of the screener table (already page-sliced by
+  // marketTablePaginator) -- exactly the old renderTableRows() body minus
+  // the sort/MAX_RENDER cap, which the paginator now supersedes (its
+  // largest page-size option is 50, well under the old 400 DOM-lightness
+  // cap, so that cap is no longer reachable and was dropped).
+  function renderTableRowsPage(shown) {
+    const showStar = document.getElementById('mWatchlistStar').checked;
 
     let html = `<thead><tr>${cols.map(([k, l]) =>
       `<th data-k="${k}"${colTitleAttr(k)}>${l}${sortKey===k ? `<span class="sort-arrow">${sortDir>0?'▲':'▼'}</span>` : ''}</th>`).join('')}</tr></thead><tbody>`;
@@ -6422,9 +6606,14 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   function renderCardsView(rows) {
     lastRows = rows;
     const sorted = sortRows(rows);
+    marketCardsPaginator.setItems(sorted);
+  }
+
+  // One PAGE of the cards view (already page-sliced by marketCardsPaginator)
+  // -- exactly the old renderCardsView() body minus the sort/MAX_RENDER cap,
+  // superseded by pagination the same way renderTableRowsPage() is.
+  function renderCardsViewPage(shown) {
     const showStar = document.getElementById('mWatchlistStar').checked;
-    const MAX_RENDER = 400;
-    const shown = sorted.slice(0, MAX_RENDER);
     const wrap = document.getElementById('marketCardsView');
     if (!shown.length) {
       wrap.innerHTML = emptyStateHtml({
@@ -7031,7 +7220,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   function applySubViewDisplay() {
     document.getElementById('marketTableView').style.display =
       (activeView === 'table' && tableSubView === 'table') ? '' : 'none';
-    document.getElementById('marketCardsView').style.display =
+    document.getElementById('marketCardsViewOuter').style.display =
       (activeView === 'table' && tableSubView === 'cards') ? '' : 'none';
     document.getElementById('mvBtnTable').classList.toggle('active', tableSubView === 'table');
     document.getElementById('mvBtnCards').classList.toggle('active', tableSubView === 'cards');
