@@ -1145,17 +1145,10 @@
     color: var(--text-secondary); border-radius: 999px; padding: 6px 14px; cursor: pointer;
     font-size: 12px; font-weight: 600; white-space: nowrap; margin: 8px 4px 8px 0; }
   .disclosure-pill:hover { border-color: var(--gold-primary); color: var(--gold-primary); }
-  /* ---- Theme toggle + font-size slider: same nav row, left of the
-     disclosure pill -- see applyTheme()/applyFontScale() near the top of
-     the script block for the localStorage-backed logic. */
-  .theme-font-controls { display: flex; align-items: center; gap: 10px; margin: 8px 4px 8px 0;
-    border-radius: 8px; transition: background-color .3s, box-shadow .3s; }
-  /* Sidebar "Настройки" click target -- brief pulse, added/removed via
-     setTimeout in the sidebarSettingsBtn listener (Navigation Shell task,
-     2026-08-25). No new settings panel; this just calls out the existing
-     theme/font controls the click scrolled to. */
-  .theme-font-controls.settings-highlight { background: var(--gold-muted);
-    box-shadow: 0 0 0 2px var(--gold-primary); }
+  /* ---- Theme toggle + font-size slider: now live inside the settings
+     panel (see .settings-drawer above) rather than the header -- see
+     applyTheme()/applyFontScale() near the top of the script block for the
+     localStorage-backed logic, unchanged. */
   .theme-toggle-btn { display: flex; align-items: center; justify-content: center;
     width: 30px; height: 30px; border: 1px solid var(--bg-border); background: var(--bg-elevated);
     color: var(--text-secondary); border-radius: var(--radius-btn); cursor: pointer; padding: 0; }
@@ -1354,6 +1347,36 @@
     }
     .iw-drawer.open { transform: translateY(0); }
   }
+  /* ---- Settings panel (⚙️ sidebar item, 2026-08-26): replaces the old
+     "scroll to header controls" behavior -- same iw-drawer right-side-panel
+     pattern, own width (320px per spec) and z-index one layer above the
+     issuer drawer so the two never visually collide if somehow both open. */
+  .settings-drawer-overlay { position: fixed; inset: 0; z-index: 197; background: rgba(0,0,0,0.5);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }
+  .settings-drawer-overlay.open { opacity: 1; pointer-events: auto; }
+  .settings-drawer { position: fixed; top: 0; right: 0; height: 100%; width: 320px; max-width: 100vw;
+    background: var(--bg-surface); border-left: 1px solid var(--border); z-index: 198;
+    box-shadow: -4px 0 16px rgba(0,0,0,0.35); transform: translateX(100%);
+    transition: transform 0.25s ease; overflow-y: auto; padding: 44px 18px 20px; }
+  .settings-drawer.open { transform: translateX(0); }
+  .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+  .settings-row .disclosure-pill { margin: 0; width: 100%; text-align: center; }
+  .settings-lang-select { border: 1px solid var(--bg-border); background: var(--bg-elevated);
+    color: var(--text-muted); border-radius: var(--radius-btn); padding: 5px 10px; font-size: 12.5px;
+    cursor: not-allowed; }
+  @media (max-width: 640px) {
+    .settings-drawer {
+      top: auto; right: 0; bottom: 0; left: 0; width: 100%; height: 85vh;
+      border-left: none; border-top: 1px solid var(--border);
+      border-radius: 14px 14px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,0.35);
+      transform: translateY(100%);
+    }
+    .settings-drawer.open { transform: translateY(0); }
+  }
+
   /* ---- Passive monitoring (tier=2) collapsed rows, Вотчлист tab -------- */
   .iw-tier2-badge { flex-shrink: 0; font-size: 11px; padding: 2px 7px; border-radius: 10px;
     background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--bg-border); }
@@ -1388,10 +1411,23 @@
   .home-hero-pulse { display: flex; gap: 10px; flex-wrap: wrap; }
   .home-hero-pulse .pulse-tile { padding: 10px 14px; }
   .home-hero-pulse .pt-value { font-size: 16px; }
-  .home-columns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: 14px 20px; align-items: start; }
+  /* auto-fit/minmax rather than a fixed 4-up grid: at 1280px this settles
+     into 4 columns, but still wraps gracefully on the widths in between
+     desktop and the 768px breakpoint below, without a second explicit
+     tablet rule. */
+  .home-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; padding: 14px 20px; align-items: start; }
   .home-card { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 12px; padding: 14px; }
   .home-card-header { font-size: 14px; font-weight: 600; margin-bottom: 10px; cursor: pointer; }
   .home-card-header:hover { color: var(--gold-primary); }
+  /* ---- Draggable home-screen tiles (2026-08-26): Sortable.js drives
+     reordering of the 4 .home-card tiles inside #homeColumns, dragging by
+     the tile's header (.home-card-header, already the click-to-navigate
+     target -- Sortable's own drag-vs-click threshold keeps both working).
+     Class names passed explicitly to Sortable.create() below. ---- */
+  .home-card[data-tile-id] .home-card-header { cursor: grab; }
+  .home-tile-dragging { opacity: 0.5; cursor: grabbing; }
+  .home-tile-drop-target { border: 2px solid var(--gold-primary); }
+  #homeColActionsHeader { cursor: grab; }
   .home-issuer-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
   .home-issuer-row:last-child { border-bottom: none; }
   .home-verdict-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -1411,7 +1447,11 @@
     border: 0.5px solid var(--border); background: var(--surface-1); color: var(--text-primary);
     cursor: pointer; font-size: 13px; font-weight: 600; text-align: left; }
   .home-preset-btn:hover { border-color: #C9A227; color: #C9A227; }
-  .home-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 20px 20px; }
+  /* Nested inside a .home-card tile as of the draggable-tiles task
+     (2026-08-26) -- that card already contributes 14px padding, so this no
+     longer needs its own (previously a direct #homeScreen child with no
+     other padding source). */
+  .home-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .home-action-tile { display: flex; align-items: center; gap: 12px; background: var(--surface-1);
     border: 0.5px solid var(--border); border-radius: 12px; padding: 16px 18px; cursor: pointer; }
   .home-action-tile:hover { border-color: #C9A227; }
@@ -1444,8 +1484,6 @@
     .tab-btn { white-space: nowrap; flex-shrink: 0; }
     /* Fix 4: hide the "— Кредитный дашборд ВДО" tagline, keep "hybond". */
     .logo-subtitle { display: none; }
-    /* Fix 6: font slider isn't practical on touch -- theme toggle stays. */
-    .font-slider-control { display: none; }
   }
   /* ---- Touch targets, mobile (Full-width/Mobile task, 2026-08-25): the
      small toolbar-style buttons across Вотчлист/Рынок (subnav, time/view
@@ -1511,6 +1549,37 @@
   <button type="button" class="iw-drawer-close" id="iwDrawerClose" aria-label="Закрыть">×</button>
   <div id="iwDrawerContent"></div>
 </aside>
+<!-- Settings panel (⚙️ sidebar item, 2026-08-26): same right-side drawer
+     pattern as the issuer drawer above, 320px wide per spec. Controls
+     (theme toggle, font-size slider, disclosure/detail-level pill) are
+     moved here from the old header row -- same ids, same
+     applyTheme()/applyFontScale()/applyDisclosure() logic and localStorage
+     keys, just relocated. -->
+<div class="settings-drawer-overlay" id="settingsDrawerOverlay"></div>
+<aside class="settings-drawer" id="settingsDrawer" aria-hidden="true">
+  <button type="button" class="iw-drawer-close" id="settingsDrawerClose" aria-label="Закрыть">×</button>
+  <h3 class="iw-drawer-title">Настройки</h3>
+  <div class="settings-row">
+    <span class="settings-row-label">Тема</span>
+    <button type="button" class="theme-toggle-btn" id="themeToggle" title="Переключить тему" aria-label="Переключить тему"></button>
+  </div>
+  <div class="settings-row">
+    <span class="settings-row-label">Размер шрифта</span>
+    <div class="font-slider-control" id="fontSliderControl">
+      <input type="range" id="fontSizeSlider" min="90" max="180" step="5" value="120" aria-label="Размер шрифта">
+      <span class="font-slider-readout" id="fontSizeReadout">120%</span>
+    </div>
+  </div>
+  <div class="settings-row">
+    <button class="disclosure-pill" id="disclosureToggle" title="Уровень детализации карточки вердикта на вкладке «Вотчлист» (Part D) — прототип, другие страницы пока не затронуты">Детализация: стандарт</button>
+  </div>
+  <div class="settings-row">
+    <span class="settings-row-label">Язык</span>
+    <select class="settings-lang-select" disabled title="Скоро: другие языки">
+      <option>Русский</option>
+    </select>
+  </div>
+</aside>
 <!-- Ticker bar: persistent across all tabs (lives outside .wrap's tab-panel
      switching), built once from existing exports -- see computeMarketPulse()
      and renderTicker() near the top-level script block below. -->
@@ -1522,21 +1591,6 @@
       <div class="subtitle" id="subtitle"></div>
     </div>
   </header>
-
-  <div class="tab-bar-row">
-    <!-- Old horizontal .tab-bar removed (Navigation Shell task, 2026-08-25)
-         -- replaced by the fixed .sidebar nav above. Kept .tab-bar-row as
-         the container for theme-font-controls/disclosure-pill, unchanged. -->
-    <div class="theme-font-controls">
-      <button type="button" class="theme-toggle-btn" id="themeToggle" title="Переключить тему" aria-label="Переключить тему"></button>
-      <div class="font-slider-control" id="fontSliderControl">
-        <span>Шрифт:</span>
-        <input type="range" id="fontSizeSlider" min="90" max="180" step="5" value="120" aria-label="Размер шрифта">
-        <span class="font-slider-readout" id="fontSizeReadout">120%</span>
-      </div>
-    </div>
-    <button class="disclosure-pill" id="disclosureToggle" title="Уровень детализации карточки вердикта на вкладке «Вотчлист» (Part D) — прототип, другие страницы пока не затронуты">Детализация: стандарт</button>
-  </div>
 
   <!-- Home screen (landing view): default on a fresh load, not a 5th tab --
        see showHomeScreen()/gotoTab() near the bottom of the script block.
@@ -1551,21 +1605,30 @@
       </div>
       <div class="home-hero-pulse" id="homeHeroPulse"></div>
     </div>
-    <div class="home-columns">
-      <div class="home-card">
+    <!-- Draggable home-screen tiles (2026-08-26): Sortable.create() is
+         attached to #homeColumns near initHomeTileSort() in the script
+         block below. data-tile-id is the persisted-order identity (see
+         HOMESCREEN_TILE_ORDER_KEY); the drag handle is each tile's
+         .home-card-header, same element the click-to-navigate listeners
+         below are already bound to. -->
+    <div class="home-columns" id="homeColumns">
+      <div class="home-card" data-tile-id="watchlist">
         <div class="home-card-header" id="homeColWatchlistHeader">Вотчлист →</div>
         <div id="homeColWatchlist"></div>
       </div>
-      <div class="home-card">
+      <div class="home-card" data-tile-id="events">
         <div class="home-card-header" id="homeColEventsHeader">Лента событий →</div>
         <div id="homeColEvents"></div>
       </div>
-      <div class="home-card">
+      <div class="home-card" data-tile-id="portfolio">
         <div class="home-card-header" id="homeColPortfolioHeader">Портфель →</div>
         <div id="homeColPortfolio"></div>
       </div>
+      <div class="home-card" data-tile-id="actions">
+        <div class="home-card-header" id="homeColActionsHeader">Быстрые действия</div>
+        <div class="home-actions" id="homeActions"></div>
+      </div>
     </div>
-    <div class="home-actions" id="homeActions"></div>
   </div>
 
   <div id="backToHomeLink">← Главная</div>
@@ -2398,6 +2461,11 @@
   </div>
 </div>
 
+<!-- Sortable.js (draggable home-screen tiles, 2026-08-26): the first external
+     script dependency in this otherwise self-contained dashboard -- pinned
+     version, loaded from cdnjs. See initHomeTileSort() in the script block
+     below for the Sortable.create() call. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 <script id="dashboard-data" type="application/json">/*__DASHBOARD_DATA__*/</script>
 <script id="narrative-prompt" type="application/json">/*__NARRATIVE_PROMPT__*/</script>
 <script id="company-scan-prompt" type="application/json">/*__COMPANY_SCAN_PROMPT__*/</script>
@@ -5816,18 +5884,25 @@ document.addEventListener('keydown', (e) => {
   btn.click();
 });
 
-// ---- Sidebar "Настройки": no dedicated settings panel exists in this
-// dashboard -- per the task spec ("don't build new settings UI, just link
-// to what exists"), scrolls to the existing theme/font-size controls
-// (.theme-font-controls, in the header) and gives them a brief highlight
-// so the click has a visible effect. ----
-document.getElementById('sidebarSettingsBtn').addEventListener('click', () => {
-  const target = document.querySelector('.theme-font-controls');
-  if (!target) return;
-  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  target.classList.add('settings-highlight');
-  setTimeout(() => target.classList.remove('settings-highlight'), 1600);
-});
+// ---- Settings panel (⚙️ sidebar item, 2026-08-26): replaces the earlier
+// "scroll to the header controls" placeholder with a real right-side
+// drawer, same open/close pattern as openIssuerDrawer()/closeIssuerDrawer()
+// below. The controls themselves (theme/font/disclosure) keep their exact
+// ids and localStorage-backed logic from applyTheme()/applyFontScale()/
+// applyDisclosure() above -- only their DOM location moved. ----
+function openSettingsDrawer() {
+  document.getElementById('settingsDrawer').classList.add('open');
+  document.getElementById('settingsDrawer').setAttribute('aria-hidden', 'false');
+  document.getElementById('settingsDrawerOverlay').classList.add('open');
+}
+function closeSettingsDrawer() {
+  document.getElementById('settingsDrawer').classList.remove('open');
+  document.getElementById('settingsDrawer').setAttribute('aria-hidden', 'true');
+  document.getElementById('settingsDrawerOverlay').classList.remove('open');
+}
+document.getElementById('sidebarSettingsBtn').addEventListener('click', openSettingsDrawer);
+document.getElementById('settingsDrawerClose').addEventListener('click', closeSettingsDrawer);
+document.getElementById('settingsDrawerOverlay').addEventListener('click', closeSettingsDrawer);
 
 // ---- Sidebar badges (Navigation Shell task, 2026-08-25) --------------------
 // Вотчлист: count of tier=1 issuers with health_status='red' (DATA.issuers
@@ -6083,6 +6158,42 @@ function renderHomeScreen() {
 document.getElementById('homeColWatchlistHeader').addEventListener('click', () => gotoTab('watchlist'));
 document.getElementById('homeColEventsHeader').addEventListener('click', () => gotoTab('cbr', { scrollTo: 'sec-events' }));
 document.getElementById('homeColPortfolioHeader').addEventListener('click', () => gotoTab('portfolio'));
+
+// ---- Draggable home-screen tiles (2026-08-26): Sortable.js over the 4
+// .home-card tiles in #homeColumns (data-tile-id: watchlist/events/
+// portfolio/actions), dragged by each tile's header. Order persists to
+// localStorage and is restored by reordering the DOM nodes before Sortable
+// attaches -- Sortable itself just reflects whatever DOM order it finds. ----
+const HOMESCREEN_TILE_ORDER_KEY = 'homescreen_tile_order';
+function restoreHomeTileOrder() {
+  const container = document.getElementById('homeColumns');
+  let order;
+  try { order = JSON.parse(localStorage.getItem(HOMESCREEN_TILE_ORDER_KEY) || 'null'); }
+  catch (e) { order = null; }
+  if (!Array.isArray(order)) return;
+  order.forEach(id => {
+    const tile = container.querySelector(`[data-tile-id="${id}"]`);
+    if (tile) container.appendChild(tile);
+  });
+}
+function saveHomeTileOrder() {
+  const order = Array.from(document.querySelectorAll('#homeColumns [data-tile-id]'))
+    .map(el => el.dataset.tileId);
+  localStorage.setItem(HOMESCREEN_TILE_ORDER_KEY, JSON.stringify(order));
+}
+function initHomeTileSort() {
+  const container = document.getElementById('homeColumns');
+  if (!container || typeof Sortable === 'undefined') return;
+  restoreHomeTileOrder();
+  Sortable.create(container, {
+    handle: '.home-card-header',
+    animation: 150,
+    dragClass: 'home-tile-dragging',
+    ghostClass: 'home-tile-drop-target',
+    onEnd: saveHomeTileOrder,
+  });
+}
+initHomeTileSort();
 
 // ================= Ticker bar + Market Pulse (shared data) ===============
 // One computation shared by the ticker bar (always visible, all tabs) and
