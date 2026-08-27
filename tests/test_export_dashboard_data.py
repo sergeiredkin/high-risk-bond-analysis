@@ -12,7 +12,7 @@ from hybond.store import db  # noqa: E402
 from export_dashboard_data import (  # noqa: E402
     spread_history_by_issuer, passive_issuers_export, passive_events_since,
     universe_snapshot_bundle, RATING_TREND_VALUE, rating_trend,
-    rating_history_by_issuer, _latest_spread_snap_date)
+    rating_history_by_issuer, _latest_spread_snap_date, portfolio_data_freshness)
 
 ISSUER = "7701234567"
 
@@ -468,3 +468,47 @@ def test_rating_history_by_issuer_empty_issuer_ids_list(tmp_path):
     con = _rh_con(tmp_path)
     con.commit()
     assert rating_history_by_issuer(con, []) == {}
+
+
+# Pre-Phase B fix: data-freshness strip for the Пресеты Builder needs both
+# sources' latest snapshot dates exported (Fix 2).
+def test_portfolio_data_freshness_both_sources_present(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    db.upsert_issuer(con, ISSUER, "Test Issuer")
+    db.upsert_bond(con, secid="BOND1", isin="RU1", issuer_id=ISSUER,
+                    short_name="B1", mat_date="2028-01-01", face_value=1000.0,
+                    face_unit="SUR", coupon_pct=15.0, list_level=3, qualified=1,
+                    updated="2026-08-14")
+    db.insert_spread_snapshot(con, secid="BOND1", snap_date="2026-08-20", ytm=0.2,
+                               tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=500.0,
+                               mod_dur=1.5, convexity=None)
+    db.insert_spread_snapshot(con, secid="BOND1", snap_date="2026-08-25", ytm=0.2,
+                               tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=500.0,
+                               mod_dur=1.5, convexity=None)
+    db.insert_universe_snapshot(
+        con, secid="BOND1", snap_date="2026-08-01", short_name="B1",
+        emitent_inn=ISSUER, emitent_title="Test Issuer", mat_date="2028-01-01",
+        offer_date=None, coupon_pct=15.0, list_level=3, qualified=1,
+        last_pct=100.0, yield_moex=0.2, yield_to_offer=0.2, accrued_int=0.0,
+        volume=1000, num_trades=5, duration_moex=400, ytm=0.2, tenor_yrs=2.0,
+        rf_rate=0.14, g_spread_bp=500.0, yield_source="moex", rating="ruBBB+",
+        implied_fair_spread_bp=None, mispricing_bp=None, in_watchlist=1,
+        signal_excluded=0, mod_dur=1.5, aey_base=0.2, aey_stress=0.18,
+        aey_bull=0.22, aey_base_risk_adj=0.19)
+    con.commit()
+    result = portfolio_data_freshness(con)
+    con.close()
+    assert result == {"universe_snapshot_date": "2026-08-01",
+                       "spread_snapshot_date": "2026-08-25"}
+
+
+def test_portfolio_data_freshness_empty_db_returns_none(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    con.commit()
+    result = portfolio_data_freshness(con)
+    con.close()
+    assert result == {"universe_snapshot_date": None, "spread_snapshot_date": None}

@@ -424,10 +424,39 @@
   .pf-concentration-fill { height: 100%; background: var(--series-1); }
   .pf-concentration-fill.pf-sector-warn { background: var(--warning); }
   .pf-concentration-fill.pf-sector-critical { background: var(--critical); }
+
+  /* ---- Portfolio presets (Пресеты subtab, 2026-08-27) -------------------- */
+  .pf-preset-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px; margin: 10px 0 18px; }
+  .pf-preset-card { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 12px;
+    padding: 16px; cursor: pointer; text-align: left; }
+  .pf-preset-card:hover { border-color: var(--gold-primary); }
+  .pf-preset-card.active { border-color: var(--gold-primary); background: var(--gold-muted); }
+  .pf-preset-card-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .pf-preset-card-line { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .pf-preset-options { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; margin-bottom: 14px; }
+  .pf-preset-opt-group { display: flex; flex-direction: column; gap: 6px; min-width: 180px; }
+  .pf-preset-opt-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+  .pf-preset-detail-link { font-size: 12px; color: var(--series-1); cursor: pointer; text-decoration: none; }
+  .pf-preset-detail-link:hover { text-decoration: underline; }
+  .pf-preset-name-input { width: 320px; max-width: 100%; padding: 7px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); font-size: 14px; margin-top: 4px; }
+  .pf-preset-preview-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .pf-preset-flag { cursor: help; margin-left: 4px; }
   .pf-sector-badge { font-size: 12px; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-left: 6px; white-space: nowrap; }
   .pf-sector-badge.pf-sector-warn { color: var(--warning); border: 1px solid var(--warning); }
   .pf-sector-badge.pf-sector-critical { color: var(--critical); border: 1px solid var(--critical); background: color-mix(in srgb, var(--critical) 10%, transparent); }
   .pf-sector-note { color: var(--text-muted); font-size: 12px; }
+  .pf-preset-freshness { font-size: 12px; margin: 4px 0 12px; padding: 6px 10px; border-radius: 8px;
+    display: inline-block; }
+  .pf-preset-freshness.pf-fresh-ok { color: var(--success, #2e7d32); background: color-mix(in srgb, var(--success, #2e7d32) 10%, transparent); }
+  .pf-preset-freshness.pf-fresh-warn { color: var(--critical); background: color-mix(in srgb, var(--critical) 10%, transparent); }
+  .pf-preset-freshness.pf-fresh-neutral { color: var(--text-muted); background: var(--surface-1); }
+  .pf-monitor-gspread-ok { color: var(--verdict-green); }
+  .pf-monitor-gspread-warn { color: var(--verdict-orange); font-weight: 600; }
+  .pf-monitor-gspread-alert { color: var(--verdict-red); font-weight: 700; }
+  .pf-monitor-health-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+  .pf-monitor-health-badge .health-dot { width: 8px; height: 8px; }
   .pf-issuer-count { color: var(--text-muted); font-size: 12px; font-weight: 400; }
   .stat-tile[title] { cursor: help; }
   .pf-cluster-summary { border-left: 3px solid var(--critical); padding: 8px 10px; margin: 8px 0 4px; font-size: 14px; line-height: 1.6;
@@ -2376,6 +2405,7 @@
           <button type="button" class="subtab-btn" data-pftab="scenarios">Сценарии</button>
           <button type="button" class="subtab-btn" data-pftab="wall">Стена</button>
           <button type="button" class="subtab-btn" data-pftab="calendar">Календарь</button>
+          <button type="button" class="subtab-btn" data-pftab="presets">Пресеты</button>
         </div>
       </div>
 
@@ -2520,6 +2550,81 @@
 
         <h3 class="pf-h3-sep" style="margin-top:22px">Рекомендации к действию</h3>
         <div id="pfCalendarActions"></div>
+      </div>
+
+      <!-- Portfolio presets (Phase A: Builder + Preview, 2026-08-27). Own
+           subtab rather than replacing/gating Обзор -- this dashboard's
+           existing custom-portfolio picker (Обзор's own presets/position
+           picker, PF_PRESET_KEY) is a separate, already-shipped feature;
+           adding this alongside it avoids disrupting that flow while this
+           one is new. Client-side mirror of src/hybond/portfolio.py's
+           build_preset()/compute_weights() -- this dashboard is a static
+           exported file with no live backend to write to, so "Сохранить
+           как активный" below persists to localStorage only (see
+           PF_PRESETS_LS_KEY in the script block). Actually committing a
+           built portfolio into the real portfolio/portfolio_bond/
+           portfolio_snapshot SQLite tables is a separate, deliberate step:
+           `hybond portfolio-build --save` (CLI write-back), not this UI. -->
+      <div class="pftab-panel" id="pftab-presets">
+        <div id="pfPresetBuilder">
+          <h3 style="margin-top:18px">Построить портфель из пресета</h3>
+          <p class="section-note">Три готовых профиля риска, отобранные из активного вотчлиста (tier=1). Параметры ниже — переопределения пресета по умолчанию, не новая модель.</p>
+          <div class="pf-preset-freshness" id="pfPresetFreshness"></div>
+          <div class="pf-preset-cards" id="pfPresetCards"></div>
+
+          <div class="pf-preset-options">
+            <div class="pf-preset-opt-group">
+              <div class="pf-preset-opt-label">Распределение веса</div>
+              <div class="view-toggle" id="pfSizingModeToggle">
+                <button type="button" class="view-btn active" data-mode="equal">Равный вес</button>
+                <button type="button" class="view-btn" data-mode="aey_high">AEY↑ больше</button>
+                <button type="button" class="view-btn" data-mode="aey_low" title="Консервативный внутри пресета — больший вес у надёжных имён">AEY↓ больше</button>
+              </div>
+            </div>
+            <div class="pf-preset-opt-group">
+              <div class="pf-preset-opt-label">Макс. доля сектора: <b id="pfSectorCapVal"></b></div>
+              <input type="range" id="pfSectorCapSlider" min="5" max="30" step="1">
+            </div>
+            <div class="pf-preset-opt-group">
+              <div class="pf-preset-opt-label">Макс. доля эмитента: <b id="pfMaxIssuerVal"></b></div>
+              <input type="range" id="pfMaxIssuerSlider" min="1" max="20" step="1">
+            </div>
+            <div class="pf-preset-opt-group" id="pfRedOverrideGroup" style="display:none">
+              <label class="uni-toggle"><input type="checkbox" id="pfRedOverrideToggle"><span class="uni-toggle-switch"></span>Включить RED-эмитентов с рейтингом ≥ ruBB- и PD &lt; 3%</label>
+              <a class="pf-preset-detail-link" id="pfRedDetailLink">Подробнее о критериях</a>
+              <p class="section-note" id="pfRedDetailBody" style="display:none">Дополнительное условие поверх фильтров пресета: рейтинг ≥ ruBB-, эмпирическая вероятность дефолта за 1 год (Эксперт РА, Таблица 7) ≤ 3%, и G-спред не в 30-дневном всплеске (Δ30д &lt; +200бп). Каждый включённый RED-эмитент помечен флагом с указанием причины.</p>
+            </div>
+          </div>
+          <div class="banner" id="pfPresetConstraintWarning" style="display:none"></div>
+          <div class="banner" id="pfPresetBuildError" style="display:none"></div>
+          <button type="button" class="uni-btn" id="pfBuildBtn" style="margin-top:14px">Построить портфель →</button>
+        </div>
+
+        <div id="pfPresetPreview" style="display:none">
+          <h3 style="margin-top:18px">Предпросмотр портфеля</h3>
+          <div class="pf-preset-opt-group">
+            <label for="pfPortfolioNameInput" class="pf-preset-opt-label">Название портфеля</label><br>
+            <input type="text" id="pfPortfolioNameInput" placeholder="напр. Консервативный, август 2026" class="pf-preset-name-input">
+          </div>
+          <div class="uni-stats" id="pfPresetSummaryStrip"></div>
+          <div class="card table-scroll"><table id="pfPresetPreviewTable"></table></div>
+          <div class="banner" id="pfPresetWarnings" style="display:none"></div>
+          <div class="pf-preset-preview-actions">
+            <button type="button" class="uni-btn" id="pfPreviewBackBtn">← Изменить</button>
+            <button type="button" class="uni-btn" id="pfPreviewSaveBtn">Сохранить как активный →</button>
+          </div>
+        </div>
+
+        <div id="pfPresetMonitor" style="display:none">
+          <h3 style="margin-top:18px">Портфель: <span id="pfMonitorName"></span></h3>
+          <div class="banner" id="pfMonitorAlertBanner" style="display:none"></div>
+          <div class="uni-stats" id="pfMonitorSummaryStrip"></div>
+          <div class="card table-scroll"><table id="pfMonitorTable"></table></div>
+          <div class="pf-preset-preview-actions">
+            <button type="button" class="uni-btn" id="pfMonitorRebuildBtn">Пересобрать портфель</button>
+            <button type="button" class="uni-btn" id="pfMonitorCopyCliBtn">Скопировать CLI-команду</button>
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -8522,7 +8627,7 @@ renderOfzCurveShape();
   // same shared `selected`/`pool` state below (see renderAll()), regardless
   // of which one is visible, so switching sub-tabs never shows stale data.
   const PF_SUBTAB_KEY = 'hybond-portfolio-tab';
-  const PF_SUBTABS = ['overview', 'scenarios', 'wall', 'calendar'];
+  const PF_SUBTABS = ['overview', 'scenarios', 'wall', 'calendar', 'presets'];
   function gotoPfSubtab(name) {
     if (!PF_SUBTABS.includes(name)) name = 'overview';
     document.querySelectorAll('.subtab-btn[data-pftab]').forEach(b => b.classList.toggle('active', b.dataset.pftab === name));
@@ -10295,6 +10400,747 @@ renderOfzCurveShape();
     applyPreset(savedPreset); // calls renderAll() itself
   } else {
     renderAll();
+  }
+})();
+
+// ================= Portfolio presets (Пресеты subtab, 2026-08-27) ==========
+// Phase A (Builder + Preview) of the Portfolio presets task. Client-side
+// mirror of src/hybond/portfolio.py's PRESETS/compute_weights()/
+// build_preset()/red_issuer_eligibility()/refinancing_flag() -- this
+// dashboard is a static exported file with no live backend, so there is no
+// way to literally INSERT into the portfolio/portfolio_bond/
+// portfolio_snapshot SQLite tables from here. "Сохранить как активный"
+// below persists the built portfolio to localStorage only, under
+// PF_PRESETS_LS_KEY; actually committing it into the real DB tables is a
+// separate, deliberate step the user runs themselves:
+// `hybond portfolio-build <preset> --save --name "..."` (see
+// cmd_portfolio_build in src/hybond/__main__.py). Keep every constant and
+// algorithm below in sync with portfolio.py by inspection -- see that
+// module's own tests (test_portfolio.py) for the Python side of each of
+// these, and the RATING_RANK note there about this exact "mirrored, not
+// shared" relationship.
+(function presetsTab() {
+  const PF_PRESETS_LS_KEY = 'hybond-active-preset-portfolio';
+
+  // Same values as RATING_TREND_VALUE_JS (defined earlier in this file,
+  // Rating Trajectory task) -- reused directly rather than redefined, since
+  // both already live in the same script and this IS that exact scale
+  // (higher = better, ruD=1 included).
+  const RATING_RANK = RATING_TREND_VALUE_JS;
+
+  const PRESETS = {
+    conservative: {
+      bond_count: [20, 25], min_rating: 'ruBBB-', max_ytm: 0.30, max_aey: 0.35,
+      health_allowed: ['green', 'yellow'], max_per_issuer: 0.05, sector_cap: 0.12,
+      label: 'Консервативный',
+    },
+    balanced: {
+      bond_count: [25, 30], min_rating: 'ruBB-', max_ytm: 0.35, max_aey: null,
+      health_allowed: ['green', 'yellow', 'orange'], max_per_issuer: 0.04, sector_cap: 0.15,
+      label: 'Сбалансированный',
+    },
+    aggressive: {
+      bond_count: [28, 35], min_rating: 'ruB-', max_ytm: 0.40, max_aey: null,
+      health_allowed: ['green', 'yellow', 'orange', 'red'], max_per_issuer: 0.03, sector_cap: 0.20,
+      label: 'Агрессивный',
+    },
+  };
+  const RED_MIN_RATING = 'ruBB-';
+  const RED_MAX_PD = 0.03;
+  const RED_MAX_GSPREAD_SPIKE_BP = 200.0;
+  const REFI_WINDOW_DAYS = 182;
+  const EPS_AEY = 1e-4;
+  // Phase B Monitor's own refinancing alert window -- shorter and more
+  // urgent than the Builder's 182-day soft warning at build time (task
+  // spec: "alert if maturity/put date is within 45 days").
+  const MONITOR_REFI_WINDOW_DAYS = 45;
+  const MONITOR_GSPREAD_ALERT_BP = 150;
+  const MONITOR_GSPREAD_WARN_BP = 100;
+  const HEALTH_RANK = { green: 0, yellow: 1, orange: 2, red: 3 };
+
+  function computeWeights(bonds, mode) {
+    if (!bonds.length) throw new Error('computeWeights requires at least one bond');
+    if (mode === 'equal') {
+      const w = 1.0 / bonds.length;
+      const out = {}; bonds.forEach(b => { out[b.isin] = w; }); return out;
+    }
+    if (mode !== 'aey_high' && mode !== 'aey_low') {
+      throw new Error(`unknown sizing mode: ${mode}`);
+    }
+    const floored = bonds.map(b => Math.max(b.aey != null ? b.aey : EPS_AEY, EPS_AEY));
+    if (mode === 'aey_high') {
+      const total = floored.reduce((a, v) => a + v, 0);
+      const out = {}; bonds.forEach((b, i) => { out[b.isin] = floored[i] / total; }); return out;
+    }
+    const inv = floored.map(v => 1.0 / v);
+    const total = inv.reduce((a, v) => a + v, 0);
+    const out = {}; bonds.forEach((b, i) => { out[b.isin] = inv[i] / total; }); return out;
+  }
+
+  function redIssuerEligibility(rating, gSpreadDelta30d) {
+    const rank = RATING_RANK[rating];
+    const minRank = RATING_RANK[RED_MIN_RATING];
+    if (rank == null || rank < minRank) return { ok: false, reason: null };
+    const probs = DEFAULT_PD_1YR[normaliseRating(rating)];
+    if (probs == null) return { ok: true, reason: `${rating} / PD н/д / G-spread н/д` };
+    if (probs > RED_MAX_PD) return { ok: false, reason: null };
+    if (gSpreadDelta30d == null || gSpreadDelta30d >= RED_MAX_GSPREAD_SPIKE_BP) return { ok: false, reason: null };
+    const gspreadDesc = gSpreadDelta30d < 50 ? 'G-spread stable' : `G-spread +${Math.round(gSpreadDelta30d)}bp`;
+    return { ok: true, reason: `${rating} / PD ${(probs * 100).toFixed(1)}% / ${gspreadDesc}` };
+  }
+
+  function refinancingFlag(matDate, asOf, windowDays) {
+    if (!matDate) return { flag: false, date: null };
+    const today = asOf || new Date();
+    const mat = new Date(matDate + 'T00:00:00');
+    const windowEnd = new Date(today); windowEnd.setDate(windowEnd.getDate() + (windowDays || REFI_WINDOW_DAYS));
+    if (mat >= today && mat <= windowEnd) return { flag: true, date: matDate };
+    return { flag: false, date: null };
+  }
+
+  // Эксперт РА Table 7, 1yr default frequencies -- same source/values as
+  // src/hybond/compute/default_probs.py's DEFAULT_PROBS_1YR (mirrored, see
+  // this IIFE's own header comment).
+  const DEFAULT_PD_1YR = {
+    ruAAA: 0.0000, 'ruAA+': 0.0000, ruAA: 0.0021, 'ruAA-': 0.0000, 'ruA+': 0.0050,
+    ruA: 0.0065, 'ruA-': 0.0059, 'ruBBB+': 0.0107, ruBBB: 0.0198, 'ruBBB-': 0.0147,
+    'ruBB+': 0.0295, ruBB: 0.0460, 'ruBB-': 0.0598, 'ruB+': 0.0582, ruB: 0.0505,
+    'ruB-': 0.0526, ruCCC: 0.1364, ruCC: 0.2857, ruC: 0.5000,
+  };
+  const LGD = 0.934;
+
+  function normaliseRating(rating) {
+    if (!rating) return rating;
+    let r = rating.trim();
+    if (!/^ru/i.test(r)) r = 'ru' + r;
+    return 'ru' + r.slice(2).toUpperCase();
+  }
+
+  // Builds one BondCandidate-shaped object per tier=1 issuer's bond, from
+  // data this dashboard already exports -- aey_base_risk_adj_pct is the
+  // same PD-adjusted AEY portfolio.py's build_preset() computes via
+  // bond_aey()+pd_adjusted_aey(), already computed server-side at export
+  // time, so this reads it directly rather than recomputing it.
+  function gatherCandidates() {
+    const candidates = [];
+    (DATA.issuers || []).forEach(iss => {
+      const health = (iss.health_status || 'green').toLowerCase();
+      const rating = iss.rating || null;
+      (iss.bonds || []).forEach(b => {
+        if (!b.isin) return;
+        const aey = b.aey_base_risk_adj_pct != null ? b.aey_base_risk_adj_pct / 100 : null;
+        const ytm = b.ytm_pct != null ? b.ytm_pct / 100 : null;
+        const hist = (b.spread_history || []).map(h => ({ date: h.snap_date, g_spread_bp: h.g_spread_bp }));
+        let gSpreadDelta30d = null;
+        if (b.g_spread_bp != null && hist.length) {
+          const curDate = new Date((b.spread_history[b.spread_history.length - 1] || {}).snap_date || iss.snap_date);
+          const d30 = new Date(curDate); d30.setDate(d30.getDate() - 30);
+          const prior = findNearestByOffset(hist.slice(0, -1), d30.toISOString().slice(0, 10), 5);
+          if (prior) gSpreadDelta30d = b.g_spread_bp - prior.g_spread_bp;
+        }
+        candidates.push({
+          isin: b.isin, secid: b.secid, issuerId: iss.issuer_id, issuerName: iss.name,
+          sector: iss.sector, rating, health, aey, ytm, gSpreadBp: b.g_spread_bp,
+          gSpreadDelta30d, matDate: b.mat_date, flags: {},
+        });
+      });
+    });
+    return candidates;
+  }
+
+  /** Resolves a preset's effective filters (base preset + user overrides)
+   * and the set of candidates surviving them -- the "how many bonds could
+   * this preset+filter combination possibly use" step shared by
+   * buildPreset() and the Builder's live pre-build constraint check
+   * (updateBuildConstraint()), factored out so both stay in sync.
+   * @param {string} presetType 'conservative'|'balanced'|'aggressive'
+   * @param {object} userFilters optional {sector_cap, max_per_issuer, health_allowed} override
+   * @returns {{preset: object, eligible: object[]}}
+   * @throws {Error} unknown presetType
+   */
+  function filterEligible(presetType, userFilters) {
+    const basePreset = PRESETS[presetType];
+    if (!basePreset) throw new Error(`unknown preset_type: ${presetType}`);
+    const preset = Object.assign({}, basePreset);
+    if (userFilters) {
+      ['sector_cap', 'max_per_issuer', 'health_allowed'].forEach(k => {
+        if (userFilters[k] != null) preset[k] = userFilters[k];
+      });
+    }
+    const minRank = RATING_RANK[preset.min_rating];
+    const healthAllowed = new Set(preset.health_allowed.map(h => h.toLowerCase()));
+
+    const all = gatherCandidates();
+    const eligible = [];
+    all.forEach(c => {
+      const rank = RATING_RANK[c.rating];
+      if (rank == null || rank < minRank) return;
+      if (c.ytm == null || c.ytm > preset.max_ytm) return;
+      if (c.aey == null) return;
+      if (preset.max_aey != null && c.aey > preset.max_aey) return;
+      if (!healthAllowed.has(c.health)) return;
+      if (c.health === 'red') {
+        const red = redIssuerEligibility(c.rating, c.gSpreadDelta30d);
+        if (!red.ok) return;
+        c.flags.red_included = true;
+        c.flags.red_reason = red.reason;
+      }
+      const refi = refinancingFlag(c.matDate);
+      if (refi.flag) { c.flags.refi_flag = true; c.flags.refi_date = refi.date; }
+      eligible.push(c);
+    });
+    return { preset, eligible };
+  }
+
+  /** Client-side mirror of portfolio.py's build_preset(). See that
+   * function's own docstring for the full algorithm description
+   * (selection by AEY descending, slot-based cap approximation, then a
+   * real weight-based cap enforcement pass that trims the lowest-AEY
+   * offender until compliant or the bond_count floor would be breached).
+   * @param {string} presetType 'conservative'|'balanced'|'aggressive'
+   * @param {string} sizingMode 'equal'|'aey_high'|'aey_low'
+   * @param {object} userFilters optional {sector_cap, max_per_issuer, health_allowed} override
+   * @returns {object} {presetType, sizingMode, filters, bonds, weights, summary}
+   * @throws {Error} unknown presetType, or fewer than bond_count[0] bonds survive
+   */
+  function buildPreset(presetType, sizingMode, userFilters) {
+    const { preset, eligible: eligibleRaw } = filterEligible(presetType, userFilters);
+    const [minCount, maxCount] = preset.bond_count;
+    let eligible = eligibleRaw;
+
+    if (eligible.length < minCount) {
+      throw new Error(`only ${eligible.length} bonds passed ${presetType} filters, need at least ${minCount}`);
+    }
+
+    eligible.sort((a, b) => b.aey - a.aey);
+    const targetN = Math.min(maxCount, eligible.length);
+    let maxPerIssuerSlots = Math.max(1, Math.floor(preset.max_per_issuer * targetN));
+    let maxPerSectorSlots = Math.max(1, Math.floor(preset.sector_cap * targetN));
+
+    function selectWithCaps(issuerCap, sectorCap) {
+      const sel = [];
+      const issuerCounts = {}, sectorCounts = {};
+      for (const c of eligible) {
+        if (sel.length >= targetN) break;
+        if ((issuerCounts[c.issuerId] || 0) >= issuerCap) continue;
+        if (c.sector && (sectorCounts[c.sector] || 0) >= sectorCap) continue;
+        sel.push(c);
+        issuerCounts[c.issuerId] = (issuerCounts[c.issuerId] || 0) + 1;
+        if (c.sector) sectorCounts[c.sector] = (sectorCounts[c.sector] || 0) + 1;
+      }
+      return sel;
+    }
+
+    let selected = selectWithCaps(maxPerIssuerSlots, maxPerSectorSlots);
+    // Slot caps too tight to reach even the floor: relax BOTH caps by the
+    // same +1 step and retry from scratch, rather than a one-shot "ignore
+    // every cap" fallback -- see portfolio.py's build_preset() for why that
+    // one-shot version had a real bug (could land exactly at minCount with
+    // an unfixable per-issuer/sector overage and nothing left to trim).
+    while (selected.length < minCount &&
+           (maxPerIssuerSlots < eligible.length || maxPerSectorSlots < eligible.length)) {
+      maxPerIssuerSlots += 1;
+      maxPerSectorSlots += 1;
+      selected = selectWithCaps(maxPerIssuerSlots, maxPerSectorSlots);
+    }
+    if (selected.length < minCount) {
+      throw new Error(`only ${selected.length} bonds available for ${presetType} after issuer/sector caps, need at least ${minCount}`);
+    }
+
+    let weights = computeWeights(selected, sizingMode);
+    for (let iter = 0; iter < selected.length; iter++) {
+      const byIssuer = {}, bySector = {};
+      selected.forEach(c => {
+        byIssuer[c.issuerId] = (byIssuer[c.issuerId] || 0) + weights[c.isin];
+        if (c.sector) bySector[c.sector] = (bySector[c.sector] || 0) + weights[c.isin];
+      });
+      const offendingIssuer = Object.keys(byIssuer).find(i => byIssuer[i] > preset.max_per_issuer + 1e-9);
+      const offendingSector = Object.keys(bySector).find(s => bySector[s] > preset.sector_cap + 1e-9);
+      if (!offendingIssuer && !offendingSector) break;
+      if (selected.length <= minCount) {
+        throw new Error(`cannot satisfy ${presetType}'s issuer/sector caps without dropping below the ${minCount}-bond minimum`);
+      }
+      const group = offendingIssuer
+        ? selected.filter(c => c.issuerId === offendingIssuer)
+        : selected.filter(c => c.sector === offendingSector);
+      const worst = group.reduce((a, b) => (a.aey < b.aey ? a : b));
+      selected = selected.filter(c => c.isin !== worst.isin);
+      weights = computeWeights(selected, sizingMode);
+    }
+
+    const nIssuers = new Set(selected.map(c => c.issuerId)).size;
+    const nSectors = new Set(selected.filter(c => c.sector).map(c => c.sector)).size;
+    const nRedIncluded = selected.filter(c => c.flags.red_included).length;
+    const avgAey = selected.reduce((s, c) => s + weights[c.isin] * c.aey, 0);
+    let expectedLoss = 0;
+    selected.forEach(c => {
+      const pd1y = DEFAULT_PD_1YR[normaliseRating(c.rating)] || 0;
+      expectedLoss += weights[c.isin] * pd1y * LGD;
+    });
+    return {
+      presetType, sizingMode, filters: preset, bonds: selected, weights,
+      summary: {
+        avgAey, expectedLoss, netReturn: avgAey - expectedLoss, nBonds: selected.length,
+        nIssuers, nSectors, nRedIncluded,
+      },
+    };
+  }
+
+  // ---- UI wiring ------------------------------------------------------
+  let selectedPresetType = 'conservative';
+  let selectedSizingMode = 'equal';
+  let lastBuilt = null;
+
+  function renderPresetCards() {
+    const el = document.getElementById('pfPresetCards');
+    if (!el) return;
+    el.innerHTML = Object.keys(PRESETS).map(key => {
+      const p = PRESETS[key];
+      const [lo, hi] = p.bond_count;
+      const healthLine = p.health_allowed.map(h => h.toUpperCase()).join('/') +
+        (key === 'aggressive' ? '*' : '');
+      return `<div class="pf-preset-card${key === selectedPresetType ? ' active' : ''}" data-preset="${key}">
+        <div class="pf-preset-card-title">${escapeHtml(p.label)}</div>
+        <div class="pf-preset-card-line">${p.min_rating.replace('ru', 'ru')} · ${lo}-${hi} бумаг</div>
+        <div class="pf-preset-card-line">YTM ≤ ${Math.round(p.max_ytm * 100)}%</div>
+        <div class="pf-preset-card-line">${healthLine}</div>
+      </div>`;
+    }).join('');
+    el.querySelectorAll('.pf-preset-card').forEach(card => {
+      card.addEventListener('click', () => {
+        selectedPresetType = card.dataset.preset;
+        renderPresetCards();
+        syncPresetDefaults();
+        updateBuildConstraint();
+      });
+    });
+  }
+
+  function syncPresetDefaults() {
+    const p = PRESETS[selectedPresetType];
+    document.getElementById('pfSectorCapSlider').value = Math.round(p.sector_cap * 100);
+    document.getElementById('pfSectorCapVal').textContent = Math.round(p.sector_cap * 100) + '%';
+    document.getElementById('pfMaxIssuerSlider').value = Math.round(p.max_per_issuer * 100);
+    document.getElementById('pfMaxIssuerVal').textContent = Math.round(p.max_per_issuer * 100) + '%';
+    const redGroup = document.getElementById('pfRedOverrideGroup');
+    redGroup.style.display = selectedPresetType === 'aggressive' ? '' : 'none';
+    if (selectedPresetType !== 'aggressive') document.getElementById('pfRedOverrideToggle').checked = false;
+  }
+
+  /** Data-freshness strip for the Builder screen (Pre-Phase B Fix 2):
+   * compares the two AEY-adjacent snapshot dates the Builder mixes
+   * together -- universe_snapshot (hybond universe) feeds aey_base_risk_adj_pct
+   * in gatherCandidates(), spread_snapshot (hybond run) is portfolio.py's
+   * own build_preset() source -- see gatherCandidates()'s header comment
+   * for why these two can disagree on which bonds are eligible. Three
+   * states: both fresh (<=7d old) and in step -> ok; the two sources more
+   * than 7 days apart -> warn (this is the divergence that actually causes
+   * Builder/CLI mismatches); anything else (e.g. both stale by the same
+   * few days, or a small 1-7 day gap) -> a neutral/informational middle
+   * state rather than silently picking one of the two named states for a
+   * case the task spec didn't cover.
+   * @returns {void}
+   */
+  function renderFreshnessStrip() {
+    const el = document.getElementById('pfPresetFreshness');
+    if (!el) return;
+    const fresh = (DATA.portfolio_data_freshness) || {};
+    const d1 = fresh.universe_snapshot_date, d2 = fresh.spread_snapshot_date;
+    el.className = 'pf-preset-freshness';
+    if (!d1 || !d2) {
+      el.classList.add('pf-fresh-neutral');
+      el.textContent = 'ℹ️ Даты снимков данных недоступны.';
+      return;
+    }
+    const today = new Date();
+    const ageDays = (iso) => Math.round((today - new Date(iso + 'T00:00:00')) / 86400000);
+    const age1 = ageDays(d1), age2 = ageDays(d2);
+    const diffDays = Math.abs(age1 - age2);
+    if (diffDays > 7) {
+      el.classList.add('pf-fresh-warn');
+      el.textContent = `⚠️ Расхождение данных (universe: ${d1} · spread: ${d2}) — запустите hybond universe`;
+    } else if (age1 <= 7 && age2 <= 7 && diffDays === 0) {
+      el.classList.add('pf-fresh-ok');
+      el.textContent = `✓ Данные актуальны · ${d1}`;
+    } else {
+      el.classList.add('pf-fresh-neutral');
+      el.textContent = `Данные (universe: ${d1} · spread: ${d2})`;
+    }
+  }
+
+  /** Generic debounce -- delays invoking `fn` until `wait` ms have passed
+   * with no further calls, collapsing a burst of calls (e.g. a slider's
+   * `input` events while dragging) into one trailing call.
+   * @param {Function} fn
+   * @param {number} wait milliseconds
+   * @returns {Function} debounced wrapper (same arguments as fn)
+   */
+  function debounce(fn, wait) {
+    let timer = null;
+    return function debounced(...args) {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn.apply(null, args), wait);
+    };
+  }
+
+  /** Pre-build validation: an actual try/build dry run against the
+   * Builder's own buildPreset() (2026-08-27 fix -- replaces an earlier
+   * formula check, eligible_bond_count * max_per_issuer >= min_count, that
+   * produced false negatives by conflating bond count with issuer count;
+   * confirmed live: a real config with 36 eligible bonds and 8 issuers
+   * built successfully at 25 bonds/20% cap, but the formula still blocked
+   * it). There is no live backend a browser can call (see this dashboard's
+   * static-export architecture), so "dry-run against build_preset()" here
+   * means the same JS mirror the real "Построить" click uses -- not a
+   * second, cheaper approximation of it. Cheap enough (a few dozen
+   * candidates, one sort, a short cap-relaxation loop) to call on every
+   * slider tick; callers debounce slider `input` events by 300ms so a drag
+   * doesn't run it on every pixel of motion, per the task spec.
+   * @returns {void}
+   */
+  function updateBuildConstraint() {
+    const warnEl = document.getElementById('pfPresetConstraintWarning');
+    const buildBtn = document.getElementById('pfBuildBtn');
+    if (!warnEl || !buildBtn) return;
+    let satisfiable = true;
+    try {
+      buildPreset(selectedPresetType, selectedSizingMode, currentUserFilters());
+    } catch (e) {
+      satisfiable = false;
+    }
+    if (satisfiable) {
+      warnEl.style.display = 'none';
+      buildBtn.disabled = false;
+    } else {
+      warnEl.style.display = '';
+      warnEl.innerHTML = '⚠️ Недостаточно эмитентов при текущих ограничениях.<br>' +
+        'Увеличьте макс. долю эмитента или выберите другой пресет.';
+      buildBtn.disabled = true;
+    }
+  }
+
+  const updateBuildConstraintDebounced = debounce(updateBuildConstraint, 300);
+
+  function currentUserFilters() {
+    const sectorCap = parseInt(document.getElementById('pfSectorCapSlider').value, 10) / 100;
+    const maxPerIssuer = parseInt(document.getElementById('pfMaxIssuerSlider').value, 10) / 100;
+    const filters = { sector_cap: sectorCap, max_per_issuer: maxPerIssuer };
+    if (selectedPresetType === 'aggressive') {
+      const includeRed = document.getElementById('pfRedOverrideToggle').checked;
+      filters.health_allowed = includeRed
+        ? ['green', 'yellow', 'orange', 'red'] : ['green', 'yellow', 'orange'];
+    }
+    return filters;
+  }
+
+  function showBuilder() {
+    document.getElementById('pfPresetBuilder').style.display = '';
+    document.getElementById('pfPresetPreview').style.display = 'none';
+    document.getElementById('pfPresetMonitor').style.display = 'none';
+    updateBuildConstraint();
+  }
+
+  function sectorWeightWarnings(built) {
+    const bySector = {};
+    built.bonds.forEach(c => { if (c.sector) bySector[c.sector] = (bySector[c.sector] || 0) + built.weights[c.isin]; });
+    const cap = built.filters.sector_cap;
+    return Object.keys(bySector)
+      .filter(s => bySector[s] >= cap * 0.9)
+      .map(s => `${escapeHtml(sectorLabel ? sectorLabel(s) : s)}: ${(bySector[s] * 100).toFixed(1)}% (лимит ${(cap * 100).toFixed(0)}%)`);
+  }
+
+  function renderPreview(built) {
+    const strip = document.getElementById('pfPresetSummaryStrip');
+    const s = built.summary;
+    strip.innerHTML = `
+      <div>Средний AEY: <b>${(s.avgAey * 100).toFixed(1)}%</b></div>
+      <div>Ожид. потери: <b>${(s.expectedLoss * 100).toFixed(1)}%</b></div>
+      <div>Чистая доходность: <b>${(s.netReturn * 100).toFixed(1)}%</b></div>
+      <div>Эмитентов: <b>${s.nIssuers}</b></div>
+      <div>Секторов: <b>${s.nSectors}</b></div>
+      <div>RED включено: <b>${s.nRedIncluded}</b></div>`;
+
+    const table = document.getElementById('pfPresetPreviewTable');
+    const rows = built.bonds.slice().sort((a, b) => built.weights[b.isin] - built.weights[a.isin]);
+    table.innerHTML = `<thead><tr><th>Эмитент</th><th>Рейтинг</th><th>AEY</th><th>Вес%</th><th>Флаги</th></tr></thead><tbody>` +
+      rows.map(c => {
+        const flagsHtml = [
+          c.flags.refi_flag ? `<span class="pf-preset-flag" title="Рефинансирование ${escapeHtml(c.flags.refi_date || '')}">⚠️</span>` : '',
+          c.flags.red_included ? `<span class="pf-preset-flag" title="${escapeHtml(c.flags.red_reason || '')}">🔴</span>` : '',
+        ].join('');
+        return `<tr><td>${escapeHtml(c.issuerName)}</td><td>${escapeHtml(c.rating || '—')}</td>` +
+          `<td>${(c.aey * 100).toFixed(1)}%</td><td>${(built.weights[c.isin] * 100).toFixed(1)}%</td>` +
+          `<td>${flagsHtml || '—'}</td></tr>`;
+      }).join('') + `</tbody>`;
+
+    const warnEl = document.getElementById('pfPresetWarnings');
+    const warnings = sectorWeightWarnings(built);
+    if (warnings.length) {
+      warnEl.style.display = '';
+      warnEl.innerHTML = '⚠ Сектор приближается к лимиту: ' + warnings.join('; ');
+    } else {
+      warnEl.style.display = 'none';
+    }
+
+    document.getElementById('pfPresetBuilder').style.display = 'none';
+    document.getElementById('pfPresetPreview').style.display = '';
+    document.getElementById('pfPresetMonitor').style.display = 'none';
+  }
+
+  /** Computes each saved bond's live monitoring state against DATA.issuers
+   * (Phase B, task spec section "Alert conditions to check per bond"):
+   * G-spread deterioration vs. the fixed baseline recorded at save time,
+   * health-status degradation vs. health at save time, an imminent
+   * refinancing window (45 days, distinct from the Builder's own 182-day
+   * soft warning -- see MONITOR_REFI_WINDOW_DAYS), and a non-RED issuer
+   * having since become RED. A bond whose issuer/isin can no longer be
+   * found in DATA.issuers (e.g. delisted since save) degrades gracefully
+   * to nulled-out current-state fields rather than throwing.
+   * @param {object} record the saved-portfolio localStorage record
+   * @returns {{rows: object[], alerts: object[]}}
+   */
+  function computeMonitorState(record) {
+    const rows = (record.bonds || []).map(b => {
+      const savedHealth = b.healthAtSave || 'green';
+      const iss = (DATA.issuers || []).find(i => i.issuer_id === b.issuerId);
+      const bond = iss ? (iss.bonds || []).find(bb => bb.isin === b.isin) : null;
+      const currentHealth = iss ? (iss.health_status || 'green').toLowerCase() : null;
+      const currentRating = iss ? (iss.rating || null) : null;
+      const currentGSpread = bond ? bond.g_spread_bp : null;
+      const gspreadDelta = (currentGSpread != null && b.gspreadBaselineBp != null)
+        ? currentGSpread - b.gspreadBaselineBp : null;
+      const currentAey = (bond && bond.aey_base_risk_adj_pct != null)
+        ? bond.aey_base_risk_adj_pct / 100 : null;
+      const refi = refinancingFlag(b.matDate, null, MONITOR_REFI_WINDOW_DAYS);
+
+      const alerts = [];
+      if (gspreadDelta != null && gspreadDelta > MONITOR_GSPREAD_ALERT_BP) {
+        alerts.push({ type: 'gspread', text: `G-спред +${Math.round(gspreadDelta)}бп` });
+      }
+      if (currentHealth != null && HEALTH_RANK[currentHealth] > HEALTH_RANK[savedHealth]) {
+        alerts.push({ type: 'health', text: `Здоровье ${savedHealth.toUpperCase()}→${currentHealth.toUpperCase()}` });
+      }
+      if (refi.flag) {
+        const days = Math.round((new Date(b.matDate + 'T00:00:00') - new Date()) / 86400000);
+        alerts.push({ type: 'refi', text: `Погашение через ${days} дн.` });
+      }
+      if (savedHealth !== 'red' && currentHealth === 'red') {
+        alerts.push({ type: 'red_change', text: 'Стал RED-эмитентом' });
+      }
+
+      return Object.assign({}, b, {
+        savedHealth, currentHealth, currentRating, currentGSpread, gspreadDelta,
+        currentAey, refiNow: refi.flag, alerts,
+      });
+    });
+    const alerts = [];
+    rows.forEach(r => r.alerts.forEach(a => alerts.push({ issuerName: r.issuerName, type: a.type, text: a.text })));
+    return { rows, alerts };
+  }
+
+  /** Renders the Monitor screen (Phase B) for a saved portfolio: alert
+   * banner, live summary strip, and per-bond table. Shows/hides the banner
+   * based purely on whether any alerts exist, per the task spec ("shown
+   * only when alerts exist").
+   * @param {object} record the saved-portfolio localStorage record
+   * @returns {void}
+   */
+  function renderMonitor(record) {
+    document.getElementById('pfPresetBuilder').style.display = 'none';
+    document.getElementById('pfPresetPreview').style.display = 'none';
+    document.getElementById('pfPresetMonitor').style.display = '';
+    document.getElementById('pfMonitorName').textContent = record.name || '';
+
+    const state = computeMonitorState(record);
+    const banner = document.getElementById('pfMonitorAlertBanner');
+    if (state.alerts.length) {
+      banner.style.display = '';
+      banner.innerHTML = `⚠️ ${state.alerts.length} событий: ` +
+        state.alerts.map(a => `${escapeHtml(a.issuerName)} — ${escapeHtml(a.text)}`).join(' | ');
+    } else {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+    }
+
+    let avgAey = 0, expectedLoss = 0;
+    const issuerSet = new Set();
+    state.rows.forEach(r => {
+      const aeyForCalc = r.currentAey != null ? r.currentAey : r.aey;
+      avgAey += (r.weight || 0) * (aeyForCalc != null ? aeyForCalc : 0);
+      const pd1y = DEFAULT_PD_1YR[normaliseRating(r.currentRating || r.rating)] || 0;
+      expectedLoss += (r.weight || 0) * pd1y * LGD;
+      if (r.issuerId) issuerSet.add(r.issuerId);
+    });
+    const strip = document.getElementById('pfMonitorSummaryStrip');
+    strip.innerHTML = `
+      <div>Средний AEY: <b>${(avgAey * 100).toFixed(1)}%</b></div>
+      <div>Ожид. потери: <b>${(expectedLoss * 100).toFixed(1)}%</b></div>
+      <div>Чистая доходность: <b>${((avgAey - expectedLoss) * 100).toFixed(1)}%</b></div>
+      <div>Эмитентов: <b>${issuerSet.size}</b></div>`;
+
+    const table = document.getElementById('pfMonitorTable');
+    const rows = state.rows.slice().sort((a, b) => (b.weight || 0) - (a.weight || 0));
+    table.innerHTML = `<thead><tr><th>Эмитент</th><th>Рейтинг</th><th>AEY</th><th>Вес%</th>` +
+      `<th>G-спред Δ</th><th>Здоровье</th><th>Флаги</th></tr></thead><tbody>` +
+      rows.map(r => {
+        let gspreadHtml = '—';
+        if (r.gspreadDelta != null) {
+          const sign = r.gspreadDelta >= 0 ? '+' : '';
+          let cls = 'pf-monitor-gspread-ok';
+          if (r.gspreadDelta > MONITOR_GSPREAD_ALERT_BP) cls = 'pf-monitor-gspread-alert';
+          else if (r.gspreadDelta > MONITOR_GSPREAD_WARN_BP) cls = 'pf-monitor-gspread-warn';
+          gspreadHtml = `<span class="${cls}">${sign}${Math.round(r.gspreadDelta)}бп</span>`;
+        }
+        const health = r.currentHealth || r.savedHealth || 'green';
+        const healthHtml = `<span class="pf-monitor-health-badge">` +
+          `<span class="health-dot" style="background:${HEALTH_STATUS_COLOR[health]}"></span>` +
+          `${(HEALTH_STATUS_LABEL[health] || health).toUpperCase()}</span>`;
+        const flagsHtml = [
+          r.refiNow ? `<span class="pf-preset-flag" title="Рефинансирование в ближайшие ${MONITOR_REFI_WINDOW_DAYS} дн.">⚠️</span>` : '',
+          (r.flags && r.flags.red_included) ? `<span class="pf-preset-flag" title="${escapeHtml((r.flags && r.flags.red_reason) || '')}">🔴</span>` : '',
+          (r.gspreadDelta != null && r.gspreadDelta > MONITOR_GSPREAD_ALERT_BP)
+            ? `<span class="pf-preset-flag" title="G-спред вырос более чем на ${MONITOR_GSPREAD_ALERT_BP}бп с момента сохранения">📉</span>` : '',
+        ].join('');
+        return `<tr><td>${escapeHtml(r.issuerName || '')}</td><td>${escapeHtml(r.currentRating || r.rating || '—')}</td>` +
+          `<td>${r.currentAey != null ? (r.currentAey * 100).toFixed(1) + '%' : (r.aey != null ? (r.aey * 100).toFixed(1) + '%' : '—')}</td>` +
+          `<td>${((r.weight || 0) * 100).toFixed(1)}%</td><td>${gspreadHtml}</td><td>${healthHtml}</td>` +
+          `<td>${flagsHtml || '—'}</td></tr>`;
+      }).join('') + `</tbody>`;
+  }
+
+  /** Pre-fills the Builder's preset/sizing/sliders from a saved record and
+   * switches to the Builder screen -- backs "Пересобрать портфель".
+   * @param {object} record the saved-portfolio localStorage record
+   * @returns {void}
+   */
+  function restoreFiltersFromRecord(record) {
+    selectedPresetType = record.presetType;
+    selectedSizingMode = record.sizingMode;
+    renderPresetCards();
+    const f = record.filters || {};
+    if (f.sector_cap != null) {
+      document.getElementById('pfSectorCapSlider').value = Math.round(f.sector_cap * 100);
+      document.getElementById('pfSectorCapVal').textContent = Math.round(f.sector_cap * 100) + '%';
+    }
+    if (f.max_per_issuer != null) {
+      document.getElementById('pfMaxIssuerSlider').value = Math.round(f.max_per_issuer * 100);
+      document.getElementById('pfMaxIssuerVal').textContent = Math.round(f.max_per_issuer * 100) + '%';
+    }
+    const redGroup = document.getElementById('pfRedOverrideGroup');
+    redGroup.style.display = record.presetType === 'aggressive' ? '' : 'none';
+    document.getElementById('pfRedOverrideToggle').checked = (f.health_allowed || []).includes('red');
+    document.getElementById('pfSizingModeToggle').querySelectorAll('.view-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === record.sizingMode);
+    });
+    showBuilder();
+  }
+
+  document.getElementById('pfBuildBtn').addEventListener('click', () => {
+    const errEl = document.getElementById('pfPresetBuildError');
+    errEl.style.display = 'none';
+    try {
+      lastBuilt = buildPreset(selectedPresetType, selectedSizingMode, currentUserFilters());
+      renderPreview(lastBuilt);
+    } catch (e) {
+      errEl.style.display = '';
+      errEl.textContent = e.message;
+    }
+  });
+  document.getElementById('pfPreviewBackBtn').addEventListener('click', showBuilder);
+  document.getElementById('pfPreviewSaveBtn').addEventListener('click', () => {
+    if (!lastBuilt) return;
+    const nameInput = document.getElementById('pfPortfolioNameInput');
+    const name = nameInput.value.trim();
+    if (!name) { nameInput.focus(); return; }
+    const savedAtIso = new Date().toISOString();
+    const record = {
+      name, presetType: lastBuilt.presetType, sizingMode: lastBuilt.sizingMode,
+      filters: lastBuilt.filters, summary: lastBuilt.summary, status: 'active',
+      savedAt: savedAtIso,
+      bonds: lastBuilt.bonds.map(c => ({
+        isin: c.isin, secid: c.secid, issuerId: c.issuerId, issuerName: c.issuerName,
+        sector: c.sector, rating: c.rating, aey: c.aey, weight: lastBuilt.weights[c.isin],
+        flags: c.flags, matDate: c.matDate, healthAtSave: c.health,
+        // G-spread monitoring baseline (task spec, Phase 2): recorded once
+        // at save time, never overwritten -- Monitor compares every future
+        // live G-spread against THIS fixed value, not the previous check.
+        gspreadBaselineBp: c.gSpreadBp, gspreadBaselineDate: savedAtIso.slice(0, 10),
+      })),
+    };
+    localStorage.setItem(PF_PRESETS_LS_KEY, JSON.stringify(record));
+    nameInput.value = '';
+    renderMonitor(record);
+  });
+  document.getElementById('pfSizingModeToggle').querySelectorAll('.view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedSizingMode = btn.dataset.mode;
+      document.getElementById('pfSizingModeToggle').querySelectorAll('.view-btn')
+        .forEach(b => b.classList.toggle('active', b === btn));
+      updateBuildConstraint();
+    });
+  });
+  document.getElementById('pfSectorCapSlider').addEventListener('input', (e) => {
+    document.getElementById('pfSectorCapVal').textContent = e.target.value + '%';
+    updateBuildConstraintDebounced();
+  });
+  document.getElementById('pfMaxIssuerSlider').addEventListener('input', (e) => {
+    document.getElementById('pfMaxIssuerVal').textContent = e.target.value + '%';
+    updateBuildConstraintDebounced();
+  });
+  document.getElementById('pfRedOverrideToggle').addEventListener('change', updateBuildConstraint);
+  document.getElementById('pfRedDetailLink').addEventListener('click', () => {
+    const body = document.getElementById('pfRedDetailBody');
+    body.style.display = body.style.display === 'none' ? '' : 'none';
+  });
+
+  /** Reads the saved-portfolio record from localStorage, tolerating a
+   * missing key or corrupt JSON (returns null in both cases) rather than
+   * throwing -- the record is user/browser-controlled state, not a value
+   * this code fully controls the shape of.
+   * @returns {object|null}
+   */
+  function loadSavedRecord() {
+    try {
+      const raw = localStorage.getItem(PF_PRESETS_LS_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  document.getElementById('pfMonitorRebuildBtn').addEventListener('click', () => {
+    const record = loadSavedRecord();
+    if (record) restoreFiltersFromRecord(record);
+    else showBuilder();
+  });
+  document.getElementById('pfMonitorCopyCliBtn').addEventListener('click', () => {
+    const record = loadSavedRecord();
+    if (!record) return;
+    const f = record.filters || {};
+    // Real hybond portfolio-build CLI flags (src/hybond/__main__.py):
+    // positional preset_type, --sizing-mode (not --sizing), --sector-cap,
+    // --max-per-issuer, --save, --name.
+    let cmd = `hybond portfolio-build ${record.presetType} --sizing-mode ${record.sizingMode}`;
+    if (f.sector_cap != null) cmd += ` --sector-cap ${f.sector_cap}`;
+    if (f.max_per_issuer != null) cmd += ` --max-per-issuer ${f.max_per_issuer}`;
+    cmd += ` --save --name "${record.name}"`;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmd).catch(() => {});
+    }
+  });
+
+  renderPresetCards();
+  syncPresetDefaults();
+  renderFreshnessStrip();
+  updateBuildConstraint();
+
+  // Phase B: an already-saved active portfolio takes over the Пресеты
+  // subtab's default view (Monitor) instead of the Builder -- re-opening
+  // the dashboard should surface monitoring state for an existing
+  // portfolio, not require re-navigating past the Builder every time.
+  const existingRecord = loadSavedRecord();
+  if (existingRecord && existingRecord.status === 'active') {
+    renderMonitor(existingRecord);
   }
 })();
 

@@ -19,6 +19,17 @@ echo "=== filings run $(date) ===" >> "$LOG"
 # to clear rather than starting a concurrent write blind (the exact
 # collision confirmed live on 2026-08-21: scrape still running past :15 into
 # a :30 classify burst caused a real "database is locked" failure).
+#
+# market-notes (smartlab/moex/cbr feeds) had NO lock guard at all until
+# 2026-08-27, when the inverse collision hit live: a slow :00 classify
+# burst was still running well past :15 (classify bursts can take up to
+# ~30min, see auto-classify's own comment below), and market-notes' writes
+# collided with it directly ("database is locked" on all three feeds).
+# cmd_market_notes now wraps run_market_notes() in the same shared
+# pipeline_lock.held() (10min wait, then proceeds regardless -- see
+# pipeline_lock.py's module docstring for why this is wait-and-retry, not
+# a hard mutex/skip). The edisclosure scrape step above is read-heavy and
+# was never part of this collision, so it is intentionally left unguarded.
 PYTHONPATH=src python -m hybond scrape --smartlab >> "$LOG" 2>&1
 PYTHONPATH=src python -m hybond market-notes >> "$LOG" 2>&1
 # Google News RSS per tier=1 issuer (2026-08-24): one HTTP request per

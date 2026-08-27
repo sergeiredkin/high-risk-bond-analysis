@@ -111,8 +111,22 @@ def cmd_scrape(args) -> int:
 
 
 def cmd_market_notes(_args) -> int:
-    from . import scrape_pipeline
-    result = scrape_pipeline.run_market_notes()
+    from . import pipeline_lock, scrape_pipeline
+    # Confirmed live, 2026-08-27: run_market_notes()'s smartlab/moex/cbr
+    # writes had no lock guard at all, unlike cmd_scrape/cmd_auto_classify --
+    # hourly_filings.sh's :15 market-notes step landed in the middle of
+    # rebuild_dashboard.sh's :00 classify burst (which runs ~30min, well
+    # past this lock's default 60s wait) and hit "database is locked" on
+    # all three feeds. wait_timeout=600 (10min) so this step waits out a
+    # slow classify burst instead of colliding almost immediately; per
+    # pipeline_lock's own contract it proceeds regardless once the wait is
+    # exhausted, so a scheduled run is never silently skipped.
+    try:
+        with pipeline_lock.held(wait_timeout=600):
+            result = scrape_pipeline.run_market_notes()
+    except pipeline_lock.PipelineInterrupted:
+        print("Interrupted", file=sys.stderr)
+        return 143
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result["error"]:
         print(f"\n{result['error']}", file=sys.stderr)
@@ -760,6 +774,105 @@ def cmd_promote(args) -> int:
     return 0
 
 
+def cmd_portfolio_build(args) -> int:
+    """Portfolio presets task (2026-08-27), Phase A CLI write-back: the
+    dashboard's Builder/Preview screens run entirely client-side (JS mirror
+    of build_preset()/compute_weights(), no live backend to write to from a
+    browser) and persist a built portfolio to localStorage only -- this
+    command is the deliberate write-back path a user runs manually to
+    commit that into the real portfolio/portfolio_bond/portfolio_snapshot
+    tables, per the "Add a CLI write-back step" decision on this task.
+    Without --save, prints the build result (dry run, no DB write) -- lets
+    a user preview before committing, same spirit as `hybond promote`'s
+    default report-only behavior."""
+    import dataclasses
+
+    from . import portfolio as portfolio_mod
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    db.init_issuer_bond(con)
+    db.init_rating(con)
+    db.init_cbr(con)
+
+    user_filters = {}
+    if args.sector_cap is not None:
+        user_filters["sector_cap"] = args.sector_cap
+    if args.max_per_issuer is not None:
+        user_filters["max_per_issuer"] = args.max_per_issuer
+    if args.health_allowed is not None:
+        user_filters["health_allowed"] = [h.strip().upper() for h in args.health_allowed.split(",")]
+
+    try:
+        built = portfolio_mod.build_preset(
+            args.preset_type, sizing_mode=args.sizing_mode,
+            user_filters=user_filters or None, db=con)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        con.close()
+        return 1
+
+    report = {
+        "preset_type": built["preset_type"],
+        "sizing_mode": built["sizing_mode"],
+        "filters": built["filters"],
+        "summary": built["summary"],
+        "bonds": [
+            {**dataclasses.asdict(c), "weight": built["weights"][c.isin]}
+            for c in built["bonds"]
+        ],
+    }
+
+    if not args.save:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        print("\n(dry run -- pass --save --name \"...\" to write this to the "
+              "portfolio/portfolio_bond/portfolio_snapshot tables)", file=sys.stderr)
+        con.close()
+        return 0
+
+    if not args.name:
+        print("--save requires --name", file=sys.stderr)
+        con.close()
+        return 1
+    portfolio_id = portfolio_mod.save_portfolio(con, args.name, built)
+    con.close()
+    print(json.dumps({**report, "portfolio_id": portfolio_id, "status": "active"},
+                      ensure_ascii=False, indent=2))
+    print(f"\nSaved portfolio_id={portfolio_id} ({args.name!r}, "
+          f"{built['summary']['n_bonds']} bonds, status=active)", file=sys.stderr)
+    return 0
+
+
+def cmd_portfolio_monitor(_args) -> int:
+    """Portfolio Monitoring task (2026-08-27), Phase B daily pipeline step:
+    runs portfolio.monitor_portfolios() against every active portfolio,
+    printing a per-portfolio alert count and writing detail to flag_log +
+    a fresh portfolio_snapshot. Always returns 0 on a clean run (an empty
+    active-portfolio set, or zero alerts, is a normal outcome, not a
+    failure) -- mirrors `hybond market-notes`'s report-then-0 shape rather
+    than `hybond portfolio-build`'s validate-then-maybe-1 shape, since
+    there is no user input here that could be invalid."""
+    from . import portfolio as portfolio_mod
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    db.init_issuer_bond(con)
+    db.init_rating(con)
+    db.init_cbr(con)
+    db.init_portfolio(con)
+
+    alerts_by_portfolio = portfolio_mod.monitor_portfolios(con)
+    con.close()
+
+    total_alerts = sum(len(a) for a in alerts_by_portfolio.values())
+    print(json.dumps(alerts_by_portfolio, ensure_ascii=False, indent=2))
+    print(f"\n{total_alerts} alert(s) across {len(alerts_by_portfolio)} active portfolio(s).",
+          file=sys.stderr)
+    return 0
+
+
 def _cmd_watchlist_tier_change(args, to_tier: int) -> int:
     from .store import db
     con = db.connect()
@@ -1370,6 +1483,35 @@ def main(argv=None) -> int:
                           "monitoring -- tier=1 active monitoring requires "
                           "explicitly passing --tier 1)")
     ppr.set_defaults(func=cmd_promote)
+    ppb = sub.add_parser("portfolio-build",
+                         help="Portfolio presets: build a conservative/balanced/aggressive "
+                              "portfolio from tier=1 watchlist bonds. Prints the result by "
+                              "default (dry run); --save writes it to the DB as the new "
+                              "active portfolio -- the write-back path for a portfolio "
+                              "built in the dashboard's Builder/Preview screens, which "
+                              "only persist to localStorage on their own (no live backend "
+                              "to write to from a browser).")
+    ppb.add_argument("preset_type", choices=("conservative", "balanced", "aggressive"))
+    ppb.add_argument("--sizing-mode", choices=("equal", "aey_high", "aey_low"), default="equal")
+    ppb.add_argument("--sector-cap", type=float, default=None,
+                     help="override the preset's default sector-concentration cap (0-1 fraction)")
+    ppb.add_argument("--max-per-issuer", type=float, default=None,
+                     help="override the preset's default per-issuer cap (0-1 fraction)")
+    ppb.add_argument("--health-allowed", default=None,
+                     help="comma-separated override, e.g. GREEN,YELLOW,ORANGE")
+    ppb.add_argument("--save", action="store_true",
+                     help="write to portfolio/portfolio_bond/portfolio_snapshot (status=active); "
+                          "without this flag, prints the build result and exits without writing")
+    ppb.add_argument("--name", default=None, help="portfolio name -- required with --save")
+    ppb.set_defaults(func=cmd_portfolio_build)
+    ppm = sub.add_parser("portfolio-monitor",
+                          help="Portfolio Monitoring (Phase B): daily check of every active "
+                               "portfolio's bonds against their save-time baseline -- G-spread "
+                               "deterioration, health-status degradation, refinancing windows "
+                               "(<=45 days), and a bond becoming a RED issuer. Writes alerts to "
+                               "flag_log and a fresh portfolio_snapshot per portfolio. Run from "
+                               "daily_run.sh; no arguments.")
+    ppm.set_defaults(func=cmd_portfolio_monitor)
     pwd = sub.add_parser("watchlist-demote",
                           help="Move an existing tier=1 issuer to tier=2 "
                                "(passive monitoring), logged to watchlist_tier_log")

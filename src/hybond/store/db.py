@@ -166,6 +166,14 @@ def init_db(con: sqlite3.Connection) -> None:
                        ("placement_pct", "REAL"), ("placement_partial_since", "TEXT")):
         if col not in bond_cols:
             con.execute(f"ALTER TABLE bond ADD COLUMN {col} {decl}")
+    # flag_log: severity (Portfolio Monitoring task, 2026-08-27) -- Slice 2's
+    # original schema has no severity concept (detector/signal/metric grade
+    # a totally different fixed/stat/hybrid comparison). monitor_portfolios()
+    # writes 'high'|'medium'|'low' here; existing non-portfolio flag_log rows
+    # get NULL, same retrofit pattern as spread_snapshot/bond above.
+    flag_log_cols = {r["name"] for r in con.execute("PRAGMA table_info(flag_log)")}
+    if "severity" not in flag_log_cols:
+        con.execute("ALTER TABLE flag_log ADD COLUMN severity TEXT")
     # event: price-impact fields (BONDEM-layer prep) -- all nullable, existing
     # rows get NULL rather than a fabricated value. See fill_price_impact().
     event_cols = {r["name"] for r in con.execute("PRAGMA table_info(event)")}
@@ -297,6 +305,14 @@ def set_issuer_health_status(con, issuer_id: str, status: str, reason: str | Non
     con.execute(
         "UPDATE issuer SET health_status=?, health_reason=? WHERE issuer_id=?",
         (status, reason if status != "green" else None, issuer_id))
+
+
+def get_issuer(con, issuer_id: str) -> dict | None:
+    """Full issuer row (sector, health_status/health_reason included, unlike
+    list_issuers_by_tier's narrower SELECT) -- added for the portfolio
+    preset builder, which needs health_status per issuer."""
+    row = con.execute("SELECT * FROM issuer WHERE issuer_id=?", (issuer_id,)).fetchone()
+    return dict(row) if row else None
 
 
 def list_issuers_by_tier(con, watchlist_tier: int | tuple[int, ...] | list[int]) -> list[dict]:
@@ -588,10 +604,11 @@ def latest_price(con, secid: str, on_date: str):
 
 
 def insert_flag(con, **f) -> int:
+    f.setdefault("severity", None)  # added after callers in older tests were written
     cur = con.execute(
         "INSERT INTO flag_log(snap_date,secid,issuer_id,detector,signal,"
-        "metric,detail,driving) VALUES(:snap_date,:secid,:issuer_id,:detector,"
-        ":signal,:metric,:detail,:driving)",
+        "metric,detail,driving,severity) VALUES(:snap_date,:secid,:issuer_id,:detector,"
+        ":signal,:metric,:detail,:driving,:severity)",
         f,
     )
     return cur.lastrowid
@@ -1878,3 +1895,123 @@ def set_company_scan_decision(con, scan_id: int, decision: str, reason: str | No
         "WHERE id=?", (decision, reason, decided_at, scan_id))
     if cur.rowcount == 0:
         raise ValueError(f"no company_scan_result row with id={scan_id}")
+
+
+# ---- Portfolio presets (Portfolio presets task, 2026-08-27) ----------------
+# Same standalone-_SCHEMA + init_X(con) pattern as expected_return_snapshot/
+# filing/market_note above -- callers (portfolio.py, tests) call
+# init_portfolio(con) explicitly rather than this being folded into init_db(),
+# consistent with every other optional-feature table in this file.
+#
+# ON DELETE CASCADE on portfolio_bond/portfolio_snapshot's portfolio_id FK
+# only actually cascades because connect() already turns on
+# `PRAGMA foreign_keys = ON` for every connection -- SQLite ignores FK
+# constraints entirely otherwise.
+PORTFOLIO_SCHEMA = """
+CREATE TABLE IF NOT EXISTS portfolio (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    preset_type TEXT CHECK(preset_type IN ('conservative','balanced','aggressive','custom')),
+    sizing_mode TEXT CHECK(sizing_mode IN ('equal','aey_high','aey_low')) DEFAULT 'equal',
+    filters_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT CHECK(status IN ('draft','active','archived')) DEFAULT 'draft',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_bond (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    portfolio_id INTEGER NOT NULL REFERENCES portfolio(id) ON DELETE CASCADE,
+    isin TEXT NOT NULL,
+    weight REAL NOT NULL,
+    flags_json TEXT NOT NULL DEFAULT '{}',
+    added_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_snapshot (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    portfolio_id INTEGER NOT NULL REFERENCES portfolio(id) ON DELETE CASCADE,
+    snapshot_date TEXT NOT NULL,
+    aey REAL,
+    expected_loss REAL,
+    metrics_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+PORTFOLIO_PRESET_TYPES = {"conservative", "balanced", "aggressive", "custom"}
+PORTFOLIO_SIZING_MODES = {"equal", "aey_high", "aey_low"}
+PORTFOLIO_STATUSES = {"draft", "active", "archived"}
+
+
+def init_portfolio(con: sqlite3.Connection) -> None:
+    """CREATE TABLE IF NOT EXISTS above is already idempotent for a
+    brand-new install; no ALTER TABLE retrofit needed since these three
+    tables ship complete from day one (nothing pre-dates them)."""
+    con.executescript(PORTFOLIO_SCHEMA)
+    con.commit()
+
+
+def create_portfolio(con, name: str, preset_type: str, sizing_mode: str = "equal",
+                      filters_json: str = "{}", status: str = "draft") -> int:
+    """Insert a new portfolio row, returning its id. CHECK constraints in the
+    schema already reject an invalid preset_type/sizing_mode/status at the
+    SQLite level (sqlite3.IntegrityError) -- these are just friendlier,
+    earlier ValueErrors naming the actual bad value."""
+    if preset_type not in PORTFOLIO_PRESET_TYPES:
+        raise ValueError(f"preset_type must be one of {sorted(PORTFOLIO_PRESET_TYPES)}, got {preset_type!r}")
+    if sizing_mode not in PORTFOLIO_SIZING_MODES:
+        raise ValueError(f"sizing_mode must be one of {sorted(PORTFOLIO_SIZING_MODES)}, got {sizing_mode!r}")
+    if status not in PORTFOLIO_STATUSES:
+        raise ValueError(f"status must be one of {sorted(PORTFOLIO_STATUSES)}, got {status!r}")
+    cur = con.execute(
+        "INSERT INTO portfolio(name,preset_type,sizing_mode,filters_json,status) "
+        "VALUES(?,?,?,?,?)",
+        (name, preset_type, sizing_mode, filters_json, status))
+    return cur.lastrowid
+
+
+def add_portfolio_bond(con, portfolio_id: int, isin: str, weight: float,
+                        flags_json: str = "{}") -> int:
+    cur = con.execute(
+        "INSERT INTO portfolio_bond(portfolio_id,isin,weight,flags_json) "
+        "VALUES(?,?,?,?)",
+        (portfolio_id, isin, weight, flags_json))
+    return cur.lastrowid
+
+
+def add_portfolio_snapshot(con, portfolio_id: int, snapshot_date: str,
+                            aey: float | None, expected_loss: float | None,
+                            metrics_json: str = "{}") -> int:
+    cur = con.execute(
+        "INSERT INTO portfolio_snapshot(portfolio_id,snapshot_date,aey,"
+        "expected_loss,metrics_json) VALUES(?,?,?,?,?)",
+        (portfolio_id, snapshot_date, aey, expected_loss, metrics_json))
+    return cur.lastrowid
+
+
+def set_portfolio_status(con, portfolio_id: int, status: str) -> None:
+    if status not in PORTFOLIO_STATUSES:
+        raise ValueError(f"status must be one of {sorted(PORTFOLIO_STATUSES)}, got {status!r}")
+    cur = con.execute(
+        "UPDATE portfolio SET status=?, updated_at=datetime('now') WHERE id=?",
+        (status, portfolio_id))
+    if cur.rowcount == 0:
+        raise ValueError(f"no portfolio row with id={portfolio_id}")
+
+
+def get_portfolio(con, portfolio_id: int) -> dict | None:
+    row = con.execute("SELECT * FROM portfolio WHERE id=?", (portfolio_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_portfolio_bonds(con, portfolio_id: int) -> list[dict]:
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM portfolio_bond WHERE portfolio_id=? ORDER BY id", (portfolio_id,))]
+
+
+def list_portfolios(con, status: str | None = None) -> list[dict]:
+    if status is not None:
+        return [dict(r) for r in con.execute(
+            "SELECT * FROM portfolio WHERE status=? ORDER BY created_at DESC", (status,))]
+    return [dict(r) for r in con.execute("SELECT * FROM portfolio ORDER BY created_at DESC")]

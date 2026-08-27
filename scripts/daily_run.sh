@@ -27,6 +27,15 @@ con.close()
 # Slice 1: prices + spreads
 PYTHONPATH=src python -m hybond run >> "$LOG" 2>&1
 
+# Portfolio monitoring (Phase B, 2026-08-27): every active portfolio's
+# bonds checked against their save-time baseline right after spread_snapshot
+# is refreshed above -- G-spread deltas/AEY here would otherwise compare
+# against yesterday's prices. Pure DB read+write, no network of its own, so
+# it stays under `set -e` like the other local steps (diff, dashboard
+# rebuild) rather than being marked non-fatal like the network steps below.
+echo "=== Portfolio monitoring ===" >> "$LOG"
+PYTHONPATH=src python -m hybond portfolio-monitor >> "$LOG" 2>&1
+
 # Universe snapshot: full MOEX corporate-bond screen + G-spread + mispricing.
 # The SECID->ИНН emitent map is cached (emitent_map table) and only
 # re-paginated weekly -- force that refresh on Sundays (same cron slot as

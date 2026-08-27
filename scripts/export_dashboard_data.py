@@ -119,6 +119,26 @@ def queue_count(con) -> int:
     return n
 
 
+def portfolio_data_freshness(con) -> dict[str, str | None]:
+    """Latest snapshot date each of the Пресеты Builder's two AEY sources
+    was last refreshed. `universe_snapshot` is written by `hybond universe`,
+    `spread_snapshot` by `hybond run` -- these two pipelines run on
+    different schedules and their snap_date columns can diverge by weeks
+    (confirmed live, Portfolio Presets task: the dashboard's exported AEY
+    reads universe_snapshot while build_preset() computes fresh from
+    spread_snapshot, so the Builder can select a different bond set than a
+    CLI portfolio-build run for identical filters). Exposed here so the
+    Builder UI can warn when the two have drifted apart rather than the
+    mismatch surfacing silently as different results. Reuses the same two
+    "latest snapshot date" lookups day1_snap_date/day2_snap_date are already
+    built from (db.latest_universe_snap_date, _latest_spread_snap_date)
+    rather than a third ad hoc query."""
+    return {
+        "universe_snapshot_date": db.latest_universe_snap_date(con),
+        "spread_snapshot_date": _latest_spread_snap_date(con),
+    }
+
+
 def spread_history_by_secid(con) -> dict[str, list[dict]]:
     rows = con.execute(
         "SELECT secid, snap_date, g_spread_bp, ytm FROM spread_snapshot "
@@ -1248,6 +1268,7 @@ def main() -> None:
     market_wide = market_wide_notes(con)
     placements = primary_placements(con, date.today().isoformat())
     expected_returns = expected_returns_by_secid(con)
+    portfolio_freshness = portfolio_data_freshness(con)
 
     issuers = []
     for issuer_row in tier1_rows:
@@ -1449,6 +1470,7 @@ def main() -> None:
         "company_scan_history": company_scan_history,
         "spread_history": spread_history,
         "spread_history_labels": spread_history_labels,
+        "portfolio_data_freshness": portfolio_freshness,
         "market_wide_notes": market_wide,
         "primary_placements": placements,
         # Справка tab (2026-08-17): parsed once at build time from

@@ -94,3 +94,60 @@ def test_cmd_run_returns_143_on_interrupted():
     with patch("hybond.pipeline_lock.held", return_value=_RaisingHeld()):
         rc = cli.cmd_run(args)
     assert rc == 143
+
+
+def test_cmd_market_notes_acquires_lock_around_run_market_notes():
+    """2026-08-27 live incident: run_market_notes() had no lock guard at all,
+    unlike cmd_scrape/cmd_run -- its smartlab/moex/cbr writes collided with a
+    slow rebuild_dashboard.sh classify burst ("database is locked" on all
+    three feeds). This confirms the fix wraps it the same way."""
+    calls = []
+
+    class _RecordingHeld:
+        def __enter__(self):
+            calls.append("lock_acquired")
+            return None
+
+        def __exit__(self, *exc):
+            calls.append("lock_released")
+            return False
+
+    fake_result = {"parsed": 0, "new": 0, "error": None}
+    with patch("hybond.pipeline_lock.held", return_value=_RecordingHeld()) as mock_held, \
+         patch("hybond.scrape_pipeline.run_market_notes", return_value=fake_result) as mock_run:
+        def _record_run(*a, **kw):
+            calls.append("run_market_notes")
+            return fake_result
+        mock_run.side_effect = _record_run
+        rc = cli.cmd_market_notes(Namespace())
+    assert rc == 0
+    assert calls == ["lock_acquired", "run_market_notes", "lock_released"]
+    assert mock_held.call_args.kwargs.get("wait_timeout") == 600
+
+
+def test_cmd_market_notes_returns_143_on_interrupted():
+    class _RaisingHeld:
+        def __enter__(self):
+            raise pipeline_lock.PipelineInterrupted("signal 15")
+
+        def __exit__(self, *exc):
+            return False
+
+    with patch("hybond.pipeline_lock.held", return_value=_RaisingHeld()):
+        rc = cli.cmd_market_notes(Namespace())
+    assert rc == 143
+
+
+def test_cmd_market_notes_reports_error_when_no_interruption():
+    class _RecordingHeld:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, *exc):
+            return False
+
+    fake_result = {"parsed": 3, "new": 0, "error": "moex_listing: HTTP 504"}
+    with patch("hybond.pipeline_lock.held", return_value=_RecordingHeld()), \
+         patch("hybond.scrape_pipeline.run_market_notes", return_value=fake_result):
+        rc = cli.cmd_market_notes(Namespace())
+    assert rc == 1
