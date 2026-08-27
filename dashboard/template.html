@@ -2151,8 +2151,14 @@
           </div>
         </div>
         <div class="uni-filter-group">
+          <div class="uni-filter-label">Сектор</div>
+          <div class="health-pill-group" id="mSectorPills"></div>
+        </div>
+        <div class="uni-filter-group">
           <label class="uni-toggle"><input type="checkbox" id="mQualified"><span class="uni-toggle-switch"></span>Показывать для квал. инвесторов</label>
           <label class="uni-toggle"><input type="checkbox" id="mWatchlistStar" checked><span class="uni-toggle-switch"></span>Отметить ★ бумаги из вотчлиста</label>
+          <label class="uni-toggle"><input type="checkbox" id="mVdoOnly" checked><span class="uni-toggle-switch"></span>Только ВДО (vdo_scope)</label>
+          <label class="uni-toggle"><input type="checkbox" id="mWatchlistOnlyFilter"><span class="uni-toggle-switch"></span>★ Только вотчлист</label>
         </div>
       </div>
 
@@ -2819,6 +2825,30 @@ function sectorColor(s) {
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return SECTOR_PALETTE[h % SECTOR_PALETTE.length];
 }
+
+// Full-universe screener/map sync (Screener spec, 2026-08-27): one shared
+// object so the Рынок tab's sector pills and vdo/watchlist toggles drive
+// BOTH the table and the map through the SAME computeFiltered() gate inside
+// marketTab() (see marketTab()'s computeFiltered(), which reads this
+// directly) rather than each view keeping its own copy of sector state.
+// selectedSecid is a single value, not an array -- the fuller "shift+click
+// multi-select + batch add-to-portfolio" tray from the original spec was
+// explicitly descoped when extending the existing filter panel; this only
+// carries what the map needs to highlight the bond a table row was clicked
+// for. listeners exist for the same reason: marketTab() registers its own
+// renderActive as one, so other tabs could subscribe without another
+// window global.
+window.screenFilter = {
+  sectors: [],       // [] = "Все" (no sector restriction)
+  vdoOnly: true,      // vdo_scope gate -- default matches the spec's 303-bond default view
+  watchlistOnly: false,
+  selectedSecid: null,
+  listeners: [],
+  update(patch) {
+    Object.assign(this, patch);
+    this.listeners.forEach(fn => fn());
+  },
+};
 
 // Hoisted from the OFZ tab's carry/roll-down projection (mirrors
 // compute/ofz_carry.py's coupon_return_pct()/body_reeval_pct() exactly) so
@@ -6930,8 +6960,61 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     el.mTrades.value = 0;
     document.querySelectorAll('#mListing input, #mCoupon input, #mCouponFreq input, #mRatingChecks input').forEach(cb => cb.checked = true);
     document.getElementById('mQualified').checked = false;
+    document.getElementById('mVdoOnly').checked = true;
+    document.getElementById('mWatchlistOnlyFilter').checked = false;
+    window.screenFilter.update({ sectors: [], vdoOnly: true, watchlistOnly: false });
+    renderSectorPills();
     renderActive();
   }
+
+  // Sector pills (Screener spec, 2026-08-27): multi-select, "Все" (empty
+  // selection) shown active when nothing is picked. Reuses .health-pill/
+  // .health-pill-group (Watchlist Filters UI task) and sectorColor() (the
+  // same sector->color mapping the market-map's "color by sector" option
+  // and portfolioTab()'s sector treemap already use) so a sector picked
+  // here highlights in the identical color it'd get on the map.
+  const marketSectors = [...new Set(allBucketBonds.map(b => b.sector).filter(Boolean))].sort();
+  function renderSectorPills() {
+    const wrap = document.getElementById('mSectorPills');
+    const sel = window.screenFilter.sectors;
+    const allActive = sel.length === 0;
+    const allStyle = allActive ? 'border-color:var(--text-primary);color:var(--text-primary);background:color-mix(in srgb, var(--text-primary) 10%, transparent)' : '';
+    wrap.innerHTML = `<button type="button" class="health-pill${allActive ? ' active' : ''}" data-sector-all="1" style="${allStyle}">ВСЕ</button>`
+      + marketSectors.map(s => {
+        const active = sel.includes(s);
+        const color = sectorColor(s);
+        const style = active ? `border-color:${color};color:${color};background:color-mix(in srgb, ${color} 12%, transparent)` : '';
+        return `<button type="button" class="health-pill${active ? ' active' : ''}" data-sector="${escapeHtml(s)}" style="${style}">${escapeHtml(s).toUpperCase()}</button>`;
+      }).join('');
+    wrap.querySelector('[data-sector-all]').addEventListener('click', () => {
+      window.screenFilter.update({ sectors: [] });
+      renderSectorPills(); renderActive();
+    });
+    wrap.querySelectorAll('[data-sector]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const s = btn.dataset.sector;
+        const cur = window.screenFilter.sectors;
+        const next = cur.includes(s) ? cur.filter(x => x !== s) : cur.concat([s]);
+        window.screenFilter.update({ sectors: next });
+        renderSectorPills(); renderActive();
+      });
+    });
+  }
+  renderSectorPills();
+  document.getElementById('mVdoOnly').addEventListener('change', e => {
+    window.screenFilter.update({ vdoOnly: e.target.checked });
+    renderActive();
+  });
+  document.getElementById('mWatchlistOnlyFilter').addEventListener('change', e => {
+    window.screenFilter.update({ watchlistOnly: e.target.checked });
+    renderActive();
+  });
+  // renderActive() (marketTab's own re-render, driving both table and map
+  // off the one computeFiltered() gate below) doubles as this tab's
+  // window.screenFilter listener -- an external update() call (e.g. a
+  // future consumer) re-renders both views the same way a local pill click
+  // does, with no separate redraw path to keep in sync.
+  window.screenFilter.listeners.push(renderActive);
 
   let sortKey = 'g_spread_bp', sortDir = -1;
   let lastRows = [];
@@ -6981,6 +7064,12 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     const liqFloor = +liqFloorEl.value;
     const selectedBuckets = new Set(checkedValues('mMaturityBuckets'));
     const aeyLo = parseFloat(aeySliderMin.value), aeyHi = parseFloat(aeySliderMax.value);
+    // Screener spec (2026-08-27): sector/vdoOnly/watchlistOnly live on
+    // window.screenFilter, not local state, so a sector pill click or a
+    // toggle flip here is visible to any other subscriber of that object
+    // (see window.screenFilter.listeners) without a second filtering path.
+    const sf = window.screenFilter;
+    const sectorFilterActive = sf.sectors.length > 0;
 
     const bonds = bucket(timeKey).bonds || [];
 
@@ -6998,6 +7087,9 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       if (!couponFreqOk.has(b.coupon_freq)) return false;
       if (!ratingOk.has(ratingTier(b.rating))) return false;
       if (b.qualified && !showQualified) return false;
+      if (sf.vdoOnly && !b.vdo_scope) return false;
+      if (sf.watchlistOnly && !b.in_watchlist) return false;
+      if (sectorFilterActive && !sf.sectors.includes(b.sector)) return false;
       if (misFilterActive) {
         if (b.mispricing_bp == null) return false;
         if (b.mispricing_bp < misMin || b.mispricing_bp > misMax) return false;
@@ -7015,12 +7107,18 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   }
 
   function renderStats(rows) {
-    const total = (bucket(timeKey).bonds || []).length;
+    const allBonds = bucket(timeKey).bonds || [];
+    // Screener spec (2026-08-27): denominator tracks the vdoOnly toggle --
+    // "Показано N из 303 ВДО" while restricted to vdo_scope, "N из 2004
+    // всего" once that gate is off -- rather than always showing the full
+    // universe count regardless of what's actually being filtered down from.
+    const scopedTotal = window.screenFilter.vdoOnly ? allBonds.filter(b => b.vdo_scope).length : allBonds.length;
+    const scopeLabel = window.screenFilter.vdoOnly ? 'ВДО' : 'всего';
     const avgG = rows.length ? Math.round(rows.reduce((s, r) => s + r.g_spread_bp, 0) / rows.length) : 0;
     const ytms = rows.map(r => r.ytm_pct).filter(v => v != null).sort((a, b) => a - b);
     const medYtm = ytms.length ? ytms[Math.floor(ytms.length / 2)] : 0;
     document.getElementById('mStats').innerHTML =
-      `<span>Показано <b>${rows.length}</b> из ${total} облигаций</span>` +
+      `<span>Показано <b>${rows.length}</b> из ${scopedTotal} ${scopeLabel}</span>` +
       `<span>Средний G-спред: <b>${avgG}</b> бп</span>` +
       `<span>Медиана YTM: <b>${medYtm.toFixed(1)}</b>%</span>`;
   }
@@ -7112,6 +7210,11 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     // watchlist (openBondDrawer checks bondLookup first), reduced panel
     // otherwise.
     table.querySelectorAll('tr.bond-row').forEach(tr => tr.addEventListener('click', () => {
+      // Screener spec (2026-08-27): selecting a bond here also flags it for
+      // the map (drawMap() draws a highlight ring around a point matching
+      // screenFilter.selectedSecid) -- update() rather than a direct
+      // assignment so any other listener sees the change too.
+      window.screenFilter.update({ selectedSecid: tr.dataset.secid });
       openBondDrawer(tr.dataset.secid);
     }));
   }
@@ -7548,6 +7651,16 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       mmCtx.fillStyle = col; mmCtx.globalAlpha = 0.85; mmCtx.fill(); mmCtx.globalAlpha = 1;
       mmCtx.strokeStyle = 'rgba(0,0,0,0.25)'; mmCtx.lineWidth = 0.6; mmCtx.stroke();
 
+      // Screener spec (2026-08-27): a bond clicked in the Рынок table (see
+      // window.screenFilter.selectedSecid, set by renderTableRows()'s row
+      // click handler above) gets a highlight ring here -- textColor so it
+      // reads on both themes, same pattern as gridColor/textColor already
+      // read once per frame above.
+      if (b.secid === window.screenFilter.selectedSecid) {
+        mmCtx.beginPath(); mmCtx.arc(px, py, r + 4, 0, 7);
+        mmCtx.strokeStyle = textColor; mmCtx.lineWidth = 2; mmCtx.stroke();
+      }
+
       if (mmState.fStar && b.in_watchlist) {
         mmCtx.fillStyle = '#111'; mmCtx.font = 'bold 10px system-ui';
         mmCtx.strokeStyle = '#fff'; mmCtx.lineWidth = 2;
@@ -7780,6 +7893,9 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     if (aeyLo !== parseFloat(aeySliderMin.min) || aeyHi !== parseFloat(aeySliderMax.max)) {
       parts.push(`AEY ${aeyLo.toFixed(1)}–${aeyHi.toFixed(1)}%`);
     }
+    if (window.screenFilter.sectors.length) parts.push(`Сектор: ${window.screenFilter.sectors.join(', ')}`);
+    if (!window.screenFilter.vdoOnly) parts.push('Полный рынок (не только ВДО)');
+    if (window.screenFilter.watchlistOnly) parts.push('Только вотчлист');
     const summaryEl = document.getElementById('marketFiltersSummary');
     if (summaryEl) summaryEl.textContent = parts.join(' · ');
     const badge = document.getElementById('marketFiltersBadge');
