@@ -4,8 +4,10 @@ calls (sources.fetch_*) are monkeypatched -- these exercise the real issuer
 WHERE watchlist_tier IN (1, 2) loop and issuer_bond secid resolution, not
 MOEX itself."""
 import sys
-from pathlib import Path
 from datetime import date
+from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -24,19 +26,21 @@ def _bond_master_row(secid, isin):
     }
 
 
-def _marketdata_row(secid):
-    return {"SECID": secid, "LAST": 98.5, "YIELD": 18.0, "DURATION": 400,
+def _marketdata_row(secid, yld=18.0):
+    return {"SECID": secid, "LAST": 98.5, "YIELD": yld, "DURATION": 400,
             "VALTODAY": 50000, "NUMTRADES": 10, "SYSTIME": "2026-08-20 12:00:00"}
 
 
-def _patch_network(monkeypatch, secids):
+def _patch_network(monkeypatch, secids, yld=18.0):
     # Floater path (a coupon with a future date and no fixed value yet) --
     # shortest route through pipeline.run()'s per-bond branch, avoids needing
-    # a fully correct cashflow schedule for this test's purposes.
+    # a fully correct cashflow schedule for this test's purposes. `yld`
+    # overrides MOEX's reported YIELD for every bond -- used by the
+    # FLOATER_YIELD_SANITY_MAX tests to simulate a garbage feed value.
     monkeypatch.setattr(sources, "fetch_bond_master",
                          lambda: [_bond_master_row(s, f"RU_{s}") for s in secids])
     monkeypatch.setattr(sources, "fetch_marketdata",
-                         lambda secids=None: [_marketdata_row(s) for s in secids or []])
+                         lambda secids=None: [_marketdata_row(s, yld) for s in secids or []])
     monkeypatch.setattr(sources, "fetch_cbr_zcyc", lambda: [(1.0, 0.15), (5.0, 0.15)])
     monkeypatch.setattr(sources, "fetch_security_qualified", lambda secid: False)
     monkeypatch.setattr(sources, "fetch_bondization", lambda secid: {
@@ -138,4 +142,71 @@ def test_watchlist_json_secid_absorbed_into_issuer_bond(tmp_path, monkeypatch):
 
     con = db.connect(dbpath)
     assert db.list_bonds_for_issuer(con, "1") == ["SECID_FROM_WL"]
+    con.close()
+
+
+# --- floater YIELD sanity bound (2026-08-27 data-quality fix) --------------
+# Confirmed live: MOEX's own YIELD field for some floaters occasionally
+# returns an implausible value (0%, or hundreds of thousands of percent) --
+# found across 3 real secids including a tier=1 watchlist bond (АПРИ 2Р10),
+# which then poisoned spread_snapshot's ytm/g_spread_bp/mod_dur for that
+# bond. FLOATER_YIELD_SANITY_MAX now rejects the write entirely rather than
+# a real distress bond's legitimately high (but plausible) YTM.
+
+def test_floater_implausible_zero_yield_is_not_written(tmp_path, monkeypatch):
+    con, dbpath = _setup_con(tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", dbpath)
+    db.add_issuer_at_tier(con, "1", "Tier1 Co", watchlist_tier=1)
+    db.add_issuer_bond(con, "1", "SECID_T1", source="bond")
+    con.commit()
+    con.close()
+
+    _patch_network(monkeypatch, ["SECID_T1"], yld=0.0)
+    report = pipeline.run(None, snap_date=SNAP)
+
+    assert {r["secid"] for r in report["spread_screen"]} == set()
+    con = db.connect(dbpath)
+    rows = con.execute("SELECT * FROM spread_snapshot WHERE secid='SECID_T1'").fetchall()
+    assert rows == []
+    con.close()
+
+
+def test_floater_implausible_huge_yield_is_not_written(tmp_path, monkeypatch):
+    """The other observed garbage shape -- a YIELD several orders of
+    magnitude too large (696,957.81% in the real incident), not just zero."""
+    con, dbpath = _setup_con(tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", dbpath)
+    db.add_issuer_at_tier(con, "1", "Tier1 Co", watchlist_tier=1)
+    db.add_issuer_bond(con, "1", "SECID_T1", source="bond")
+    con.commit()
+    con.close()
+
+    _patch_network(monkeypatch, ["SECID_T1"], yld=696957.81)
+    report = pipeline.run(None, snap_date=SNAP)
+
+    assert {r["secid"] for r in report["spread_screen"]} == set()
+    con = db.connect(dbpath)
+    rows = con.execute("SELECT * FROM spread_snapshot WHERE secid='SECID_T1'").fetchall()
+    assert rows == []
+    con.close()
+
+
+def test_floater_plausible_high_distress_yield_is_still_written(tmp_path, monkeypatch):
+    """The sanity bound must not reject a real ВДО distress bond's
+    legitimately elevated YTM (real АПРИ bonds show 30-45% YTM) -- only
+    values no real bond could ever have."""
+    con, dbpath = _setup_con(tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", dbpath)
+    db.add_issuer_at_tier(con, "1", "Tier1 Co", watchlist_tier=1)
+    db.add_issuer_bond(con, "1", "SECID_T1", source="bond")
+    con.commit()
+    con.close()
+
+    _patch_network(monkeypatch, ["SECID_T1"], yld=43.4)  # 43.4%, real АПРИ 2Р2 figure
+    report = pipeline.run(None, snap_date=SNAP)
+
+    assert {r["secid"] for r in report["spread_screen"]} == {"SECID_T1"}
+    con = db.connect(dbpath)
+    row = con.execute("SELECT ytm FROM spread_snapshot WHERE secid='SECID_T1'").fetchone()
+    assert row["ytm"] == pytest.approx(0.434)
     con.close()

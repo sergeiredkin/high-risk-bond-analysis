@@ -827,6 +827,20 @@
   .filter-bar-row select { padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border);
     background: var(--surface-1); color: var(--text-primary); font-size: 14px; min-width: 150px; }
   .filter-bar-row select.filter-active { border-color: var(--gold-primary); color: var(--gold-primary); }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
+  .filter-checklist { display: flex; flex-wrap: wrap; gap: 4px 10px; max-width: 320px; }
+  .filter-checklist-item { display: flex; align-items: center; gap: 4px; font-size: 13px;
+    color: var(--text-primary); cursor: pointer; white-space: nowrap; }
+  .filter-checklist-item input { margin: 0; }
+  .health-pill-group { display: flex; gap: 6px; flex-wrap: wrap; }
+  .health-pill { padding: 4px 10px; border-radius: 12px; border: 1px solid var(--border);
+    background: none; color: var(--text-secondary); font-size: 11px; font-weight: 700;
+    letter-spacing: 0.02em; cursor: pointer; }
+  .health-pill.active { font-weight: 700; }
+  .filter-toggle-single { display: flex; align-items: center; gap: 6px; font-size: 13px;
+    color: var(--text-primary); cursor: pointer; white-space: nowrap; }
+  .filter-group-duration .dual-slider { width: 180px; }
   .filter-reset-btn { padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border);
     background: none; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
   .filter-reset-btn:hover { color: var(--critical); border-color: var(--critical); }
@@ -853,6 +867,8 @@
     .filter-bar-body.open { display: block; margin-top: 10px; }
     .filter-bar-row { flex-direction: column; align-items: stretch; }
     .filter-bar-row select, .filter-reset-btn { width: 100%; }
+    .filter-checklist { max-width: none; }
+    .filter-group-duration .dual-slider { width: 100%; }
   }
 
   .pftab-panel { display: none; }
@@ -2898,6 +2914,22 @@ function promptApiKey() {
 
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+}
+
+/** Generic debounce -- delays invoking `fn` until `wait` ms have passed
+ * with no further calls, collapsing a burst of calls (e.g. a slider's
+ * `input` events while dragging) into one trailing call. Shared utility
+ * (Portfolio Presets Builder's pre-build check, Watchlist duration filter).
+ * @param {Function} fn
+ * @param {number} wait milliseconds
+ * @returns {Function} debounced wrapper (same arguments as fn)
+ */
+function debounce(fn, wait) {
+  let timer = null;
+  return function debounced(...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(null, args), wait);
+  };
 }
 
 // ================= Shared pagination component (Pagination task, 2026-08-26) =================
@@ -5324,90 +5356,55 @@ const WATCHLIST_EXPANDED_KEY = 'hybond-watchlist-expanded-issuer';
 
 // ================= Watchlist filters (Вотчлист -> Фильтры) =================
 // Client-side only, over the already-exported DATA.issuers -- no new DB
-// queries. Every bucket function returns null for "insufficient data to
-// classify" (no rating, no bonds with mod_dur, no six_pillars score), which
-// issuerMatchesFilters() treats as "doesn't match a specific bucket filter"
-// (excluded when that filter is active) but always shows under the
-// respective filter's "Все" default, same missing-data-is-not-zero
-// principle used throughout this file (see e.g. pd_adjusted_aey's docstring).
-const RATING_BUCKETS = [
-  // Longest/most-specific prefix checked first -- 'ruBBB'.startsWith('ruBB')
-  // is also true, so a naive single-prefix test would misclassify.
-  ['ruAAA-ruAA', 'ruAAA–ruAA', r => /^ruAAA/.test(r) || /^ruAA/.test(r)],
-  ['ruA', 'ruA', r => /^ruA(?!A)/.test(r)],
-  ['ruBBB', 'ruBBB', r => /^ruBBB/.test(r)],
-  ['ruBB', 'ruBB', r => /^ruBB(?!B)/.test(r)],
-  ['ruB', 'ruB', r => /^ruB(?!B)/.test(r)],
-  ['ruCCC-', 'ruCCC и ниже', r => /^ruC/.test(r)],
-];
-function ratingBucketKey(rating) {
-  if (!rating) return null;
-  const hit = RATING_BUCKETS.find(([, , test]) => test(rating));
-  return hit ? hit[0] : null;
+// queries. Rewritten 2026-08-27 (Watchlist Filters UI task) from an earlier
+// bucket-dropdown design to this task's 5-filter spec: sector multi-select,
+// minimum-rating threshold, health multi-select pills, a refinancing-risk
+// toggle, and a continuous duration range slider. The earlier "risk_tier"
+// (anchor/core/watch/stress) and "только проблемные" filters are dropped --
+// not part of this spec, replaced by the finer-grained health pill toggles.
+// Persisted to localStorage so filter state survives a page refresh.
+const WATCHLIST_FILTERS_LS_KEY = 'hybond-watchlist-filters';
+const WATCHLIST_REFI_WINDOW_DAYS = 182; // ~6 months -- same window as the
+  // Portfolio Presets Builder's own soft refinancing warning (mirrored, not
+  // shared -- see that feature's refinancingFlag()/REFI_WINDOW_DAYS).
+const WATCHLIST_DURATION_MIN = 0.0;
+const WATCHLIST_DURATION_MAX = 3.0;
+const WATCHLIST_HEALTH_VALUES = ['green', 'yellow', 'orange', 'red'];
+
+function defaultWatchlistFilters() {
+  // health defaults to a NEW array each call -- callers (reset) must not
+  // share this array with the live watchlistFilters.health it's assigned to.
+  return {
+    excludedSectors: [], minRating: '', health: WATCHLIST_HEALTH_VALUES.slice(),
+    refiOnly: false, durationMin: WATCHLIST_DURATION_MIN, durationMax: WATCHLIST_DURATION_MAX,
+  };
 }
 
-// risk_tier: anchor/core/watch/stress -- same 4-value scale already driving
-// TIER_COLOR/TIER_LABEL (Portfolio presets) and the .badge.tier-* CSS
-// classes, reused here rather than the separate green/yellow/red/gray
-// verdict scale (that one only has 3 real levels + "no data", one short of
-// the task's 4-option Низкий/Средний/Высокий/Критический spec).
-const RISK_TIER_OPTIONS = [
-  ['anchor', 'Низкий'], ['core', 'Средний'], ['watch', 'Высокий'], ['stress', 'Критический'],
-];
-
-const DURATION_BUCKETS = [
-  ['lt1', '< 1 года', y => y < 1],
-  ['1-2', '1–2 года', y => y >= 1 && y < 2],
-  ['2-3', '2–3 года', y => y >= 2 && y < 3],
-  ['3plus', '3+ лет', y => y >= 3],
-];
-// Volume-weighted average duration across the issuer's own bonds (falls
-// back to a plain average when no bond has volume data) -- same
-// weighted-duration convention the Портфель tab's OFZ-match logic uses,
-// just aggregated per issuer instead of per selected position.
-function issuerAvgDurationYrs(iss) {
-  const bonds = (iss.bonds || []).filter(b => b.mod_dur != null);
-  if (!bonds.length) return null;
-  const withVolume = bonds.filter(b => b.volume != null && b.volume > 0);
-  if (withVolume.length) {
-    const totalVol = withVolume.reduce((s, b) => s + b.volume, 0);
-    return withVolume.reduce((s, b) => s + b.mod_dur * b.volume, 0) / totalVol;
+/** Loads persisted filter state from localStorage, tolerating a missing key
+ * or corrupt/partial JSON (returns fresh defaults in both cases) -- this is
+ * user/browser-controlled state, not a value this code fully controls the
+ * shape of (e.g. an older format from a future rewrite of this feature).
+ * @returns {object} a full watchlistFilters-shaped object
+ */
+function loadWatchlistFilters() {
+  const defaults = defaultWatchlistFilters();
+  try {
+    const raw = localStorage.getItem(WATCHLIST_FILTERS_LS_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw);
+    return Object.assign(defaults, parsed && typeof parsed === 'object' ? parsed : {});
+  } catch (e) {
+    return defaults;
   }
-  return bonds.reduce((s, b) => s + b.mod_dur, 0) / bonds.length;
-}
-function durationBucketKey(yrs) {
-  if (yrs == null) return null;
-  const hit = DURATION_BUCKETS.find(([, , test]) => test(yrs));
-  return hit ? hit[0] : null;
 }
 
-// score_refinancing (six_pillars, compute_pillars()): 0-100, higher = safer.
-// Real data, present whenever pillars_snapshot exists for the issuer -- no
-// placeholder needed. Same score scoreColor() already thresholds for the
-// pillar bars (>=80/60-79/40-59/<40), collapsed from 4 color bands to the
-// 3 this filter's spec asks for (Низкий/Средний/Высокий), not a new scale.
-const REFI_BUCKETS = [
-  ['low', 'Низкий риск', s => s >= 60],
-  ['mid', 'Средний', s => s >= 40 && s < 60],
-  ['high', 'Высокий', s => s < 40],
-];
-function refinancingBucketKey(iss) {
-  const sp = iss.six_pillars;
-  const score = sp ? sp.score_refinancing : null;
-  if (score == null) return null;
-  const hit = REFI_BUCKETS.find(([, , test]) => test(score));
-  return hit ? hit[0] : null;
+function saveWatchlistFilters() {
+  try {
+    localStorage.setItem(WATCHLIST_FILTERS_LS_KEY, JSON.stringify(watchlistFilters));
+  } catch (e) { /* private-browsing/storage-full -- filters still work in-session */ }
 }
 
-const FILTER_DEFS = [
-  { key: 'sector', label: 'Сектор', allLabel: 'Все секторы' },
-  { key: 'risk', label: 'Риск', allLabel: 'Все' },
-  { key: 'rating', label: 'Рейтинг', allLabel: 'Все' },
-  { key: 'duration', label: 'Дюрация', allLabel: 'Все' },
-  { key: 'refinancing', label: 'Рефинансирование', allLabel: 'Все' },
-];
-
-let watchlistFilters = { sector: '', risk: '', rating: '', duration: '', refinancing: '', problemOnly: false };
+let watchlistFilters = loadWatchlistFilters();
 
 // health_status (Watchlist Health Monitoring task, revised 2026-08-24):
 // green/yellow/orange/red set by `hybond scan-watchlist-health` on every
@@ -5421,38 +5418,76 @@ const HEALTH_STATUS_COLOR = {
 };
 const HEALTH_STATUS_LABEL = { green: 'green', yellow: 'yellow', orange: 'orange', red: 'red' };
 function issuerHealthStatus(iss) { return iss.health_status || 'green'; }
-function isProblemIssuer(iss) {
-  const s = issuerHealthStatus(iss);
-  return s === 'red' || s === 'orange';
+
+/** All sector values present in the current watchlist data, sorted for
+ * stable checklist ordering. Recomputed on every render rather than cached
+ * once -- the watchlist itself never changes within a page load, but this
+ * keeps the function honest as the single source of truth for "what
+ * sectors exist right now" (also used for the sector-checklist "Все" state).
+ * @returns {string[]}
+ */
+function watchlistSectors() {
+  return Array.from(new Set(DATA.issuers.map(i => i.sector).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, 'ru'));
 }
 
-function filterOptionsFor(defKey) {
-  if (defKey === 'sector') {
-    const sectors = Array.from(new Set(DATA.issuers.map(i => i.sector).filter(Boolean)))
-      .sort((a, b) => a.localeCompare(b, 'ru'));
-    return sectors.map(s => [s, s]);
-  }
-  if (defKey === 'risk') return RISK_TIER_OPTIONS;
-  if (defKey === 'rating') return RATING_BUCKETS.map(([k, label]) => [k, label]);
-  if (defKey === 'duration') return DURATION_BUCKETS.map(([k, label]) => [k, label]);
-  if (defKey === 'refinancing') return REFI_BUCKETS.map(([k, label]) => [k, label]);
-  return [];
+/** True if ANY of the issuer's bonds has a modified duration inside
+ * [lo, hi] (inclusive) -- per the task spec, duration filtering is an
+ * any-bond match, not an issuer-level average.
+ * @param {object} iss
+ * @param {number} lo
+ * @param {number} hi
+ * @returns {boolean}
+ */
+function issuerHasBondInDurationRange(iss, lo, hi) {
+  return (iss.bonds || []).some(b => b.mod_dur != null && b.mod_dur >= lo && b.mod_dur <= hi);
 }
 
-function filterValueLabel(defKey, value) {
-  if (!value) return null;
-  const hit = filterOptionsFor(defKey).find(([k]) => k === value);
-  return hit ? hit[1] : value;
+/** True if any of the issuer's bonds matures (or reaches its put date --
+ * not exported at issuer level, so maturity is the only date checked here,
+ * unlike the Portfolio Presets Builder's refinancingFlag() which also
+ * checks offer_date from universe_snapshot) within
+ * WATCHLIST_REFI_WINDOW_DAYS of today. There is no refi_flag field in the
+ * general dashboard export (that's computed inline in the Portfolio Presets
+ * closure from build-time candidate data, not exported for every issuer)
+ * -- computed here directly from each bond's already-exported mat_date.
+ * @param {object} iss
+ * @returns {boolean}
+ */
+function issuerHasRefiRisk(iss) {
+  const today = new Date();
+  const windowEnd = new Date(today);
+  windowEnd.setDate(windowEnd.getDate() + WATCHLIST_REFI_WINDOW_DAYS);
+  return (iss.bonds || []).some(b => {
+    if (!b.mat_date) return false;
+    const mat = new Date(b.mat_date + 'T00:00:00');
+    return mat >= today && mat <= windowEnd;
+  });
 }
 
 function issuerMatchesFilters(iss) {
-  if (watchlistFilters.sector && (iss.sector || '') !== watchlistFilters.sector) return false;
-  if (watchlistFilters.risk && (iss.risk_tier || 'core') !== watchlistFilters.risk) return false;
-  if (watchlistFilters.rating && ratingBucketKey(iss.rating) !== watchlistFilters.rating) return false;
-  if (watchlistFilters.duration
-      && durationBucketKey(issuerAvgDurationYrs(iss)) !== watchlistFilters.duration) return false;
-  if (watchlistFilters.refinancing && refinancingBucketKey(iss) !== watchlistFilters.refinancing) return false;
-  if (watchlistFilters.problemOnly && !isProblemIssuer(iss)) return false;
+  // A sectorless issuer has no checkbox of its own in the checklist (it
+  // only lists real sectors), so once ANY sector filtering is active it
+  // can never be explicitly re-included -- treated as excluded rather than
+  // "always shown", or unchecking every real sector would leave it as a
+  // ghost result instead of the expected zero (found live via CDP
+  // verification, 2026-08-27: deselecting all sectors showed 7 issuers
+  // instead of 0, all sectorless).
+  if (watchlistFilters.excludedSectors.length) {
+    if (!iss.sector || watchlistFilters.excludedSectors.includes(iss.sector)) return false;
+  }
+  if (watchlistFilters.minRating) {
+    const rank = RATING_TREND_VALUE_JS[iss.rating];
+    const minRank = RATING_TREND_VALUE_JS[watchlistFilters.minRating];
+    if (rank == null || rank < minRank) return false;
+  }
+  if (!watchlistFilters.health.includes(issuerHealthStatus(iss))) return false;
+  if (watchlistFilters.refiOnly && !issuerHasRefiRisk(iss)) return false;
+  if ((watchlistFilters.durationMin !== WATCHLIST_DURATION_MIN
+       || watchlistFilters.durationMax !== WATCHLIST_DURATION_MAX)
+      && !issuerHasBondInDurationRange(iss, watchlistFilters.durationMin, watchlistFilters.durationMax)) {
+    return false;
+  }
   return true;
 }
 
@@ -5460,9 +5495,29 @@ function filteredWatchlistIssuers() {
   return DATA.issuers.filter(issuerMatchesFilters);
 }
 
-function activeFilterCount() {
-  return FILTER_DEFS.filter(d => watchlistFilters[d.key]).length + (watchlistFilters.problemOnly ? 1 : 0);
+function isWatchlistFilterActive() {
+  return watchlistFilters.excludedSectors.length > 0
+    || watchlistFilters.minRating !== ''
+    || watchlistFilters.health.length !== WATCHLIST_HEALTH_VALUES.length
+    || watchlistFilters.refiOnly
+    || watchlistFilters.durationMin !== WATCHLIST_DURATION_MIN
+    || watchlistFilters.durationMax !== WATCHLIST_DURATION_MAX;
 }
+
+function activeFilterCount() {
+  let n = 0;
+  if (watchlistFilters.excludedSectors.length > 0) n++;
+  if (watchlistFilters.minRating !== '') n++;
+  if (watchlistFilters.health.length !== WATCHLIST_HEALTH_VALUES.length) n++;
+  if (watchlistFilters.refiOnly) n++;
+  if (watchlistFilters.durationMin !== WATCHLIST_DURATION_MIN
+      || watchlistFilters.durationMax !== WATCHLIST_DURATION_MAX) n++;
+  return n;
+}
+
+const WATCHLIST_MIN_RATING_OPTIONS = [
+  ['', 'Все'], ['ruBBB-', 'ruBBB- и выше'], ['ruBB-', 'ruBB- и выше'], ['ruB-', 'ruB- и выше'],
+];
 
 function renderFilterBar() {
   const rowEl = document.getElementById('filterBarRow');
@@ -5470,54 +5525,153 @@ function renderFilterBar() {
   const resultEl = document.getElementById('filterResultLine');
   if (!rowEl) return;
 
-  rowEl.innerHTML = FILTER_DEFS.map(d => {
-    const opts = filterOptionsFor(d.key);
-    const active = watchlistFilters[d.key];
-    return `<select data-filter="${d.key}" class="${active ? 'filter-active' : ''}">
-      <option value="">${escapeHtml(d.allLabel)}</option>
-      ${opts.map(([k, label]) => `<option value="${escapeHtml(k)}"${k === active ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}
-    </select>`;
-  }).join('')
-    + `<button type="button" class="filter-reset-btn${watchlistFilters.problemOnly ? ' filter-active' : ''}" id="problemOnlyBtn">${watchlistFilters.problemOnly ? '✓ ' : ''}Только проблемные</button>`
-    + `<button type="button" class="filter-reset-btn" id="filterResetBtn" style="display:${activeFilterCount() ? '' : 'none'}">Сбросить фильтры</button>`;
+  const sectors = watchlistSectors();
+  const allSectorsSelected = watchlistFilters.excludedSectors.length === 0;
 
-  chipsEl.innerHTML = FILTER_DEFS.filter(d => watchlistFilters[d.key]).map(d => {
-    const label = filterValueLabel(d.key, watchlistFilters[d.key]);
-    return `<span class="filter-chip">${escapeHtml(d.label)}: ${escapeHtml(label)}<button type="button" data-clear="${d.key}" title="Убрать фильтр">×</button></span>`;
-  }).join('')
-    + (watchlistFilters.problemOnly
-        ? `<span class="filter-chip">Только проблемные<button type="button" id="problemOnlyClear" title="Убрать фильтр">×</button></span>`
-        : '');
+  const sectorChecklistHtml = `<div class="filter-group filter-group-sector">
+    <div class="filter-group-label">Сектор</div>
+    <div class="filter-checklist" id="sectorChecklist">
+      <label class="filter-checklist-item"><input type="checkbox" id="sectorAllCb"${allSectorsSelected ? ' checked' : ''}> Все</label>
+      ${sectors.map(s => `<label class="filter-checklist-item"><input type="checkbox" data-sector="${escapeHtml(s)}"${watchlistFilters.excludedSectors.includes(s) ? '' : ' checked'}> ${escapeHtml(sectorLabel(s))}</label>`).join('')}
+    </div>
+  </div>`;
+
+  const ratingSelectHtml = `<div class="filter-group filter-group-rating">
+    <div class="filter-group-label">Рейтинг</div>
+    <select id="minRatingSelect" class="${watchlistFilters.minRating ? 'filter-active' : ''}">
+      ${WATCHLIST_MIN_RATING_OPTIONS.map(([v, label]) => `<option value="${v}"${v === watchlistFilters.minRating ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+    </select>
+  </div>`;
+
+  const healthPillsHtml = `<div class="filter-group filter-group-health">
+    <div class="filter-group-label">Здоровье</div>
+    <div class="health-pill-group" id="healthPillGroup">
+      ${WATCHLIST_HEALTH_VALUES.map(h => {
+        const active = watchlistFilters.health.includes(h);
+        const color = HEALTH_STATUS_COLOR[h];
+        const style = active ? `border-color:${color};color:${color};background:color-mix(in srgb, ${color} 12%, transparent)` : '';
+        return `<button type="button" class="health-pill${active ? ' active' : ''}" data-health="${h}" style="${style}">${HEALTH_STATUS_LABEL[h].toUpperCase()}</button>`;
+      }).join('')}
+    </div>
+  </div>`;
+
+  const refiToggleHtml = `<div class="filter-group filter-group-refi">
+    <label class="filter-toggle-single"><input type="checkbox" id="refiOnlyToggle"${watchlistFilters.refiOnly ? ' checked' : ''}> Только с риском &lt;6 мес</label>
+  </div>`;
+
+  const durationHtml = `<div class="filter-group filter-group-duration">
+    <div class="filter-group-label">Дюрация: <b id="durationRangeLabel"></b></div>
+    <div class="dual-slider">
+      <div class="dual-slider-track"></div>
+      <div class="dual-slider-fill" id="durationSliderFill"></div>
+      <input type="range" id="durationMinSlider" min="${WATCHLIST_DURATION_MIN}" max="${WATCHLIST_DURATION_MAX}" step="0.1" value="${watchlistFilters.durationMin}">
+      <input type="range" id="durationMaxSlider" min="${WATCHLIST_DURATION_MIN}" max="${WATCHLIST_DURATION_MAX}" step="0.1" value="${watchlistFilters.durationMax}">
+    </div>
+  </div>`;
+
+  rowEl.innerHTML = sectorChecklistHtml + ratingSelectHtml + healthPillsHtml + refiToggleHtml + durationHtml
+    + `<button type="button" class="filter-reset-btn" id="filterResetBtn" style="display:${isWatchlistFilterActive() ? '' : 'none'}">Сбросить фильтры</button>`;
+
+  const chips = [];
+  if (watchlistFilters.excludedSectors.length) {
+    chips.push(['sector', `Сектор: ${sectors.length - watchlistFilters.excludedSectors.length} из ${sectors.length}`]);
+  }
+  if (watchlistFilters.minRating) {
+    chips.push(['rating', `Рейтинг: ${watchlistFilters.minRating} и выше`]);
+  }
+  if (watchlistFilters.health.length !== WATCHLIST_HEALTH_VALUES.length) {
+    chips.push(['health', `Здоровье: ${watchlistFilters.health.map(h => h.toUpperCase()).join('/') || 'ничего'}`]);
+  }
+  if (watchlistFilters.refiOnly) {
+    chips.push(['refi', 'Риск рефинансирования <6 мес']);
+  }
+  if (watchlistFilters.durationMin !== WATCHLIST_DURATION_MIN || watchlistFilters.durationMax !== WATCHLIST_DURATION_MAX) {
+    chips.push(['duration', `Дюрация: ${watchlistFilters.durationMin.toFixed(1)}–${watchlistFilters.durationMax.toFixed(1)} лет`]);
+  }
+  chipsEl.innerHTML = chips.map(([key, label]) =>
+    `<span class="filter-chip">${escapeHtml(label)}<button type="button" data-clear="${key}" title="Убрать фильтр">×</button></span>`
+  ).join('');
 
   const total = DATA.issuers.length;
   const shown = filteredWatchlistIssuers().length;
   resultEl.textContent = `Показано ${shown} из ${total} эмитентов`;
 
-  rowEl.querySelectorAll('select[data-filter]').forEach(sel => {
-    sel.addEventListener('change', () => {
-      watchlistFilters[sel.dataset.filter] = sel.value;
+  // --- wiring ---
+  const sectorAllCb = document.getElementById('sectorAllCb');
+  if (sectorAllCb) sectorAllCb.addEventListener('change', () => {
+    watchlistFilters.excludedSectors = sectorAllCb.checked ? [] : sectors.slice();
+    onFiltersChanged();
+  });
+  rowEl.querySelectorAll('#sectorChecklist input[data-sector]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const s = cb.dataset.sector;
+      const idx = watchlistFilters.excludedSectors.indexOf(s);
+      if (cb.checked && idx !== -1) watchlistFilters.excludedSectors.splice(idx, 1);
+      else if (!cb.checked && idx === -1) watchlistFilters.excludedSectors.push(s);
       onFiltersChanged();
     });
   });
+  const minRatingSelect = document.getElementById('minRatingSelect');
+  if (minRatingSelect) minRatingSelect.addEventListener('change', () => {
+    watchlistFilters.minRating = minRatingSelect.value;
+    onFiltersChanged();
+  });
+  rowEl.querySelectorAll('.health-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const h = btn.dataset.health;
+      const idx = watchlistFilters.health.indexOf(h);
+      if (idx === -1) watchlistFilters.health.push(h);
+      else watchlistFilters.health.splice(idx, 1);
+      onFiltersChanged();
+    });
+  });
+  const refiOnlyToggle = document.getElementById('refiOnlyToggle');
+  if (refiOnlyToggle) refiOnlyToggle.addEventListener('change', () => {
+    watchlistFilters.refiOnly = refiOnlyToggle.checked;
+    onFiltersChanged();
+  });
+
+  const durMinEl = document.getElementById('durationMinSlider');
+  const durMaxEl = document.getElementById('durationMaxSlider');
+  const durLabelEl = document.getElementById('durationRangeLabel');
+  const durFillEl = document.getElementById('durationSliderFill');
+  function updateDurationVisual() {
+    const lo = parseFloat(durMinEl.value), hi = parseFloat(durMaxEl.value);
+    const span = WATCHLIST_DURATION_MAX - WATCHLIST_DURATION_MIN;
+    durFillEl.style.left = ((lo - WATCHLIST_DURATION_MIN) / span * 100) + '%';
+    durFillEl.style.width = Math.max((hi - lo) / span * 100, 0) + '%';
+    durLabelEl.textContent = `${lo.toFixed(1)} – ${hi.toFixed(1)} лет`;
+  }
+  updateDurationVisual();
+  const durationChangeDebounced = debounce(() => {
+    watchlistFilters.durationMin = parseFloat(durMinEl.value);
+    watchlistFilters.durationMax = parseFloat(durMaxEl.value);
+    onFiltersChanged();
+  }, 300);
+  durMinEl.addEventListener('input', () => {
+    if (parseFloat(durMinEl.value) > parseFloat(durMaxEl.value)) durMaxEl.value = durMinEl.value;
+    updateDurationVisual();
+    durationChangeDebounced();
+  });
+  durMaxEl.addEventListener('input', () => {
+    if (parseFloat(durMaxEl.value) < parseFloat(durMinEl.value)) durMinEl.value = durMaxEl.value;
+    updateDurationVisual();
+    durationChangeDebounced();
+  });
+
   const resetBtn = document.getElementById('filterResetBtn');
   if (resetBtn) resetBtn.addEventListener('click', () => {
-    FILTER_DEFS.forEach(d => { watchlistFilters[d.key] = ''; });
-    watchlistFilters.problemOnly = false;
-    onFiltersChanged();
-  });
-  const problemOnlyBtn = document.getElementById('problemOnlyBtn');
-  if (problemOnlyBtn) problemOnlyBtn.addEventListener('click', () => {
-    watchlistFilters.problemOnly = !watchlistFilters.problemOnly;
-    onFiltersChanged();
-  });
-  const problemOnlyClear = document.getElementById('problemOnlyClear');
-  if (problemOnlyClear) problemOnlyClear.addEventListener('click', () => {
-    watchlistFilters.problemOnly = false;
+    watchlistFilters = defaultWatchlistFilters();
     onFiltersChanged();
   });
   chipsEl.querySelectorAll('button[data-clear]').forEach(btn => {
     btn.addEventListener('click', () => {
-      watchlistFilters[btn.dataset.clear] = '';
+      const key = btn.dataset.clear;
+      if (key === 'sector') watchlistFilters.excludedSectors = [];
+      else if (key === 'rating') watchlistFilters.minRating = '';
+      else if (key === 'health') watchlistFilters.health = WATCHLIST_HEALTH_VALUES.slice();
+      else if (key === 'refi') watchlistFilters.refiOnly = false;
+      else if (key === 'duration') { watchlistFilters.durationMin = WATCHLIST_DURATION_MIN; watchlistFilters.durationMax = WATCHLIST_DURATION_MAX; }
       onFiltersChanged();
     });
   });
@@ -5531,6 +5685,7 @@ function renderFilterBar() {
 }
 
 function onFiltersChanged() {
+  saveWatchlistFilters();
   renderFilterBar();
   renderIssuerRows();
 }
@@ -5704,11 +5859,16 @@ function renderIssuerRows() {
   const rows = filteredWatchlistIssuers();
   if (!rows.length) {
     el.innerHTML = emptyStateHtml({
-      icon: 'star', title: 'Нет эмитентов по заданным фильтрам',
-      subtitle: 'Попробуйте ослабить или сбросить фильтры выше',
+      icon: 'star', title: 'Нет эмитентов по выбранным фильтрам',
+      actionHtml: '<button type="button" class="filter-reset-btn" id="emptyStateFilterResetBtn">Сбросить фильтры</button>',
     });
     document.getElementById('issuerRowsPagination').innerHTML = '';
     document.getElementById('issuerRowsPaginationBottom').innerHTML = '';
+    const emptyResetBtn = document.getElementById('emptyStateFilterResetBtn');
+    if (emptyResetBtn) emptyResetBtn.addEventListener('click', () => {
+      watchlistFilters = defaultWatchlistFilters();
+      onFiltersChanged();
+    });
     return;
   }
   issuerRowsPaginator.setItems(rows);
@@ -10766,21 +10926,6 @@ renderOfzCurveShape();
       el.classList.add('pf-fresh-neutral');
       el.textContent = `Данные (universe: ${d1} · spread: ${d2})`;
     }
-  }
-
-  /** Generic debounce -- delays invoking `fn` until `wait` ms have passed
-   * with no further calls, collapsing a burst of calls (e.g. a slider's
-   * `input` events while dragging) into one trailing call.
-   * @param {Function} fn
-   * @param {number} wait milliseconds
-   * @returns {Function} debounced wrapper (same arguments as fn)
-   */
-  function debounce(fn, wait) {
-    let timer = null;
-    return function debounced(...args) {
-      clearTimeout(timer);
-      timer = setTimeout(() => fn.apply(null, args), wait);
-    };
   }
 
   /** Pre-build validation: an actual try/build dry run against the

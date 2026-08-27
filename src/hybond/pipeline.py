@@ -24,6 +24,13 @@ from .store import db
 
 logger = logging.getLogger(__name__)
 
+# Garbage-vs-real distinction for a floater's MOEX-reported YIELD (see the
+# is_floater branch in run() below) -- deliberately much looser than
+# rank_candidates()'s own 0.80 ranking sanity bound, since a real ВДО
+# distress bond can legitimately show 30-45% YTM; this only rejects values
+# no real bond could ever have (0%, or hundreds of thousands of percent).
+FLOATER_YIELD_SANITY_MAX = 5.0
+
 
 def load_watchlist(path: Path) -> dict[str, list[str]]:
     """JSON: {"issuer_id": {"name": ..., "sector": ..., "secids": [...]}}
@@ -162,6 +169,23 @@ def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
                 if yld is None or not mat:
                     continue
                 ytm = float(yld) / 100.0
+                # Sanity bound (confirmed live, 2026-08-27): MOEX's own YIELD
+                # field for some floaters occasionally returns an implausible
+                # sentinel/garbage value on a given day -- a genuine
+                # thin-liquidity ВДО distress bond can legitimately show
+                # 30-45% YTM (see rank_candidates()'s own, much stricter 0.80
+                # ranking bound for that), but 0% or 696,957% is not a real
+                # market yield, it's a feed glitch. Found 9 such rows across
+                # 3 secids (АПРИ 2Р10, СНХТ БО-03, МОНОП 1P01), all
+                # yield_source='moex' i.e. this exact branch -- skip writing
+                # the row entirely rather than poisoning spread_snapshot with
+                # a value that then propagates into g_spread_bp/mod_dur too.
+                if ytm <= 0 or ytm > FLOATER_YIELD_SANITY_MAX:
+                    logger.warning(
+                        "skipping implausible floater YIELD for %s on %s: "
+                        "raw=%s -> ytm=%.4f (outside (0, %.1f])",
+                        secid, snap_date, yld, ytm, FLOATER_YIELD_SANITY_MAX)
+                    continue
                 tenor = (mat - snap_date).days / 365.0
                 rf = bondmath.interp_curve(tenor, curve)
                 gsp = (ytm - rf) * 1e4

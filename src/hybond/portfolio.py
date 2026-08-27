@@ -12,6 +12,7 @@ caveat about analysis_json's other fields).
 from __future__ import annotations
 
 import json
+import logging
 import math
 import sqlite3
 from dataclasses import dataclass, field
@@ -20,6 +21,25 @@ from datetime import date, timedelta
 from .cbr_tracker import _midpoint
 from .compute import default_probs
 from .store import db
+
+logger = logging.getLogger(__name__)
+
+# Commodity-linked bonds (Watchlist Filters UI task, 2026-08-27): coupon/
+# redemption indexed to a metal price rather than a fixed rate, so this
+# module's YTM/AEY math (and every preset's rating/YTM/AEY filters) simply
+# doesn't apply to them -- excluded from every preset build regardless of
+# preset_type. No `commodity_linked` column exists anywhere in the schema
+# (checked: bond, spread_snapshot, universe_snapshot), so this is a literal
+# id list, matched against secid OR bond.short_name, rather than a flag
+# lookup. Add to this set if more commodity-linked issues are found.
+COMMODITY_LINKED_BOND_IDS = frozenset({"SELSILV01", "SELGOLD002", "SELGOLD003"})
+
+
+def _is_commodity_linked(secid: str, short_name: str | None) -> bool:
+    """True if `secid` or `short_name` matches a known commodity-linked
+    bond identifier (see COMMODITY_LINKED_BOND_IDS)."""
+    return secid in COMMODITY_LINKED_BOND_IDS or (short_name or "") in COMMODITY_LINKED_BOND_IDS
+
 
 FALLBACK_SCENARIOS = {
     "base": -0.010, "stress": 0.015, "bull": -0.020,
@@ -561,19 +581,43 @@ def _gather_candidates(con) -> list[BondCandidate]:
     issuer, with the fields the preset filters/sizing need already resolved
     -- rating filtering happens in build_preset(), not here, since an
     unrated/too-low-rated bond is still a legitimate "candidate" for this
-    function's purposes (build_preset() decides what to do with it)."""
+    function's purposes (build_preset() decides what to do with it).
+
+    Commodity-linked bonds (see COMMODITY_LINKED_BOND_IDS) are the one
+    exception: excluded here, upstream of every preset's own filters, so
+    build_preset() can never select one under any preset_type -- their
+    coupon/redemption is indexed to a metal price rather than a fixed rate,
+    which breaks the fixed-income YTM/AEY math this whole module assumes
+    (confirmed live, Watchlist Filters UI task duration-distribution check:
+    Селигдар's SELSILV01/SELGOLD002/SELGOLD003 had the three longest
+    durations in the book alongside YTM figures of 2-8% next to ordinary
+    bonds' 25-37%, an artifact of their non-standard structure, not a real
+    yield signal)."""
     rate_scenarios = get_rate_scenarios(con)
     delta_rate = rate_scenarios["base"]
     candidates: list[BondCandidate] = []
     for issuer in db.list_issuers_by_tier(con, 1):
         issuer_id = issuer["issuer_id"]
         issuer_row = db.get_issuer(con, issuer_id)
+        # list_issuers_by_tier() only filters on watchlist_tier, not active
+        # -- a defensive check, scoped to this function rather than that
+        # shared helper (other callers may legitimately want inactive
+        # tier=1 rows too). No-op against the real DB today (all 34 tier=1
+        # issuers have active=1), but an issuer demoted to inactive while
+        # still tagged tier=1 must never be preset-eligible.
+        if issuer_row is not None and not issuer_row.get("active", 1):
+            continue
         health = (issuer_row.get("health_status") if issuer_row else None) or "green"
         rating = db.current_rating(con, issuer_id)
         for secid in db.list_bonds_for_issuer(con, issuer_id):
             bond_row = con.execute(
-                "SELECT isin, mat_date FROM bond WHERE secid=?", (secid,)).fetchone()
+                "SELECT isin, mat_date, short_name FROM bond WHERE secid=?", (secid,)).fetchone()
             if bond_row is None or not bond_row["isin"]:
+                continue
+            if _is_commodity_linked(secid, bond_row["short_name"]):
+                logger.info(
+                    "build_preset: excluding commodity-linked bond %s (%s), issuer=%s",
+                    secid, bond_row["short_name"], issuer_id)
                 continue
             # universe_snapshot (offer/put date) is a nice-to-have, not a
             # hard dependency of this function -- a caller who never ran

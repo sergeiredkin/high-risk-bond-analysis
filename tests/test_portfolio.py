@@ -488,13 +488,17 @@ def _preset_con(tmp_path):
 
 def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None,
                 ytm=0.20, g_spread_bp=500.0, mod_dur=1.5,
-                prior_g_spread_bp=None, mat_date="2028-01-01"):
+                prior_g_spread_bp=None, mat_date="2028-01-01",
+                secid=None, short_name=None):
     """One issuer + one tier=1 bond with a current rating and a latest
     spread_snapshot row (plus an optional ~30d-earlier one, for the
-    G-spread-delta tests). Returns the bond's isin."""
+    G-spread-delta tests). Returns the bond's isin. `secid`/`short_name`
+    default to the usual generated values but can be overridden (e.g. for
+    the commodity-linked-bond exclusion tests)."""
     sector = sector or SECTORS[idx % len(SECTORS)]
     issuer_id = f"ISS{idx:04d}"
-    secid = f"SECID{idx:04d}"
+    secid = secid or f"SECID{idx:04d}"
+    short_name = short_name or f"Bond{idx}"
     isin = f"RU{idx:06d}"
     db.add_issuer_at_tier(con, issuer_id, f"Issuer {idx}", watchlist_tier=1, sector=sector)
     db.set_issuer_health_status(con, issuer_id, health)
@@ -502,7 +506,7 @@ def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None,
                       outlook=None, action=None, rated_on="2026-01-01")
     db.add_issuer_bond(con, issuer_id=issuer_id, secid=secid, source="manual")
     db.upsert_bond(con, secid=secid, isin=isin, issuer_id=issuer_id,
-                    short_name=f"Bond{idx}", mat_date=mat_date, face_value=1000.0,
+                    short_name=short_name, mat_date=mat_date, face_value=1000.0,
                     face_unit="SUR", coupon_pct=15.0, list_level=3, qualified=1,
                     updated="2026-08-01")
     if prior_g_spread_bp is not None:
@@ -691,6 +695,48 @@ def test_build_preset_dry_run_writes_nothing(tmp_path):
     _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
     portfolio.build_preset("conservative", db=con, dry_run=True)
     assert db.list_portfolios(con) == []
+
+
+def test_build_preset_excludes_commodity_linked_bond_by_secid(tmp_path, caplog):
+    """A bond whose secid matches COMMODITY_LINKED_BOND_IDS (e.g. AZIPI/MOEX
+    secid used directly as the ticker-like id) must never appear in a build,
+    even when it would otherwise be the highest-AEY candidate, and the
+    exclusion must be logged."""
+    con = _preset_con(tmp_path)
+    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_bond(con, 100, rating="ruBBB+", health="green", ytm=0.35,
+               secid="SELSILV01", short_name="SELSILV01")
+    with caplog.at_level("INFO"):
+        result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
+    assert all(c.secid != "SELSILV01" for c in result["bonds"])
+    assert any("SELSILV01" in r.message for r in caplog.records)
+
+
+def test_build_preset_excludes_commodity_linked_bond_by_short_name(tmp_path):
+    """Matching by bond.short_name too (not just secid) -- e.g. a
+    commodity-linked bond whose MOEX secid isn't itself in the id list but
+    whose short_name is (SELGOLD002/SELGOLD003 pattern)."""
+    con = _preset_con(tmp_path)
+    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_bond(con, 101, rating="ruBBB+", health="green", ytm=0.35,
+               secid="RU000A106XD7", short_name="SELGOLD002")
+    result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
+    assert all(c.secid != "RU000A106XD7" for c in result["bonds"])
+
+
+def test_build_preset_excludes_inactive_tier1_issuer(tmp_path):
+    """list_issuers_by_tier() filters on watchlist_tier only, not `active`
+    -- a tier=1 issuer demoted to inactive must still never be preset-
+    eligible (defensive hardening, 2026-08-27; no such row exists in the
+    real DB today, but the schema allows it)."""
+    con = _preset_con(tmp_path)
+    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    inactive_isin = _seed_bond(con, 200, rating="ruBBB+", health="green", ytm=0.15)
+    con.execute("UPDATE issuer SET active=0 WHERE issuer_id='ISS0200'")
+    con.commit()
+
+    result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
+    assert all(c.isin != inactive_isin for c in result["bonds"])
 
 
 def test_build_preset_conservative_happy_path(tmp_path):
