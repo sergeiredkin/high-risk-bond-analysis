@@ -466,6 +466,20 @@ def _nearest_snap_date_on_or_before(con, cutoff: str) -> str | None:
     return row["snap_date"] if row else None
 
 
+def _latest_spread_snap_date(con) -> str | None:
+    """day2_snap_date (day1_snap_date's counterpart, MIN(snap_date) FROM
+    universe_snapshot -- see universe_snapshot_bundle()'s earliest_snap_date):
+    the most recent date `hybond run` actually wrote spread_snapshot rows,
+    i.e. the dashboard's "how fresh is our data" signal (see the day2_snap_date
+    comment in main()). Bug fix (2026-08-26): previously read
+    issuers[0]["snap_date"] -- whichever issuer happened to be first in the
+    per-issuer export loop, not guaranteed to be the most recent date across
+    the DB -- which could under-report freshness if that issuer's own last
+    factlist/rating touch predates the actual latest pipeline run."""
+    row = con.execute("SELECT MAX(snap_date) m FROM spread_snapshot").fetchone()
+    return row["m"] if row else None
+
+
 def _coupon_freq_bucket(coupon_period: int | None) -> str | None:
     """MOEX ISS COUPONPERIOD is days between coupons -- bucket into the
     approximate payment frequency the filter panel offers. Thresholds are
@@ -1355,12 +1369,13 @@ def main() -> None:
     known_issuers = known_issuers_meta(con)
     company_scan_history = company_scan_history_export(con)
     queue_count_val = queue_count(con)
+    latest_spread = _latest_spread_snap_date(con)
     con.close()
 
     out = {
         "generated_at": report.get("snap_date"),
         "day1_snap_date": market_map["earliest_snap_date"],
-        "day2_snap_date": issuers[0]["snap_date"] if issuers else None,
+        "day2_snap_date": latest_spread,
         # Wall-clock time this export ran, distinct from day2_snap_date (the
         # DB's data snapshot date) -- one answers "how fresh is the HTML
         # page", the other "how fresh is the underlying data". Deliberately

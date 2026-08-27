@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>hybond — Кредитный дашборд ВДО</title>
+<!-- Tabler Icons webfont (sidebar icons, 2026-08-26): second external CDN
+     dependency in this dashboard, after Sortable.js (loaded near the end of
+     body, see its own comment there). -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <style>
   :root {
     color-scheme: dark;
@@ -15,10 +19,13 @@
     --bg-elevated:   #1C2030;
     --bg-border:     #252A3A;
 
-    /* Gold/amber brand */
-    --gold-primary:  #F5A623;
-    --gold-hover:    #E8920F;
-    --gold-muted:    rgba(245,166,35,0.12);
+    /* Teal brand (was gold/amber -- rebrand, 2026-08-26; token names kept
+       as --gold-* since renaming would touch every one of the ~90 call
+       sites listed in the compatibility-aliases comment below, for no
+       behavioral gain) */
+    --gold-primary:  #1a7f6e;
+    --gold-hover:    #0f5e51;
+    --gold-muted:    rgba(26,127,110,0.12);
 
     /* Text */
     --text-primary:  #F0F2F8;
@@ -102,11 +109,16 @@
      aliases above, which themselves point at bg-primary/text-primary/
      verdict-etc -- so overriding just the base tokens here (not the
      aliases directly) re-themes the entire dashboard without touching a
-     single call site. Gold (gold-primary/gold-hover/gold-muted) is
-     deliberately NOT overridden -- the brand accent is unchanged in both
-     themes, per the task spec. series-1/3/4 (chart series colors) are
-     also left as is: they are saturated mid-tones that read fine on both
-     a dark and a light background.
+     single call site. gold-primary/gold-hover ARE overridden below, with
+     darker teal shades than the dark theme's (2026-08-26 brand-color task)
+     -- the dark theme's teal is too low-contrast against a white surface
+     otherwise. gold-muted is intentionally left un-overridden: it's a
+     translucent tint (12% alpha) applied over whatever surface color is
+     already active, so the dark theme's rgba value still reads correctly
+     on a light background without a separate light-specific value.
+     series-1/3/4 (chart series colors) are also left as is: they are
+     saturated mid-tones that read fine on both a dark and a light
+     background.
      NB: this comment avoids -- and var() and quote punctuation entirely on
      purpose, after a real bug here: an earlier draft's prose contained a
      literal "*" followed by "/" (inside a var-name aside), which is the
@@ -124,6 +136,8 @@
     --text-primary:  #1D1D1F;
     --text-secondary:#6E6E73;
     --text-tertiary: #999999;
+    --gold-primary:  #0f5e51;
+    --gold-hover:    #0a4840;
     --verdict-green: #1A7F3C;
     --verdict-green-bg: rgba(26,127,60,0.12);
     --verdict-yellow: #B8860B;
@@ -138,8 +152,8 @@
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--page); color: var(--text-primary);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-size: 15px; line-height: 1.5;
+    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px; line-height: 1.5;
   }
   .wrap { max-width: 100%; padding: 24px 20px 80px; }
   header.top { display: flex; justify-content: space-between; align-items: flex-start;
@@ -152,22 +166,22 @@
   .logo-subtitle { font-weight: 400; }
   .toolbar-btn {
     border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
-    border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 14px;
   }
   /* Section separator: a visible 1px rule + var(--space-4) breathing room
      before the next heading, on top of the existing 34px inter-section
      gap -- previously sections were spaced by margin alone, with nothing
      marking where one ends and the next begins. First section in each
      tab-panel is exempted (nothing above it to separate from). */
-  section { margin-top: 34px; border-top: 1px solid var(--bg-border); padding-top: var(--space-4); }
+  section { margin-top: 34px; border-top: 0.5px solid var(--bg-border); padding-top: var(--space-4); }
   .tab-panel > section:first-of-type { border-top: none; padding-top: 0; }
   /* Same treatment for the Портфель tab's internal h3 group breaks --
      that tab is one big <section> with h3 subheadings marking Обзор's
      picker/concentration/recommendations groups etc., not separate
      <section> elements, so the rule above alone wouldn't reach them. */
-  .pf-h3-sep { border-top: 1px solid var(--bg-border); padding-top: var(--space-4); }
+  .pf-h3-sep { border-top: 0.5px solid var(--bg-border); padding-top: var(--space-4); }
   h2 { font-size: 16px; margin: 0 0 4px; }
-  .section-note { color: var(--text-secondary); font-size: 13px; line-height: 1.6; margin: 0 0 14px; max-width: 760px; }
+  .section-note { color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin: 0 0 14px; max-width: 760px; }
   /* Long unbroken file-path/command tokens inside inline <code> (e.g.
      bond_screening_prompt_v3.5.1.md, src/hybond/universe_pipeline.py) have
      no natural break point -- overflow-wrap:normal lets them push their
@@ -183,12 +197,12 @@
   section.collapsed .collapsible-body { display: none; }
   section.collapsed .collapse-arrow { transform: rotate(-90deg); }
   .card {
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
-    padding: 18px 20px;
+    background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 12px;
+    padding: 16px; /* was 18px 20px -- padding-scale consolidation, 2026-08-26 */
   }
   .banner {
-    border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; margin-bottom: 14px;
-    border: 1px solid var(--border); background: color-mix(in srgb, var(--warning) 12%, var(--surface-1));
+    border-radius: 10px; padding: 12px; font-size: 14px; line-height: 1.6; margin-bottom: 14px; /* padding was 10px 14px */
+    border: 0.5px solid var(--border); background: color-mix(in srgb, var(--warning) 12%, var(--surface-1));
     color: var(--text-primary);
   }
   .banner b { color: var(--text-primary); }
@@ -198,8 +212,8 @@
      instances on the page share one expand/collapse state (localStorage
      hybond-aey-legend-expanded), toggled together -- see toggleAeyGlossary(). */
   .aey-glossary {
-    border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; margin-bottom: 14px;
-    border: 1px solid var(--border); border-left: 3px solid var(--gold-primary);
+    border-radius: 10px; padding: 12px; font-size: 14px; line-height: 1.6; margin-bottom: 14px; /* padding was 10px 14px */
+    border: 0.5px solid var(--border); border-left: 3px solid var(--gold-primary);
     background: color-mix(in srgb, var(--gold-primary) 8%, var(--surface-1));
     color: var(--text-primary);
   }
@@ -212,31 +226,40 @@
   .aey-glossary-body p:last-child { margin-bottom: 0; }
   .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
   .stat-tile {
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 12px;
     padding: var(--space-4); /* was 14px 16px -- vertical below the 16px card-padding minimum */
     position: relative; transition: var(--transition);
   }
-  .stat-tile:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }
+  /* Hover de-emphasized (2026-08-26): was translateY(-2px) + shadow lift +
+     a gold/teal top border via ::before, same "card" treatment as
+     .pulse-tile/.bond-card. Kept only a background shift for affordance --
+     var(--bg-elevated), not var(--surface-1) as the task literally
+     specified: --surface-1 is this tile's own resting background (see the
+     rule above), so setting hover to the same value would be a no-op with
+     no visible change at all. --bg-elevated is the token this file already
+     uses everywhere else for exactly this "subtle hover lift" purpose
+     (e.g. .sidebar-item:hover). */
+  .stat-tile:hover { background: var(--bg-elevated); }
   .stat-tile::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
     background: var(--gold-primary); opacity: 0; transition: opacity 0.2s;
     border-radius: 12px 12px 0 0; }
-  .stat-tile:hover::before { opacity: 1; }
+  .stat-tile:hover::before { opacity: 0; }
   .stat-tile .value { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .stat-tile .label { color: var(--text-tertiary); font-size: 13px; margin-top: 2px;
+  .stat-tile .label { color: var(--text-tertiary); font-size: 12px; margin-top: 2px;
     text-transform: uppercase; letter-spacing: 0.5px; } /* was color var(--text-secondary), no uppercase/letter-spacing */
-  svg text { fill: var(--text-secondary); font-size: 13px; }
-  svg .value-label { fill: var(--text-primary); font-size: 13px; font-variant-numeric: tabular-nums; }
+  svg text { fill: var(--text-secondary); font-size: 12px; }
+  svg .value-label { fill: var(--text-primary); font-size: 12px; font-variant-numeric: tabular-nums; }
   .bar { transition: opacity .1s; }
   .bar:hover { opacity: 0.85; }
   .grid-line { stroke: var(--grid); stroke-width: 1; }
   .baseline { stroke: var(--baseline); stroke-width: 1; }
-  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 10px 0 4px; font-size: 13px; color: var(--text-secondary); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 10px 0 4px; font-size: 12px; color: var(--text-secondary); }
   .legend-item { display: flex; align-items: center; gap: 6px; }
   .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
   .tooltip {
     position: fixed; pointer-events: none; z-index: 50;
     background: var(--text-primary); color: var(--surface-1);
-    padding: 8px 10px; border-radius: 8px; font-size: 13px; max-width: 260px;
+    padding: 8px 10px; border-radius: 8px; font-size: 14px; max-width: 260px;
     opacity: 0; transition: opacity .08s; line-height: 1.5;
   }
   .tooltip b { display:block; margin-bottom:2px; }
@@ -245,12 +268,12 @@
      prose -- backwards). Row padding 9px 10px -> 10px 8px (more vertical
      breathing room per row; horizontal tightened slightly since 14px text
      needs less side padding to avoid feeling cramped in narrow columns). */
-  table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 1.4; }
-  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table { width: 100%; border-collapse: collapse; font-size: 16px; line-height: 1.4; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 0.5px solid var(--border); vertical-align: top; }
   /* Metadata tier (SECID, dates/timestamps, tertiary sub-labels) stays at
      12px -- explicit opt-out from the 14px base, applied per-cell via JS
      template classes, not a separate smaller default. */
-  .cell-meta { font-size: 13px; color: var(--text-muted); }
+  .cell-meta { font-size: 12px; color: var(--text-muted); }
   /* Key scanned numbers (YTM/AEY/G-spread) -- letter-spacing only, not a
      size/weight change, so it doesn't compete with the verdict/color
      signal already carrying the visual weight on these cells. */
@@ -260,7 +283,7 @@
   th:hover { color: var(--text-primary); }
   tr.issuer-row { cursor: pointer; }
   tr.issuer-row:hover { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
-  tr.detail-row td { padding: 0; border-bottom: 1px solid var(--border); }
+  tr.detail-row td { padding: 0; border-bottom: 0.5px solid var(--border); }
   .detail-inner { padding: 14px 16px 18px 34px; background: color-mix(in srgb, var(--text-primary) 3%, transparent); display: none; }
   .detail-inner.open { display: block; }
   .badge {
@@ -275,20 +298,20 @@
   .pillar-mini { display: flex; gap: 3px; align-items: flex-end; height: 22px; width: 70px; }
   .pillar-mini .seg { width: 14px; border-radius: 2px 2px 0 0; background: var(--grid); }
   .mini-label { font-size: 12px; color: var(--text-muted); text-align:center; margin-top:2px; }
-  .pillar-panel { margin-top: 10px; padding: var(--space-4); border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1); } /* was 12px 14px */
-  .pillar-panel-title { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .pillar-panel { margin-top: 10px; padding: var(--space-4); border: 0.5px solid var(--border); border-radius: 10px; background: var(--surface-1); } /* was 12px 14px */
+  .pillar-panel-title { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; }
   .pillar-bars { display: grid; grid-template-columns: 90px 1fr 32px; row-gap: 6px; column-gap: 8px; align-items: center; margin-top: 8px; }
   .pillar-bar-label { font-size: 12px; color: var(--text-secondary); }
   .pillar-bar-track { height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; }
   .pillar-bar-fill { height: 100%; border-radius: 4px; }
   .pillar-bar-value { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-primary); text-align: right; }
-  .pillar-ratios { display: flex; gap: 20px; margin-top: 10px; font-size: 12.5px; }
+  .pillar-ratios { display: flex; gap: 20px; margin-top: 10px; font-size: 12px; }
   .pillar-ratios b { font-variant-numeric: tabular-nums; }
-  .pillar-note-icon { cursor: help; color: var(--warning); font-size: 13px; }
-  .pillar-missing { margin-top: 10px; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+  .pillar-note-icon { cursor: help; color: var(--warning); font-size: 12px; }
+  .pillar-missing { margin-top: 10px; color: var(--text-muted); font-size: 14px; line-height: 1.6; }
   .events-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-  .events-list li { border-left: 3px solid var(--grid); padding: 4px 0 4px 10px; font-size: 12.5px; }
-  .thesis-box { margin-top: 10px; font-size: 13px; line-height: 1.6; }
+  .events-list li { border-left: 3px solid var(--grid); padding: 4px 0 4px 10px; font-size: 12px; }
+  .thesis-box { margin-top: 10px; font-size: 14px; line-height: 1.6; }
   .thesis-box dt { color: var(--text-muted); font-size: 12px; text-transform: uppercase; margin-top: 8px; }
   .thesis-box dd { margin: 2px 0 0; }
   .synthetic-tag {
@@ -340,7 +363,7 @@
     display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;
     color: var(--text-secondary); user-select: none; font-weight: 600;
   }
-  .candidate-toggle input[type="checkbox"] { cursor: pointer; accent-color: var(--series-1); width: 15px; height: 15px; }
+  .candidate-toggle input[type="checkbox"] { cursor: pointer; accent-color: var(--series-1); width: 16px; height: 16px; }
   .aey-slider-wrap { margin: 4px 0 14px; max-width: 480px; }
   .aey-slider-labels { display: flex; align-items: baseline; gap: 10px; font-size: 14px; color: var(--text-secondary); margin-bottom: 4px; flex-wrap: wrap; }
   .aey-slider-labels b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
@@ -353,19 +376,19 @@
   .dual-slider input[type="range"]::-webkit-slider-runnable-track { background: transparent; height: 26px; }
   .dual-slider input[type="range"]::-moz-range-track { background: transparent; height: 26px; }
   .dual-slider input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; pointer-events: auto; width: 15px; height: 15px; border-radius: 50%;
+    -webkit-appearance: none; pointer-events: auto; width: 16px; height: 16px; border-radius: 50%;
     background: var(--series-1); cursor: pointer; margin-top: 6px; position: relative; z-index: 3;
     border: 2px solid var(--surface-1);
   }
   .dual-slider input[type="range"]::-moz-range-thumb {
-    pointer-events: auto; width: 15px; height: 15px; border-radius: 50%; background: var(--series-1);
+    pointer-events: auto; width: 16px; height: 16px; border-radius: 50%; background: var(--series-1);
     cursor: pointer; border: 2px solid var(--surface-1);
   }
   .dual-slider-track { position: absolute; top: 11px; left: 0; right: 0; height: 4px; background: var(--border); border-radius: 2px; }
   .dual-slider-fill { position: absolute; top: 11px; height: 4px; background: var(--series-1); border-radius: 2px; }
   #portfolioRankTable tbody tr.bond-row, #marketTable tbody tr.bond-row { cursor: pointer; }
   #portfolioRankTable tbody tr.bond-row:hover, #marketTable tbody tr.bond-row:hover { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
-  .pf-pick-table input[type="checkbox"] { cursor: pointer; accent-color: var(--series-1); width: 15px; height: 15px; }
+  .pf-pick-table input[type="checkbox"] { cursor: pointer; accent-color: var(--series-1); width: 16px; height: 16px; }
   .pf-pick-table tbody tr.pf-picked { background: color-mix(in srgb, var(--series-1) 8%, transparent); }
   .pf-pick-table tbody tr.pf-capped td { opacity: 0.4; }
   .pf-weight-input {
@@ -375,14 +398,14 @@
   .pf-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 8px 0 14px; }
   .pf-toolbar button {
     padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1);
-    color: var(--text-primary); cursor: pointer; font-size: 12.5px; font-weight: 600;
+    color: var(--text-primary); cursor: pointer; font-size: 12px; font-weight: 600;
   }
   .pf-toolbar button:hover { border-color: var(--series-1); }
   /* ---- Risk-Tier Presets (Обзор, above the position picker) ------------- */
   .pf-preset-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 8px 0 6px; }
   .pf-preset-label { font-size: 14px; color: var(--text-secondary); margin-right: 2px; }
   .pf-preset-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--bg-border); background: var(--surface-1);
-    color: var(--text-primary); cursor: pointer; font-size: 12.5px; font-weight: 600; }
+    color: var(--text-primary); cursor: pointer; font-size: 12px; font-weight: 600; }
   .pf-preset-btn:hover { border-color: var(--series-1); }
   .pf-preset-btn.active { border-color: var(--gold-primary); color: var(--gold-primary); }
   .pf-preset-btn.pf-preset-reset { font-weight: 400; color: var(--text-secondary); }
@@ -391,10 +414,10 @@
     border: 1px solid var(--bg-border); border-radius: var(--radius-badge); padding: 1px 7px; margin-left: 8px; vertical-align: middle; }
   .pf-event-warn { color: var(--verdict-red); cursor: help; margin-left: 4px; }
 
-  .pf-weight-sum { font-size: 12.5px; color: var(--text-secondary); }
+  .pf-weight-sum { font-size: 12px; color: var(--text-secondary); }
   .pf-weight-sum b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
   .pf-weight-sum.pf-warn b { color: var(--warning); }
-  .pf-concentration-row { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+  .pf-concentration-row { display: flex; flex-direction: column; gap: 2px; font-size: 12px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
   .pf-concentration-row:last-child { border-bottom: none; }
   .pf-concentration-main { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   .pf-concentration-bar { flex: 1; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin: 0 8px; align-self: center; }
@@ -407,16 +430,16 @@
   .pf-sector-note { color: var(--text-muted); font-size: 12px; }
   .pf-issuer-count { color: var(--text-muted); font-size: 12px; font-weight: 400; }
   .stat-tile[title] { cursor: help; }
-  .pf-cluster-summary { border-left: 3px solid var(--critical); padding: 8px 10px; margin: 8px 0 4px; font-size: 13px; line-height: 1.6;
+  .pf-cluster-summary { border-left: 3px solid var(--critical); padding: 8px 10px; margin: 8px 0 4px; font-size: 14px; line-height: 1.6;
     background: color-mix(in srgb, var(--critical) 8%, transparent); border-radius: 4px; }
   .pf-cluster-summary.pf-clean { border-left-color: var(--good); background: color-mix(in srgb, var(--good) 8%, transparent); }
-  .pf-cluster-detail { color: var(--text-muted); font-size: 13px; line-height: 1.6; margin-top: 2px; }
+  .pf-cluster-detail { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-top: 2px; }
   .pf-related-note {
     width: 100%; min-height: 54px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
-    background: var(--surface-1); color: var(--text-primary); font-size: 12.5px; font-family: inherit; resize: vertical;
+    background: var(--surface-1); color: var(--text-primary); font-size: 12px; font-family: inherit; resize: vertical;
   }
-  .pf-related-warn { border-left: 3px solid var(--critical); padding: 8px 10px; margin-top: 8px; font-size: 13px; line-height: 1.6; background: color-mix(in srgb, var(--critical) 8%, transparent); border-radius: 4px; }
-  .pf-empty { color: var(--text-muted); font-size: 13px; padding: 10px 0; }
+  .pf-related-warn { border-left: 3px solid var(--critical); padding: 8px 10px; margin-top: 8px; font-size: 14px; line-height: 1.6; background: color-mix(in srgb, var(--critical) 8%, transparent); border-radius: 4px; }
+  .pf-empty { color: var(--text-muted); font-size: 14px; padding: 10px 0; }
   .pf-scen-table td.pf-scen-best { color: var(--good); font-weight: 600; }
   .pf-scen-table td.pf-scen-worst { color: var(--critical); font-weight: 600; }
 
@@ -424,26 +447,26 @@
   .pf-growth-capital-row { display: flex; align-items: center; gap: 10px; margin: 4px 0 14px; }
   .pf-growth-capital-row label { font-size: 14px; color: var(--text-secondary); }
   .pf-growth-capital-row input { width: 160px; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border);
-    background: var(--surface-1); color: var(--text-primary); font-size: 13px; font-variant-numeric: tabular-nums; }
+    background: var(--surface-1); color: var(--text-primary); font-size: 14px; font-variant-numeric: tabular-nums; }
   .pf-growth-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
-  .pf-growth-table th, .pf-growth-table td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .pf-growth-table th, .pf-growth-table td { text-align: right; padding: 8px 10px; border-bottom: 0.5px solid var(--border); }
   .pf-growth-table th:first-child, .pf-growth-table td:first-child { text-align: left; }
-  .pf-growth-h4 { font-size: 13px; margin: 14px 0 6px; color: var(--text-primary); }
+  .pf-growth-h4 { font-size: 14px; margin: 14px 0 6px; color: var(--text-primary); }
   .pf-growth-delta-cell { font-size: 12px; }
 
   /* ---- Stress test (Портфель -> Сценарии, below Growth Planner) ---------- */
   .pf-stress-row { display: flex; align-items: center; gap: 10px; margin: 4px 0 14px; flex-wrap: wrap; }
   .pf-stress-row label { font-size: 14px; color: var(--text-secondary); }
   .pf-stress-row select { padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border);
-    background: var(--surface-1); color: var(--text-primary); font-size: 13px; min-width: 220px; }
-  .pf-stress-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
-    padding: 14px 16px; max-width: 420px; }
-  .pf-stress-card-title { font-size: 13.5px; color: var(--text-secondary); margin-bottom: 10px; }
+    background: var(--surface-1); color: var(--text-primary); font-size: 14px; min-width: 220px; }
+  .pf-stress-card { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 10px;
+    padding: 16px; max-width: 420px; } /* padding was 14px 16px */
+  .pf-stress-card-title { font-size: 14px; color: var(--text-secondary); margin-bottom: 10px; }
   .pf-stress-row-line { display: flex; justify-content: space-between; align-items: baseline;
     font-size: 14px; padding: 4px 0; }
   .pf-stress-row-line .pf-stress-label { color: var(--text-secondary); }
   .pf-stress-row-line .pf-stress-val { font-variant-numeric: tabular-nums; font-weight: 600; }
-  .pf-stress-divider { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+  .pf-stress-divider { border: none; border-top: 0.5px solid var(--border); margin: 8px 0; }
   .pf-stress-recovery-note { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
   /* ---- Multi-default stress test (Портфель -> Сценарии) ------------------ */
@@ -457,18 +480,18 @@
   .pf-pick-table tbody tr.pf-row:hover { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
   .pf-gate-ok { color: var(--good); font-weight: 600; }
   .pf-gate-fail { color: var(--critical); font-weight: 600; cursor: help; }
-  .pf-rationale-block { padding: 10px 14px; font-size: 13px; line-height: 1.6; }
+  .pf-rationale-block { padding: 10px 14px; font-size: 14px; line-height: 1.6; }
   .pf-rationale-block b { color: var(--text-primary); }
   .bond-detail-block { margin-bottom: 16px; }
   .bond-detail-block:last-child { margin-bottom: 0; }
-  .bond-detail-block > b { display: block; margin-bottom: 6px; font-size: 13px; }
-  .detail-mini-table { border-collapse: collapse; font-size: 12.5px; }
+  .bond-detail-block > b { display: block; margin-bottom: 6px; font-size: 14px; }
+  .detail-mini-table { border-collapse: collapse; font-size: 12px; }
   .detail-mini-table td, .detail-mini-table th { padding: 3px 12px 3px 0; text-align: left; }
   .bond-events-toggle {
     font-size: 12px; padding: 3px 9px; border-radius: 12px; border: 1px solid var(--border);
     background: var(--surface-1); color: var(--text-secondary); cursor: pointer; margin: 0 0 8px;
   }
-  .bond-not-watchlist { color: var(--text-muted); font-size: 13px; }
+  .bond-not-watchlist { color: var(--text-muted); font-size: 14px; }
 
   /* ---- Task B: verdict component (Вотчлист tab / Part D bond-detail
      drawer, prototype -- not rolled out elsewhere yet). One template, four
@@ -483,20 +506,20 @@
   [data-disclosure="beginner"] .layer-2 { display: none; }
   [data-disclosure="pro"] .layer-3 { display: block; }
 
-  .verdict-card { border-radius: var(--radius-card); padding: var(--space-4); margin-bottom: var(--space-4); border: 1px solid var(--bg-border); box-shadow: var(--shadow-card); }
+  .verdict-card { border-radius: var(--radius-card); padding: var(--space-4); margin-bottom: var(--space-4); border: 0.5px solid var(--bg-border); box-shadow: var(--shadow-card); }
   .verdict-card.verdict-green { background: var(--verdict-green-bg); border-color: color-mix(in srgb, var(--verdict-green) 40%, var(--bg-border)); }
   .verdict-card.verdict-yellow { background: var(--verdict-yellow-bg); border-color: color-mix(in srgb, var(--verdict-yellow) 45%, var(--bg-border)); }
   .verdict-card.verdict-red { background: var(--verdict-red-bg); border-color: color-mix(in srgb, var(--verdict-red) 45%, var(--bg-border)); }
   .verdict-card.verdict-gray { background: var(--verdict-grey-bg); border-color: color-mix(in srgb, var(--verdict-grey) 40%, var(--bg-border)); }
-  .verdict-badge { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
+  .verdict-badge { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
   .verdict-card.verdict-green .verdict-badge { color: var(--verdict-green); }
   .verdict-card.verdict-yellow .verdict-badge { color: var(--verdict-yellow); }
   .verdict-card.verdict-red .verdict-badge { color: var(--verdict-red); }
   .verdict-card.verdict-gray .verdict-badge { color: var(--verdict-grey); }
-  .verdict-sentence { font-size: 13px; color: var(--text-primary); margin-bottom: 6px; }
-  .verdict-why { font-size: 12.5px; color: var(--text-secondary); padding-top: 6px; border-top: 1px dashed var(--border); margin-top: 6px; }
+  .verdict-sentence { font-size: 14px; color: var(--text-primary); margin-bottom: 6px; }
+  .verdict-why { font-size: 12px; color: var(--text-secondary); padding-top: 6px; border-top: 1px dashed var(--border); margin-top: 6px; }
   .verdict-why b { color: var(--text-primary); }
-  .verdict-l2 { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12.5px; }
+  .verdict-l2 { margin-top: 10px; padding-top: 10px; border-top: 0.5px solid var(--border); font-size: 12px; }
   .verdict-l2 .detail-mini-table { margin-top: 4px; }
   .verdict-l3 { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); font-size: 12px; color: var(--text-secondary); }
   .verdict-l3 code { font-size: 12px; }
@@ -511,14 +534,14 @@
   }
   .bond-drawer-overlay.open { display: flex; }
   .bond-drawer-modal {
-    background: var(--bg-surface); border: 1px solid var(--bg-border); border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card); max-width: 640px; width: 100%; padding: 24px 22px 22px;
+    background: var(--bg-surface); border: 0.5px solid var(--bg-border); border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card); max-width: 640px; width: 100%; padding: 24px; /* was 24px 22px 22px */
     position: relative;
   }
   .bond-drawer-close {
     position: absolute; top: 14px; right: 14px; border: 1px solid var(--bg-border);
     background: var(--bg-elevated); color: var(--text-secondary); width: 28px; height: 28px;
-    border-radius: 999px; cursor: pointer; font-size: 13px; line-height: 1; display: flex;
+    border-radius: 999px; cursor: pointer; font-size: 12px; line-height: 1; display: flex;
     align-items: center; justify-content: center;
   }
   .bond-drawer-close:hover { color: var(--text-primary); border-color: var(--gold-primary); }
@@ -547,20 +570,20 @@
   .nc-wrap { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 14px; }
   .nc-hero {
     background: color-mix(in srgb, var(--series-1) 5%, var(--surface-1));
-    border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px;
+    border: 0.5px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px;
   }
-  .nc-hero-title { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+  .nc-hero-title { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
   .nc-hero-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
   .nc-verdict-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
-  .nc-verdict-card { background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .nc-verdict-card { background: var(--page); border: 0.5px solid var(--border); border-radius: 8px; padding: 12px; } /* padding was 10px 12px */
   .nc-verdict-card .nc-label { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); margin-bottom: 3px; }
-  .nc-verdict-card .nc-value { font-size: 15px; font-weight: 700; }
+  .nc-verdict-card .nc-value { font-size: 16px; font-weight: 700; }
   .nc-why {
     margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--warning);
-    background: color-mix(in srgb, var(--warning) 10%, transparent); font-size: 13px; line-height: 1.6;
+    background: color-mix(in srgb, var(--warning) 10%, transparent); font-size: 14px; line-height: 1.6;
   }
   .nc-traffic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 14px; }
-  .nc-traffic-item { display: flex; gap: 8px; align-items: flex-start; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .nc-traffic-item { display: flex; gap: 8px; align-items: flex-start; background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 8px; padding: 8px 12px; } /* padding was 8px 10px */
   .nc-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
   .nc-dot.green { background: var(--good); } .nc-dot.yellow { background: var(--warning); } .nc-dot.red { background: var(--critical); }
   .nc-traffic-item .nc-t-name { font-size: 12px; font-weight: 600; }
@@ -568,18 +591,18 @@
   .nc-section { margin-bottom: 14px; }
   .nc-section-title { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; }
   .nc-flag-list { list-style: none; padding: 0; margin: 0; }
-  .nc-flag-list li { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .nc-flag-list li { padding: 8px 0; border-bottom: 0.5px solid var(--border); }
   .nc-flag-list li:last-child { border-bottom: none; }
-  .nc-flag-title { font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 2px; }
+  .nc-flag-title { font-weight: 600; font-size: 12px; display: block; margin-bottom: 2px; }
   .nc-flag-desc { color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
-  .nc-bottom-line { padding: 10px 12px; border-left: 3px solid var(--series-1); background: color-mix(in srgb, var(--series-1) 8%, transparent); font-size: 13px; line-height: 1.6; }
-  .nc-pathway ol { padding-left: 18px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
-  .nc-conflict-box { padding: 10px 12px; border-left: 3px solid var(--serious); background: color-mix(in srgb, var(--serious) 10%, transparent); font-size: 13px; line-height: 1.6; margin-bottom: 8px; }
+  .nc-bottom-line { padding: 10px 12px; border-left: 3px solid var(--series-1); background: color-mix(in srgb, var(--series-1) 8%, transparent); font-size: 14px; line-height: 1.6; }
+  .nc-pathway ol { padding-left: 18px; font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
+  .nc-conflict-box { padding: 10px 12px; border-left: 3px solid var(--serious); background: color-mix(in srgb, var(--serious) 10%, transparent); font-size: 14px; line-height: 1.6; margin-bottom: 8px; }
   .nc-raw-toggle { font-size: 12px; padding: 3px 9px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary); cursor: pointer; margin-bottom: 8px; }
-  .nc-raw-md { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; color: var(--text-secondary); background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 12px; max-height: 480px; overflow: auto; }
+  .nc-raw-md { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; color: var(--text-secondary); background: var(--page); border: 0.5px solid var(--border); border-radius: 8px; padding: 12px; max-height: 480px; overflow: auto; }
 
   /* ---- Task 2: company-scan (external web research, not hybond DB) ---- */
-  .cs-panel { border: 1px solid var(--warning); border-radius: 10px; padding: 16px 18px;
+  .cs-panel { border: 1px solid var(--warning); border-radius: 10px; padding: 16px; /* was 16px 18px */
     margin-bottom: 24px; background: color-mix(in srgb, var(--warning) 6%, var(--surface-1)); }
   .cs-panel-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
   /* Mobile overflow fix (found while CDP-verifying the card display fixes,
@@ -591,26 +614,26 @@
      the flex item shrink and the paragraph wrap normally. */
   .cs-panel-head > div { min-width: 0; }
   .cs-panel-icon { font-size: 18px; line-height: 1.4; }
-  .cs-panel h3 { margin: 0; font-size: 14.5px; }
+  .cs-panel h3 { margin: 0; font-size: 14px; }
   .cs-panel-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 6px; }
   .cs-input { flex: 1; min-width: 240px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--surface-1); color: var(--text-primary); font-size: 13px; }
+    background: var(--surface-1); color: var(--text-primary); font-size: 14px; }
   .nc-external-badge { display: flex; gap: 8px; align-items: center; padding: 8px 12px; margin-bottom: 12px;
     border-radius: 8px; border: 1px solid var(--warning); background: color-mix(in srgb, var(--warning) 16%, var(--surface-1));
-    font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
-  .cs-subhead { font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+    font-size: 12px; font-weight: 600; color: var(--text-primary); }
+  .cs-subhead { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
     color: var(--text-secondary); margin-top: 14px; }
   .cs-subhead-count { font-weight: 600; color: var(--text-muted); text-transform: none; letter-spacing: 0; }
   .cs-chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 6px; }
   .cs-chip { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-radius: 8px;
-    border: 1px solid var(--border); background: var(--surface-1); font-size: 12.5px; }
+    border: 1px solid var(--border); background: var(--surface-1); font-size: 12px; }
   .cs-chip.cs-chip-rescan { border-color: var(--critical); }
   .cs-chip-name { font-weight: 600; }
   .cs-chip-meta { color: var(--text-muted); font-size: 12px; }
   .cs-chip-btn { padding: 4px 9px; border-radius: 6px; border: 1px solid var(--series-1); background: transparent;
     color: var(--series-1); cursor: pointer; font-size: 12px; font-weight: 600; white-space: nowrap; }
   .cs-chip-btn:hover { background: color-mix(in srgb, var(--series-1) 12%, transparent); }
-  .cs-chip-empty { color: var(--text-muted); font-size: 12.5px; padding: 4px 0; }
+  .cs-chip-empty { color: var(--text-muted); font-size: 12px; padding: 4px 0; }
   .cs-manual-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
   .cs-manual-toggle-btn { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent;
     color: var(--text-secondary); cursor: pointer; font-size: 12px; }
@@ -651,18 +674,41 @@
   .sidebar-item { background: none; border: none; border-left: 3px solid transparent;
     padding: 12px 4px 10px; display: flex; flex-direction: column; align-items: center;
     gap: 4px; cursor: pointer; color: var(--text-secondary); position: relative;
-    flex-shrink: 0; font-family: inherit; }
+    flex-shrink: 0; font-family: inherit; font-weight: 500; }
   .sidebar-item .si-icon { font-size: 20px; line-height: 1; position: relative; }
+  /* Tabler Icons webfont (2026-08-26): replaces the emoji glyphs that used
+     to sit directly in .si-icon's text content. No color rule needed here
+     -- .ti inherits `color` like any other inline element, so it already
+     picks up .sidebar-item's own color/:hover/.active rules (teal token)
+     without a separate override. */
+  .si-icon i.ti { font-size: 20px; }
   .sidebar-item .si-label { font-size: 11px; line-height: 1.15; text-align: center; }
   .sidebar-item:hover { background: var(--bg-elevated); }
   .sidebar-item.active { border-left-color: var(--gold-primary); color: var(--gold-primary);
     background: var(--gold-muted); }
-  .sidebar-settings { margin-top: auto; border-top: 1px solid var(--border); }
+  /* Sidebar grouping (2026-08-26): primary group (Главная...Портфель) is
+     the base .sidebar-item look above (full opacity, weight 500);
+     secondary group (Справка, Настройки) dims via .sidebar-secondary on
+     both buttons. The separator+gap is a sibling selector rather than a
+     dedicated "first of group" class -- targets whichever item is the
+     first .sidebar-secondary immediately after a non-secondary one, so it
+     stays correct even if the group membership ever changes. This
+     replaces the old .sidebar-settings margin-top:auto/border-top pin
+     (Настройки was previously alone at the bottom of a tall sidebar;
+     Справка used to be a full-opacity item in the primary flow, per its
+     "6 content sections" shortcut-key comment on the nav markup below --
+     grouping it with Настройки here is this task's own explicit ask, not
+     a bug fix). Desktop-only: see the mobile media query below for why the
+     separator/gap don't carry over to the horizontal bottom bar. */
+  .sidebar-secondary { opacity: 0.75; font-weight: 400; }
+  .sidebar-item:not(.sidebar-secondary) + .sidebar-secondary {
+    margin-top: 12px; border-top: 0.5px solid var(--border); padding-top: 12px;
+  }
   .si-badge-dot { position: absolute; top: -1px; right: 10px; width: 8px; height: 8px;
     border-radius: 50%; background: var(--verdict-red); border: 1.5px solid var(--bg-surface); }
-  .si-badge-count { position: absolute; top: -6px; right: 2px; min-width: 15px; height: 15px;
+  .si-badge-count { position: absolute; top: -6px; right: 2px; min-width: 16px; height: 16px;
     padding: 0 3px; border-radius: 8px; background: var(--verdict-red); color: #fff;
-    font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; }
+    font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
   @media (min-width: 769px) {
     body { margin-left: 64px; }
   }
@@ -674,7 +720,13 @@
       border-top: 3px solid transparent; }
     .sidebar-item.active { border-left-color: transparent; border-top-color: var(--gold-primary); }
     .sidebar-item .si-label { display: none; }
-    .sidebar-settings { margin-top: 0; border-top: none; }
+    /* A horizontal bottom bar has no meaningful "margin-top" gap between
+       adjacent items and a vertical separator would visually clash with
+       the row layout -- the opacity/weight dimming above still applies
+       (that translates fine), just not the spacing/rule. */
+    .sidebar-item:not(.sidebar-secondary) + .sidebar-secondary {
+      margin-top: 0; border-top: none; padding-top: 6px;
+    }
   }
 
   /* ---- tabs ---- */
@@ -685,7 +737,7 @@
   }
   .tab-btn:hover { color: var(--text-primary); }
   .tab-btn.active { color: var(--gold-primary); border-bottom-color: var(--gold-primary); }
-  .tab-badge { color: var(--verdict-red); font-weight: 700; margin-left: 4px; font-size: 12.5px; }
+  .tab-badge { color: var(--verdict-red); font-weight: 700; margin-left: 4px; font-size: 12px; }
 
   /* ---- Портфель sub-tabs (Обзор/Сценарии/Стена/Календарь) ---------------- */
   .subtab-row { margin: 18px 0 20px; background: none; border-bottom: 1px solid var(--bg-border); }
@@ -704,15 +756,16 @@
   .subtab-btn:hover { color: var(--text-primary); }
   .subtab-btn.active { color: var(--gold-primary); border-bottom-color: var(--gold-primary); }
 
-  /* ---- In-tab sub-navigation (Вотчлист/Рынок mini-nav, scroll-spy) -------
-     Same reasoning as .subtab-btn's own comment above: deliberately its own
+  /* ---- In-tab sub-navigation (Вотчлист/Рынок mini-nav) -------------------
+     True tab behavior (2026-08-26): was scroll-spy (click scrolled to an
+     anchor on one long page, IntersectionObserver highlighted whichever
+     section was in view). Now each button shows its one target section
+     (.watchlist-section / .market-section, below) and hides the rest --
+     see initTrueSubnav() near the collapsible-sections init. Still its own
      class, not .tab-btn/.subtab-btn, so gotoTab()'s generic .tab-btn query
-     can't sweep these up. Smaller/more muted than both on purpose -- this
-     scrolls to an in-page section, it does not switch panels, so it should
-     read as a lighter-weight aid, not a real navigation control. Sticky at
-     top:0 is safe here: nothing else in the page pins itself to the top of
-     the viewport during in-tab scrolling (the ticker bar and header scroll
-     away normally), so there's no other fixed element to collide with. */
+     can't sweep these up, and still visually lighter-weight than the main
+     tabs/Портфель subtabs on purpose. Sticky at top:0 kept even though it
+     no longer scroll-spies -- still useful as a persistent in-tab nav bar. */
   .subnav-bar { display: flex; gap: 2px; position: sticky; top: 0; z-index: 40;
     background: var(--bg-surface); border-bottom: 1px solid var(--bg-border);
     margin: 0 0 16px; padding: 0 2px; overflow-x: auto; -webkit-overflow-scrolling: touch;
@@ -724,7 +777,13 @@
   .subnav-btn:hover { color: var(--text-primary); }
   .subnav-btn.active { color: var(--gold-primary); border-bottom-color: var(--gold-primary); }
   .subnav-count { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px;
-    background: var(--gold-primary); color: #1a1a1a; font-size: 10.5px; font-weight: 700; line-height: 15px; }
+    background: var(--gold-primary); color: #1a1a1a; font-size: 10.5px; font-weight: 700; line-height: 16px; }
+  /* Same show-one/hide-rest pattern as .pftab-panel below, scoped per tab
+     (two class names, not one shared) only so each tab's own query
+     (querySelectorAll('.market-section') etc.) can't accidentally sweep up
+     the other tab's sections if they're ever both present in the DOM. */
+  .market-section, .watchlist-section { display: none; }
+  .market-section.active, .watchlist-section.active { display: block; }
 
   /* ---- Watchlist filter bar (Вотчлист -> Фильтры) -------------------------
      Compact single row on desktop; collapses to a toggle-expandable panel
@@ -737,10 +796,10 @@
   .filter-bar-head { display: none; }
   .filter-bar-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   .filter-bar-row select { padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border);
-    background: var(--surface-1); color: var(--text-primary); font-size: 13px; min-width: 150px; }
+    background: var(--surface-1); color: var(--text-primary); font-size: 14px; min-width: 150px; }
   .filter-bar-row select.filter-active { border-color: var(--gold-primary); color: var(--gold-primary); }
   .filter-reset-btn { padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border);
-    background: none; color: var(--text-secondary); font-size: 12.5px; cursor: pointer; }
+    background: none; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
   .filter-reset-btn:hover { color: var(--critical); border-color: var(--critical); }
   .filter-reset-btn.filter-active { border-color: var(--gold-primary); color: var(--gold-primary); }
   .filter-reset-btn.filter-active:hover { border-color: var(--gold-hover); color: var(--gold-hover); }
@@ -750,9 +809,9 @@
     border-radius: 14px; background: var(--gold-muted); border: 1px solid var(--gold-primary);
     color: var(--gold-primary); font-size: 12px; font-weight: 600; }
   .filter-chip button { background: none; border: none; color: inherit; cursor: pointer;
-    font-size: 13px; line-height: 1; padding: 2px 4px; }
+    font-size: 12px; line-height: 1; padding: 2px 4px; }
   .filter-chip button:hover { color: var(--critical); }
-  .filter-result-line { margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); }
+  .filter-result-line { margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
   .filter-toggle-btn { display: none; }
 
   @media (max-width: 768px) {
@@ -760,7 +819,7 @@
     .filter-bar-title { display: none; }
     .filter-toggle-btn { display: inline-flex; align-items: center; width: 100%; padding: 9px 12px;
       border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1);
-      color: var(--text-primary); font-size: 13px; font-weight: 600; cursor: pointer; }
+      color: var(--text-primary); font-size: 14px; font-weight: 600; cursor: pointer; }
     .filter-bar-body { display: none; }
     .filter-bar-body.open { display: block; margin-top: 10px; }
     .filter-bar-row { flex-direction: column; align-items: stretch; }
@@ -769,9 +828,17 @@
 
   .pftab-panel { display: none; }
   .pftab-panel.active { display: block; }
-  .pt-value-text { font-size: 15px; line-height: 1.3; }
-  .tab-panel { display: none; }
+  .pt-value-text { font-size: 16px; line-height: 1.3; }
+  /* Fade-in on reveal (2026-08-26): display:none can't itself be
+     transitioned (an element with no box has nothing to interpolate from),
+     which is why this needs a THIRD class rather than just adding
+     `transition: opacity` to .active directly -- see gotoTab()'s
+     rAF-deferred .tab-panel-visible toggle, which adds this class one
+     frame after .active so the browser has a display:block/opacity:0
+     frame to transition away from. */
+  .tab-panel { display: none; opacity: 0; transition: opacity 120ms ease; }
   .tab-panel.active { display: block; }
+  .tab-panel.active.tab-panel-visible { opacity: 1; }
 
   /* ---- Справка tab (2026-08-17) ------------------------------------------
      No var(--bg-warning) token exists in this codebase (grepped before
@@ -785,13 +852,13 @@
     max-height: calc(100vh - 20px); overflow-y: auto; padding-right: 4px; }
   .spravka-toc-block { margin-bottom: 10px; }
   .spravka-toc-block-header { display: flex; align-items: center; gap: 6px; cursor: pointer;
-    font-weight: 600; font-size: 13.5px; color: var(--gold-primary); padding: 4px 0; }
+    font-weight: 600; font-size: 14px; color: var(--gold-primary); padding: 4px 0; }
   .spravka-toc-arrow { display: inline-block; transition: transform 0.15s ease; font-size: 11px; }
   .spravka-toc-block.collapsed .spravka-toc-arrow { transform: rotate(-90deg); }
   .spravka-toc-block.collapsed .spravka-toc-qlist { display: none; }
   .spravka-toc-qlist { list-style: none; margin: 2px 0 0; padding: 0; }
   .spravka-toc-qlist li { margin: 0; }
-  .spravka-toc-qlist a { display: block; padding: 3px 0 3px 10px; font-size: 13px;
+  .spravka-toc-qlist a { display: block; padding: 3px 0 3px 10px; font-size: 14px;
     color: var(--text-secondary); text-decoration: none; border-left: 2px solid transparent;
     line-height: 1.4; }
   .spravka-toc-qlist a:hover { color: var(--text-primary); }
@@ -800,39 +867,39 @@
   .spravka-content { flex: 1 1 auto; min-width: 0; }
   .spravka-search { display: flex; align-items: center; gap: 6px; background: var(--bg-surface);
     border: 1px solid var(--bg-border); border-radius: 8px; padding: 6px 10px; margin-bottom: 4px; }
-  .spravka-search-icon { font-size: 13px; }
+  .spravka-search-icon { font-size: 12px; }
   .spravka-search input { flex: 1; border: none; background: none; outline: none; font-size: 14px;
     color: var(--text-primary); }
   .spravka-search button { border: none; background: none; color: var(--text-muted); cursor: pointer;
     font-size: 16px; line-height: 1; padding: 0 4px; }
-  .spravka-search-status { font-size: 12.5px; color: var(--text-muted); min-height: 16px; margin: 4px 2px 10px; }
+  .spravka-search-status { font-size: 12px; color: var(--text-muted); min-height: 16px; margin: 4px 2px 10px; }
   .spravka-block-header { font-size: 20px; font-weight: 700; color: var(--gold-primary);
     margin: 34px 0 6px; }
   .spravka-block-header:first-child { margin-top: 4px; }
-  .spravka-block-range { font-size: 13px; font-weight: 400; color: var(--text-muted); margin-left: 8px; }
+  .spravka-block-range { font-size: 12px; font-weight: 400; color: var(--text-muted); margin-left: 8px; }
   .spravka-q { scroll-margin-top: 10px; }
   .spravka-q-title { font-size: 18px; font-weight: 500; margin: 20px 0 8px; color: var(--text-primary); }
   .spravka-p { font-size: 14px; line-height: 1.7; color: var(--text-secondary); margin: 0 0 10px;
     white-space: pre-line; }
-  .spravka-formula { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 13px;
+  .spravka-formula { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 14px;
     white-space: pre-wrap; background: var(--surface-1); border-left: 3px solid var(--gold-primary);
     border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; color: var(--text-primary);
     line-height: 1.55; overflow-x: auto; }
   .spravka-table-wrap { overflow-x: auto; margin: 0 0 12px; }
-  .spravka-table { border-collapse: collapse; font-size: 13.5px; width: 100%; }
-  .spravka-table th, .spravka-table td { border: 1px solid var(--bg-border); padding: 6px 10px; text-align: left; }
+  .spravka-table { border-collapse: collapse; font-size: 14px; width: 100%; }
+  .spravka-table th, .spravka-table td { border: 0.5px solid var(--bg-border); padding: 6px 10px; text-align: left; }
   .spravka-table th { background: var(--bg-elevated); color: var(--text-primary); font-weight: 600; }
   .spravka-table td { color: var(--text-secondary); }
-  .spravka-hybond { font-size: 13.5px; line-height: 1.6; color: var(--text-secondary);
+  .spravka-hybond { font-size: 14px; line-height: 1.6; color: var(--text-secondary);
     background: var(--bg-elevated); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; }
   .spravka-nav-btn { display: inline-block; margin: 6px 6px 0 0; border: 1px solid var(--gold-primary);
     color: var(--gold-primary); background: none; font-size: 12px; padding: 4px 10px;
     border-radius: 4px; cursor: pointer; transition: background 0.15s; }
   .spravka-nav-btn:hover { background: var(--gold-muted); }
-  .spravka-warning { font-size: 13.5px; line-height: 1.6; color: var(--text-primary);
+  .spravka-warning { font-size: 14px; line-height: 1.6; color: var(--text-primary);
     background: var(--verdict-yellow-bg); border-left: 3px solid var(--verdict-yellow);
     border-radius: 6px; padding: 8px 12px; margin: 0 0 12px; }
-  .spravka-hr { border: none; border-top: 1px solid var(--bg-border); margin: 22px 0; }
+  .spravka-hr { border: none; border-top: 0.5px solid var(--bg-border); margin: 22px 0; }
   .spravka-footer { color: var(--text-muted); font-size: 12px; text-align: center;
     border-top: 0.5px solid var(--border); padding-top: 16px; margin-top: 24px; line-height: 1.7; }
   mark.spravka-hit { background: var(--gold-primary); color: #1a1a1a; border-radius: 2px; padding: 0 1px; }
@@ -860,11 +927,11 @@
 
   /* ---- universe screener ---- */
   .uni-stats { display: flex; gap: 20px; flex-wrap: wrap; font-size: 14px; color: var(--text-secondary);
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: var(--space-4); margin-bottom: 14px; } /* was 12px 16px */
+    background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 10px; padding: var(--space-4); margin-bottom: 14px; } /* was 12px 16px */
   .uni-stats b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
   .uni-filters {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px 20px;
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px;
+    background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px;
   }
   .uni-filter-group { display: flex; flex-direction: column; gap: 4px; }
   .uni-filter-label { font-size: 14px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .02em;
@@ -890,28 +957,28 @@
   .uni-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
   .uni-btn {
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px;
-    font-size: 12.5px; font-weight: 600; color: var(--text-primary); cursor: pointer;
+    font-size: 12px; font-weight: 600; color: var(--text-primary); cursor: pointer;
   }
   .uni-btn:hover { border-color: var(--series-1); color: var(--series-1); }
   .uni-star { color: var(--warning); }
   .uni-caveat { font-size: 12px; color: var(--text-muted); margin: 6px 0 0; }
   /* ---- Shared pagination component (Pagination task, 2026-08-26) ---- */
   .pgn-wrap:empty { display: none; }
-  .pgn-count { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 8px; }
+  .pgn-count { font-size: 12px; color: var(--text-secondary); margin: 0 0 8px; }
   .pgn-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
     margin-top: 10px; outline: none; }
-  .pgn-size-label { font-size: 12.5px; color: var(--text-muted); }
+  .pgn-size-label { font-size: 12px; color: var(--text-muted); }
   .pgn-size-group { display: flex; gap: 4px; }
   .pgn-size-btn { background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;
-    padding: 5px 10px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; min-width: 32px; }
+    padding: 5px 10px; font-size: 12px; color: var(--text-secondary); cursor: pointer; min-width: 32px; }
   .pgn-size-btn:hover { border-color: var(--gold-primary); color: var(--gold-primary); }
   .pgn-size-btn.active { background: var(--gold-primary); border-color: var(--gold-primary); color: #1a1a1a; font-weight: 600; }
   .pgn-nav { display: flex; align-items: center; gap: 10px; margin-left: auto; }
   .pgn-btn { background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;
-    padding: 6px 12px; font-size: 12.5px; font-weight: 600; color: var(--text-primary); cursor: pointer; }
+    padding: 6px 12px; font-size: 12px; font-weight: 600; color: var(--text-primary); cursor: pointer; }
   .pgn-btn:hover:not(:disabled) { border-color: var(--gold-primary); color: var(--gold-primary); }
   .pgn-btn:disabled { opacity: 0.4; cursor: default; }
-  .pgn-page-label { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
+  .pgn-page-label { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
   @media (max-width: 640px) {
     .pgn-controls { gap: 10px; }
     .pgn-nav { margin-left: 0; width: 100%; justify-content: space-between; }
@@ -921,9 +988,9 @@
   .mkt-collapse-toggle { margin-bottom: 10px; }
   .mkt-view-row { flex-wrap: wrap; gap: 8px; }
   .mkt-filters-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-  .mkt-filters-summary { font-size: 12.5px; color: var(--text-secondary); }
+  .mkt-filters-summary { font-size: 12px; color: var(--text-secondary); }
   #marketTable th { cursor: pointer; white-space: nowrap; }
-  #marketTable td { white-space: nowrap; } /* was font-size: 12.5px -- overrode the table default below the readability-pass minimum; now inherits the 14px base */
+  #marketTable td { white-space: nowrap; } /* was font-size: 12px -- overrode the table default below the readability-pass minimum; now inherits the 14px base */
   .uni-empty { padding: 30px; text-align: center; color: var(--text-muted); }
 
   /* ---- Shared empty-state component -------------------------------------- */
@@ -931,7 +998,7 @@
     text-align: center; padding: 40px 20px; gap: 6px; }
   .empty-state-icon { color: var(--text-tertiary); opacity: .6; margin-bottom: 4px; }
   .empty-state-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
-  .empty-state-sub { font-size: 13px; color: var(--text-tertiary); max-width: 440px; line-height: 1.6; }
+  .empty-state-sub { font-size: 14px; color: var(--text-tertiary); max-width: 440px; line-height: 1.6; }
   .empty-state-action { margin-top: 10px; }
 
   /* ---- Loading spinner (gold, pure CSS) ----------------------------------- */
@@ -974,7 +1041,7 @@
   .time-toggle, .view-toggle { display: flex; gap: 4px; background: var(--surface-1);
     border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
   .time-btn, .view-btn { border: none; background: transparent; color: var(--text-secondary);
-    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12.5px; }
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
   .time-btn.active, .view-btn.active { background: var(--series-1); color: var(--text-primary); }
   /* User-defined OFZ scenario: distinct color from base/stress/bull (which
      use the standard active-blue) even when active -- Task 5, must not be
@@ -985,16 +1052,16 @@
   .mm-controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
   .mm-ctrl-group label { display: block; font-size: 14px; color: var(--text-muted); margin-bottom: 3px; }
   .mm-ctrl-group select { width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border);
-    background: var(--surface-1); color: var(--text-primary); font-size: 12.5px; }
+    background: var(--surface-1); color: var(--text-primary); font-size: 12px; }
   .mm-filter-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
     padding: 10px 14px; margin-bottom: 14px; font-size: 14px; }
   .mm-filter-row label.chk { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); white-space: nowrap; }
   .mm-filter-row label.chk.chk-active { color: var(--gold-primary); font-weight: 600; }
   .mm-signal-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
-  .mm-signal-card { border-radius: 10px; padding: var(--space-4); border: 1px solid var(--border); } /* was 10px 14px */
+  .mm-signal-card { border-radius: 10px; padding: var(--space-4); border: 0.5px solid var(--border); } /* was 10px 14px */
   .mm-signal-card .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .mm-signal-card .l { font-size: 13px; margin-top: 1px; }
+  .mm-signal-card .l { font-size: 12px; margin-top: 1px; }
   .mm-signal-up { background: color-mix(in srgb, var(--good) 14%, var(--surface-1)); }
   .mm-signal-up .n, .mm-signal-up .l { color: var(--good); }
   .mm-signal-flat { background: color-mix(in srgb, var(--warning) 14%, var(--surface-1)); }
@@ -1004,20 +1071,20 @@
   .mm-signal-none { background: var(--surface-1); }
   .mm-signal-none .n { color: var(--text-secondary); }
   .mm-signal-none .l { color: var(--text-muted); }
-  .mm-chart-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+  .mm-chart-card { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 12px;
     padding: var(--space-4); position: relative; } /* was 14px */
   #mmChart { width: 100%; height: 520px; display: block; cursor: crosshair; }
   .mm-empty-overlay { position: absolute; left: var(--space-4); right: var(--space-4); top: var(--space-4); height: 520px;
     display: flex; align-items: center; justify-content: center; pointer-events: none; }
   .mm-empty-overlay .empty-state-action { pointer-events: auto; }
-  .mm-legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 13px; color: var(--text-secondary); }
+  .mm-legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
   .mm-legend-item { display: flex; align-items: center; gap: 5px; }
   .mm-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .mm-stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
-  .mm-stat-tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: var(--space-4); } /* was 10px 14px */
+  .mm-stat-tile { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 10px; padding: var(--space-4); } /* was 10px 14px */
   .mm-stat-tile .value { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .mm-stat-tile .label { color: var(--text-secondary); font-size: 13px; margin-top: 1px; }
-  .tooltip .muted { opacity: 0.7; font-size: 13px; }
+  .mm-stat-tile .label { color: var(--text-secondary); font-size: 12px; margin-top: 1px; }
+  .tooltip .muted { opacity: 0.7; font-size: 14px; }
   .pd-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
   .pd-row .pd-label { width: 92px; font-size: 12px; opacity: 0.85; }
   .pd-bar-track { flex: 1; height: 6px; background: rgba(255,255,255,0.18); border-radius: 4px; overflow: hidden; }
@@ -1027,16 +1094,16 @@
 
   /* --- CBR tab --- */
   .cbr-statebar { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center;
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
-    padding: var(--space-4); margin-bottom: 16px; font-size: 13px; } /* was 12px 16px */
+    background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 10px;
+    padding: var(--space-4); margin-bottom: 16px; font-size: 14px; } /* was 12px 16px */
   .cbr-statebar .stat b { font-variant-numeric: tabular-nums; }
-  .cbr-signal-badge { padding: 4px 10px; border-radius: 7px; font-weight: 700; font-size: 12.5px; color: var(--text-primary); }
+  .cbr-signal-badge { padding: 4px 10px; border-radius: 7px; font-weight: 700; font-size: 12px; color: var(--text-primary); }
   .cbr-signal-shorten { background: var(--critical); }
   .cbr-signal-extend { background: var(--good); }
   .cbr-signal-neutral { background: var(--text-muted); }
 
-  .cbr-timeline-wrap { overflow-x: auto; padding: 20px 6px 6px; background: var(--surface-1);
-    border: 1px solid var(--border); border-radius: 12px; margin-bottom: 14px; }
+  .cbr-timeline-wrap { overflow-x: auto; padding: 24px 8px 8px; background: var(--surface-1); /* padding was 20px 6px 6px */
+    border: 0.5px solid var(--border); border-radius: 12px; margin-bottom: 14px; }
   .cbr-timeline { display: flex; gap: 4px; min-width: max-content; }
   .cbr-node { display: flex; flex-direction: column; align-items: center; width: 92px;
     cursor: pointer; padding: 4px 2px; border-radius: 8px; }
@@ -1047,19 +1114,19 @@
   .cbr-node-circle.hollow { background: transparent; border: 2px solid var(--baseline); }
   .cbr-node-star { font-size: 12px; color: var(--warning); height: 12px; line-height: 1; }
   .cbr-node-change { font-size: 12px; color: var(--text-secondary); height: 14px; }
-  .cbr-node-date { font-size: 13px; color: var(--text-muted); margin-top: 2px; text-align: center; }
-  .cbr-node-diffbadge { font-size: 13px; height: 16px; }
+  .cbr-node-date { font-size: 12px; color: var(--text-muted); margin-top: 2px; text-align: center; }
+  .cbr-node-diffbadge { font-size: 12px; height: 16px; }
 
-  .cbr-detail-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
-    padding: 16px 18px; margin-bottom: 16px; display: none; }
+  .cbr-detail-card { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 12px;
+    padding: 16px; margin-bottom: 16px; display: none; } /* padding was 16px 18px */
   .cbr-detail-card.show { display: block; }
-  .cbr-detail-card h3 { margin: 0 0 8px; font-size: 15px; }
-  .cbr-detail-card .press-excerpt { font-size: 13px; color: var(--text-secondary); line-height: 1.6;
+  .cbr-detail-card h3 { margin: 0 0 8px; font-size: 16px; }
+  .cbr-detail-card .press-excerpt { font-size: 14px; color: var(--text-secondary); line-height: 1.6;
     border-left: 3px solid var(--border); padding-left: 10px; margin: 8px 0; }
-  .cbr-detail-metrics { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; margin: 8px 0; }
+  .cbr-detail-metrics { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; margin: 8px 0; }
   .cbr-detail-metrics span b { font-variant-numeric: tabular-nums; }
-  .cbr-detail-note { font-size: 13px; margin: 8px 0; }
-  .cbr-detail-card a { color: var(--series-1); font-size: 12.5px; }
+  .cbr-detail-note { font-size: 14px; margin: 8px 0; }
+  .cbr-detail-card a { color: var(--series-1); font-size: 12px; }
 
   #cbrChart { width: 100%; height: 320px; display: block; }
   .cbr-chart-card { position: relative; }
@@ -1079,34 +1146,34 @@
   #spreadHistChart { width: 100%; height: 320px; display: block; }
 
   /* ---- Rate Decision Simulator ------------------------------------------- */
-  .cbr-sim-refs { display: flex; gap: 16px; flex-wrap: wrap; margin: 10px 0 14px; font-size: 12.5px; }
+  .cbr-sim-refs { display: flex; gap: 16px; flex-wrap: wrap; margin: 10px 0 14px; font-size: 12px; }
   .cbr-sim-ref { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
   .cbr-sim-ref .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; background: var(--gold-primary); }
   .cbr-sim-ref b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
   .cbr-sim-slider-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
   .cbr-sim-slider-row label { font-size: 14px; color: var(--text-secondary); flex-shrink: 0; }
   .cbr-sim-slider-row input[type=range] { flex: 1; }
-  #cbrSimRateLabel { color: var(--gold-primary); font-size: 15px; font-variant-numeric: tabular-nums; }
+  #cbrSimRateLabel { color: var(--gold-primary); font-size: 16px; font-variant-numeric: tabular-nums; }
   .cbr-sim-dates { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
   /* Same dashed-border "user input, not CBR data" convention as the OFZ
      tab's .time-btn.custom-scen -- keeps the two visually inconsistent-proof. */
   .cbr-sim-datebtn { border: 1px dashed var(--gold-primary); background: transparent; color: var(--gold-primary);
-    border-radius: var(--radius-btn); padding: 5px 12px; cursor: pointer; font-size: 12.5px; }
+    border-radius: var(--radius-btn); padding: 5px 12px; cursor: pointer; font-size: 12px; }
   .cbr-sim-datebtn.active { background: var(--gold-primary); color: var(--bg-primary); border-style: solid; font-weight: 600; }
   .cbr-sim-badge { display: inline-block; font-size: 12px; color: var(--gold-primary); border: 1px dashed var(--gold-primary);
     border-radius: var(--radius-badge); padding: 2px 8px; margin: 4px 0 10px; }
   .cbr-sim-result { border: 1px dashed var(--gold-primary); border-radius: var(--radius-card); padding: var(--space-4); margin-top: 4px; }
   .cbr-sim-result-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
-    padding: 6px 0; border-bottom: 1px solid var(--bg-border); }
+    padding: 6px 0; border-bottom: 0.5px solid var(--bg-border); }
   .cbr-sim-result-row:last-child { border-bottom: none; }
-  .cbr-sim-result-label { color: var(--text-secondary); font-size: 13px; }
+  .cbr-sim-result-label { color: var(--text-secondary); font-size: 12px; }
   .cbr-sim-result-value { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
   .cbr-sim-vs { font-size: 12px; color: var(--text-secondary); }
-  .cbr-sim-goto { display: inline-block; margin-top: 10px; font-size: 12.5px; color: var(--series-1); }
+  .cbr-sim-goto { display: inline-block; margin-top: 10px; font-size: 12px; color: var(--series-1); }
 
   .cbr-notif-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
-  .cbr-notif-card { background: var(--surface-1); border: 1px solid var(--border); border-left: 4px solid var(--baseline);
-    border-radius: 10px; padding: 12px 14px; cursor: pointer; font-size: 12.5px; }
+  .cbr-notif-card { background: var(--surface-1); border: 0.5px solid var(--border); border-left: 4px solid var(--baseline);
+    border-radius: 10px; padding: 12px; cursor: pointer; font-size: 12px; } /* padding was 12px 14px */
   .cbr-notif-card.sig-shorten { border-left-color: var(--critical); }
   .cbr-notif-card.sig-extend { border-left-color: var(--good); }
   .cbr-notif-card.sig-neutral { border-left-color: var(--text-muted); }
@@ -1122,7 +1189,7 @@
     padding: 0 20px; scrollbar-width: none; }
   .ticker-bar::-webkit-scrollbar { display: none; }
   .ticker-track { display: inline-flex; align-items: center; gap: 26px; }
-  .ticker-item { color: var(--text-secondary); text-decoration: none; cursor: pointer; font-size: 12.5px;
+  .ticker-item { color: var(--text-secondary); text-decoration: none; cursor: pointer; font-size: 12px;
     white-space: nowrap; background: none; border: none; padding: 0; font-family: inherit; }
   .ticker-item:hover { color: var(--gold-primary); }
   .ticker-item b { color: var(--gold-primary); font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -1162,7 +1229,7 @@
   .signals-strip { display: flex; flex-direction: column; gap: 6px; margin: 0 0 24px; }
   .ss-item { display: flex; align-items: center; gap: 10px; background: var(--bg-elevated);
     border-left: 3px solid var(--verdict-yellow); border-radius: var(--radius-btn);
-    padding: 8px 12px; cursor: pointer; font-size: 12.5px; }
+    padding: 8px 12px; cursor: pointer; font-size: 12px; }
   .ss-item.ss-critical { border-left-color: var(--verdict-red); }
   .ss-item.ss-swap { border-left-color: var(--series-1); } /* opportunity, not a warning -- distinct from the red/gold severity colors above */
   .ss-badge { font-size: 14px; flex-shrink: 0; }
@@ -1171,14 +1238,14 @@
   .ss-summary { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; flex: 1; min-width: 0; }
   .ss-time { color: var(--text-tertiary); flex-shrink: 0; white-space: nowrap; }
-  .ss-more { color: var(--gold-primary); font-size: 12.5px; cursor: pointer; text-decoration: none; padding: 4px 2px; }
+  .ss-more { color: var(--gold-primary); font-size: 12px; cursor: pointer; text-decoration: none; padding: 4px 2px; }
   .ss-more:hover { text-decoration: underline; }
-  .signals-strip-empty { color: var(--text-tertiary); font-size: 13px; padding: 10px 2px; margin-bottom: 24px; }
+  .signals-strip-empty { color: var(--text-tertiary); font-size: 14px; padding: 10px 2px; margin-bottom: 24px; }
 
   /* ---- Market Pulse tiles (Рынок tab) ------------------------------------ */
   .pulse-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;
     margin-bottom: 16px; }
-  .pulse-tile { background: var(--bg-surface); border: 1px solid var(--bg-border); border-radius: var(--radius-card);
+  .pulse-tile { background: var(--bg-surface); border: 0.5px solid var(--bg-border); border-radius: var(--radius-card);
     box-shadow: var(--shadow-card); padding: var(--space-4); cursor: pointer;
     position: relative; transition: var(--transition); } /* was 14px 16px */
   .pulse-tile:hover { border-color: var(--gold-primary); transform: translateY(-2px); box-shadow: var(--shadow-card); }
@@ -1190,7 +1257,7 @@
     font-variant-numeric: tabular-nums; }
   .pulse-tile .pt-value.pt-good { color: var(--verdict-green); }
   .pulse-tile .pt-value.pt-bad { color: var(--verdict-red); }
-  .pulse-tile .pt-label { font-size: 13px; color: var(--text-tertiary); margin-top: 2px;
+  .pulse-tile .pt-label { font-size: 12px; color: var(--text-tertiary); margin-top: 2px;
     text-transform: uppercase; letter-spacing: 0.5px; } /* was 11.5px var(--text-secondary), no uppercase/letter-spacing */
   .pulse-tile .pt-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
 
@@ -1200,7 +1267,7 @@
     border-radius: var(--radius-btn); padding: 5px 10px; cursor: pointer; font-size: 14px; line-height: 1; }
   .mvs-btn.active { border-color: var(--gold-primary); color: var(--gold-primary); }
   .bond-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-  .bond-card { background: var(--bg-surface); border: 1px solid var(--bg-border); border-radius: var(--radius-card);
+  .bond-card { background: var(--bg-surface); border: 0.5px solid var(--bg-border); border-radius: var(--radius-card);
     box-shadow: var(--shadow-card); padding: var(--space-4); cursor: pointer;
     position: relative; transition: var(--transition); } /* was 14px */
   .bond-card:hover { border-color: var(--gold-primary); transform: translateY(-2px); box-shadow: var(--shadow-card); }
@@ -1209,8 +1276,8 @@
     border-radius: var(--radius-card) var(--radius-card) 0 0; }
   .bond-card:hover::before { opacity: 1; }
   .bc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-  .bc-badge { font-size: 15px; }
-  .bc-issuer { font-weight: 700; font-size: 13px; line-height: 1.3; margin-bottom: 2px; }
+  .bc-badge { font-size: 16px; }
+  .bc-issuer { font-weight: 700; font-size: 14px; line-height: 1.3; margin-bottom: 2px; }
   .bc-secid { font-family: ui-monospace, monospace; font-size: 12px; color: var(--text-tertiary); margin-bottom: 8px; }
   .bc-ytm { font-size: 22px; font-weight: 700; color: var(--gold-primary); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
   .bc-sub { font-size: 12px; color: var(--text-secondary); margin: 2px 0 8px; }
@@ -1223,23 +1290,35 @@
   .iw-row-wrap { background: var(--bg-surface); border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.3); margin-bottom: 8px;
     border-left: 4px solid var(--border); overflow: hidden; }
+  /* Critical-health background tint (2026-08-26): data-health is only set
+     by renderIssuerRowsPage() (active/tier=1 rows) -- the passive-monitoring
+     list has no health concept, so its rows are unaffected. Green/yellow
+     intentionally untouched, keeping the neutral card background. */
+  .iw-row-wrap[data-health="red"] { background: rgba(226,75,74,0.04); }
+  .iw-row-wrap[data-health="orange"] { background: rgba(239,159,39,0.04); }
   .iw-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer;
     transition: background 0.15s; }
   .iw-row:hover { background: var(--bg-elevated); }
   .iw-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
   .iw-name { font-weight: 500; font-size: 14px; flex: 1 1 auto; min-width: 0; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
-  .iw-rating { color: var(--text-muted); font-size: 13px; flex-shrink: 0; width: 64px; }
+  .iw-rating { color: var(--text-secondary); font-size: 12px; flex-shrink: 0; width: 64px; }
   .iw-rating-trend { margin-left: 3px; cursor: help; font-weight: 700; }
   .iw-rating-timeline { margin-top: 10px; }
-  .iw-rating-timeline-row { display: flex; gap: 10px; font-size: 13px; padding: 3px 0;
+  .iw-rating-timeline-row { display: flex; gap: 10px; font-size: 14px; padding: 3px 0;
     color: var(--text-secondary); align-items: baseline; }
   .iw-rating-timeline-date { color: var(--text-muted); width: 88px; flex-shrink: 0; }
   .iw-rating-timeline-rating { font-weight: 600; color: var(--text-primary); width: 64px; flex-shrink: 0; }
   .iw-rating-timeline-agency { color: var(--text-muted); }
   .iw-rating-timeline-more { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
-  .iw-aey { color: #C9A227; font-size: 13px; flex-shrink: 0; width: 60px; text-align: right; }
-  .iw-status { color: var(--text-secondary); font-size: 13px; flex-shrink: 0; width: 140px; text-align: right; }
+  /* AEY as hero number (2026-08-26): the one figure a glance at this card
+     should land on -- everything else on the row (.iw-rating/.iw-status)
+     is 12px secondary text. width:auto replaces the old fixed 60px (which
+     fit a 12px number but would clip a 22px one); #sec-table's own
+     .iw-row-meta override below already forced width:auto anyway, so this
+     only changes behavior for the passive-monitoring list's flat rows. */
+  .iw-aey { color: #C9A227; font-size: 22px; font-weight: 500; flex-shrink: 0; width: auto; text-align: right; }
+  .iw-status { color: var(--text-secondary); font-size: 12px; flex-shrink: 0; width: 140px; text-align: right; }
   .iw-arrow { flex-shrink: 0; width: 1.2em; text-align: center; color: var(--text-muted); }
   .iw-health-reason { font-size: 11.5px; color: var(--verdict-orange); padding: 0 16px 8px 20px; }
   /* Single-line compact layout (Card display fixes, 2026-08-25): was label
@@ -1292,7 +1371,7 @@
     display: flex; align-items: center; gap: 10px;
   }
   #sec-table .iw-name {
-    font-size: 15px; font-weight: 600; color: var(--text-primary);
+    font-size: 16px; font-weight: 600; color: var(--text-primary);
   }
   #sec-table .iw-row-meta {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-left: 20px;
@@ -1308,10 +1387,10 @@
       .iw-status at all; #sec-table rows keep it via .iw-row-meta wrapping
       instead of hiding it -- this rule is now effectively passive-list-only */
     .iw-rating { width: auto; }
-    .iw-meta { font-size: 13px; padding-left: 14px; gap: 8px; }
+    .iw-meta { font-size: 12px; padding-left: 14px; gap: 8px; }
     .iw-pillars-row { padding-left: 14px; gap: 10px; }
     .iw-pillar-bar { width: 40px; }
-    .iw-pillar-label, .iw-pillar-score, .iw-health-reason { font-size: 13px; }
+    .iw-pillar-label, .iw-pillar-score, .iw-health-reason { font-size: 12px; }
     .iw-row { padding: 8px 12px; min-height: 44px; box-sizing: border-box; }
   }
 
@@ -1325,23 +1404,23 @@
     opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }
   .iw-drawer-overlay.open { opacity: 1; pointer-events: auto; }
   .iw-drawer { position: fixed; top: 0; right: 0; height: 100%; width: 420px; max-width: 100vw;
-    background: var(--bg-surface); border-left: 1px solid var(--border); z-index: 196;
+    background: var(--bg-surface); border-left: 0.5px solid var(--border); z-index: 196;
     box-shadow: -4px 0 16px rgba(0,0,0,0.35); transform: translateX(100%);
     transition: transform 0.25s ease; overflow-y: auto; padding: 44px 18px 20px; }
   .iw-drawer.open { transform: translateX(0); }
   .iw-drawer-close { position: absolute; top: 10px; right: 14px; border: 1px solid var(--bg-border);
     background: var(--bg-elevated); color: var(--text-secondary); width: 28px; height: 28px;
-    border-radius: 999px; cursor: pointer; font-size: 15px; line-height: 1; display: flex;
+    border-radius: 999px; cursor: pointer; font-size: 16px; line-height: 1; display: flex;
     align-items: center; justify-content: center; }
   .iw-drawer-close:hover { color: var(--text-primary); border-color: var(--gold-primary); }
-  .iw-drawer-title { font-size: 15px; font-weight: 600; margin: 0 28px 12px 0; }
+  .iw-drawer-title { font-size: 16px; font-weight: 600; margin: 0 28px 12px 0; }
   /* Mobile: full-width bottom sheet instead of a right-side panel -- same
      .open class/JS, just a different closed transform (translateY instead
      of translateX) and edge (bottom instead of right). */
   @media (max-width: 640px) {
     .iw-drawer {
       top: auto; right: 0; bottom: 0; left: 0; width: 100%; height: 85vh;
-      border-left: none; border-top: 1px solid var(--border);
+      border-left: none; border-top: 0.5px solid var(--border);
       border-radius: 14px 14px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,0.35);
       transform: translateY(100%);
     }
@@ -1355,22 +1434,22 @@
     opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }
   .settings-drawer-overlay.open { opacity: 1; pointer-events: auto; }
   .settings-drawer { position: fixed; top: 0; right: 0; height: 100%; width: 320px; max-width: 100vw;
-    background: var(--bg-surface); border-left: 1px solid var(--border); z-index: 198;
+    background: var(--bg-surface); border-left: 0.5px solid var(--border); z-index: 198;
     box-shadow: -4px 0 16px rgba(0,0,0,0.35); transform: translateX(100%);
     transition: transform 0.25s ease; overflow-y: auto; padding: 44px 18px 20px; }
   .settings-drawer.open { transform: translateX(0); }
   .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 14px 0; border-bottom: 1px solid var(--border); }
+    padding: 14px 0; border-bottom: 0.5px solid var(--border); }
   .settings-row:last-child { border-bottom: none; }
-  .settings-row-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+  .settings-row-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
   .settings-row .disclosure-pill { margin: 0; width: 100%; text-align: center; }
   .settings-lang-select { border: 1px solid var(--bg-border); background: var(--bg-elevated);
-    color: var(--text-muted); border-radius: var(--radius-btn); padding: 5px 10px; font-size: 12.5px;
+    color: var(--text-muted); border-radius: var(--radius-btn); padding: 5px 10px; font-size: 12px;
     cursor: not-allowed; }
   @media (max-width: 640px) {
     .settings-drawer {
       top: auto; right: 0; bottom: 0; left: 0; width: 100%; height: 85vh;
-      border-left: none; border-top: 1px solid var(--border);
+      border-left: none; border-top: 0.5px solid var(--border);
       border-radius: 14px 14px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,0.35);
       transform: translateY(100%);
     }
@@ -1397,19 +1476,19 @@
     gap: 20px; flex-wrap: wrap; background: var(--surface-1); border-bottom: 0.5px solid var(--border);
     border-radius: 12px 12px 0 0; padding: 20px; }
   .home-hero-headline { font-size: 18px; font-weight: 700; }
-  .home-hero-sub { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+  .home-hero-sub { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
   /* Queue backlog indicator (DATA.queue_count) -- hero band + Вотчлист tab,
      see renderQueueIndicator(). var(--text-warning) doesn't exist as a
      token in this file; var(--warning) (= --verdict-yellow) is the real
      equivalent already used everywhere else for this kind of "needs
      attention, not an error" signal. */
-  .queue-indicator { display: inline-block; font-size: 13px; color: var(--warning);
+  .queue-indicator { display: inline-block; font-size: 12px; color: var(--warning);
     cursor: pointer; margin-top: 4px; }
   .queue-indicator:hover { text-decoration: underline; }
   #watchlistQueueIndicator:empty { display: none; }
   #watchlistQueueIndicator .queue-indicator { margin: 0 0 14px; }
   .home-hero-pulse { display: flex; gap: 10px; flex-wrap: wrap; }
-  .home-hero-pulse .pulse-tile { padding: 10px 14px; }
+  .home-hero-pulse .pulse-tile { padding: 8px 12px; } /* was 10px 14px */
   .home-hero-pulse .pt-value { font-size: 16px; }
   /* auto-fit/minmax rather than a fixed 4-up grid: at 1280px this settles
      into 4 columns, but still wraps gracefully on the widths in between
@@ -1428,16 +1507,16 @@
   .home-tile-dragging { opacity: 0.5; cursor: grabbing; }
   .home-tile-drop-target { border: 2px solid var(--gold-primary); }
   #homeColActionsHeader { cursor: grab; }
-  .home-issuer-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .home-issuer-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 0.5px solid var(--border); cursor: pointer; }
   .home-issuer-row:last-child { border-bottom: none; }
   .home-verdict-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .home-issuer-name { font-weight: 500; font-size: 13px; }
+  .home-issuer-name { font-weight: 500; font-size: 14px; }
   .home-issuer-meta { font-size: 12px; color: var(--text-muted); }
-  .home-event-row { padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .home-event-row { padding: 5px 0; border-bottom: 0.5px solid var(--border); }
   .home-event-row:last-child { border-bottom: none; }
   .home-event-tag { font-size: 12px; font-weight: 700; text-transform: uppercase; }
-  .home-event-issuer { font-weight: 700; font-size: 13px; }
-  .home-event-desc { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .home-event-issuer { font-weight: 700; font-size: 14px; }
+  .home-event-desc { font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .home-event-date { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
   .home-sector-bar-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 6px 0; }
   .home-sector-bar-label { min-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1445,7 +1524,7 @@
   .home-sector-bar-fill { height: 100%; background: var(--gold-primary); }
   .home-preset-btn { display: block; width: 100%; padding: 8px 12px; margin-bottom: 6px; border-radius: 8px;
     border: 0.5px solid var(--border); background: var(--surface-1); color: var(--text-primary);
-    cursor: pointer; font-size: 13px; font-weight: 600; text-align: left; }
+    cursor: pointer; font-size: 14px; font-weight: 600; text-align: left; }
   .home-preset-btn:hover { border-color: #C9A227; color: #C9A227; }
   /* Nested inside a .home-card tile as of the draggable-tiles task
      (2026-08-26) -- that card already contributes 14px padding, so this no
@@ -1457,9 +1536,9 @@
   .home-action-tile:hover { border-color: #C9A227; }
   .home-action-icon { width: 36px; height: 36px; border-radius: 8px; background: rgba(201,162,39,0.12);
     display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #C9A227; }
-  .home-action-label { font-size: 13px; font-weight: 500; }
+  .home-action-label { font-size: 14px; font-weight: 500; }
   .home-action-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-  #backToHomeLink { display: none; font-size: 13px; color: var(--text-muted); cursor: pointer; margin: 14px 0 -4px; }
+  #backToHomeLink { display: none; font-size: 12px; color: var(--text-muted); cursor: pointer; margin: 14px 0 -4px; }
   #backToHomeLink:hover { color: var(--gold-primary); }
   @media (max-width: 768px) {
     .home-columns { grid-template-columns: 1fr; }
@@ -1505,6 +1584,13 @@
     .iw-drawer-close { width: 44px; height: 44px; }
   }
 </style>
+<!-- Google Fonts (Inter, 2026-08-26): third external CDN dependency in
+     this dashboard, after Sortable.js and Tabler Icons. Only 400/500
+     weights -- 600/700 aren't loaded since the design system doesn't use
+     them here (see the body font-family rule above). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body data-disclosure="standard">
 <!-- Vertical sidebar navigation (Navigation Shell task, 2026-08-25) --
@@ -1517,27 +1603,27 @@
      directly, same as the existing #backToHomeLink). -->
 <nav class="sidebar" id="sidebar">
   <button type="button" class="sidebar-item" id="sidebarHomeBtn" data-shortcut="1" title="Главная (1)">
-    <span class="si-icon">🏠</span><span class="si-label">Главная</span>
+    <span class="si-icon"><i class="ti ti-home"></i></span><span class="si-label">Главная</span>
   </button>
   <button type="button" class="sidebar-item" data-tab="watchlist" data-shortcut="2" title="Вотчлист (2)">
-    <span class="si-icon">📊<span class="si-badge-count" id="sidebarWatchlistBadge" style="display:none"></span></span>
+    <span class="si-icon"><i class="ti ti-chart-bar"></i><span class="si-badge-count" id="sidebarWatchlistBadge" style="display:none"></span></span>
     <span class="si-label">Вотчлист</span>
   </button>
   <button type="button" class="sidebar-item" data-tab="market" data-shortcut="3" title="Рынок (3)">
-    <span class="si-icon">🔍</span><span class="si-label">Рынок</span>
+    <span class="si-icon"><i class="ti ti-search"></i></span><span class="si-label">Рынок</span>
   </button>
   <button type="button" class="sidebar-item" data-tab="cbr" data-shortcut="4" title="ЦБ РФ (4)">
-    <span class="si-icon">🏦<span class="si-badge-dot" id="sidebarCbrBadge" style="display:none"></span></span>
+    <span class="si-icon"><i class="ti ti-building-bank"></i><span class="si-badge-dot" id="sidebarCbrBadge" style="display:none"></span></span>
     <span class="si-label">ЦБ РФ</span>
   </button>
   <button type="button" class="sidebar-item" data-tab="portfolio" data-shortcut="5" title="Портфель (5)">
-    <span class="si-icon">💼</span><span class="si-label">Портфель</span>
+    <span class="si-icon"><i class="ti ti-briefcase"></i></span><span class="si-label">Портфель</span>
   </button>
-  <button type="button" class="sidebar-item" data-tab="spravka" data-shortcut="6" title="Справка (6)">
-    <span class="si-icon">📚</span><span class="si-label">Справка</span>
+  <button type="button" class="sidebar-item sidebar-secondary" data-tab="spravka" data-shortcut="6" title="Справка (6)">
+    <span class="si-icon"><i class="ti ti-book"></i></span><span class="si-label">Справка</span>
   </button>
-  <button type="button" class="sidebar-item sidebar-settings" id="sidebarSettingsBtn" title="Настройки">
-    <span class="si-icon">⚙️</span><span class="si-label">Настройки</span>
+  <button type="button" class="sidebar-item sidebar-secondary sidebar-settings" id="sidebarSettingsBtn" title="Настройки">
+    <span class="si-icon"><i class="ti ti-settings"></i></span><span class="si-label">Настройки</span>
   </button>
 </nav>
 <!-- Issuer detail drawer (Вотчлист card redesign): one shared right-side
@@ -1617,7 +1703,7 @@
         <div id="homeColWatchlist"></div>
       </div>
       <div class="home-card" data-tile-id="events">
-        <div class="home-card-header" id="homeColEventsHeader">Лента событий →</div>
+        <div class="home-card-header" id="homeColEventsHeader">Последние события →</div>
         <div id="homeColEvents"></div>
       </div>
       <div class="home-card" data-tile-id="portfolio">
@@ -1634,14 +1720,14 @@
   <div id="backToHomeLink">← Главная</div>
 
   <div class="tab-panel active" id="tab-watchlist">
-  <!-- Mini-nav: scoped to the tab's two real sections only (tier=1/tier=2).
-       Grows with the content, not ahead of it -- no entries for a filters
-       panel or a G-спред chart until those actually exist in this tab
-       (G-спред already exists, but in the Рынок tab, where it has its own
-       mini-nav entry). See initSubnav() near the collapsible-sections init. -->
+  <!-- Mini-nav (true-tab behavior, 2026-08-26): scoped to the tab's two real
+       sections only (tier=1/tier=2) -- "Фильтры" dropped as its own nav item
+       (it's not a competing content view, it's the filter panel FOR the
+       active-monitoring table below), folded into sec-active-monitoring
+       instead so it stays visible whenever that tab is. See
+       initTrueSubnav() near the collapsible-sections init. -->
   <nav class="subnav-bar" id="watchlistSubnav">
-    <button type="button" class="subnav-btn active" data-target="sec-table">Активный мониторинг</button>
-    <button type="button" class="subnav-btn" data-target="sec-filters">Фильтры<span class="subnav-count" id="filterBadgeCount" style="display:none"></span></button>
+    <button type="button" class="subnav-btn active" data-target="sec-active-monitoring">Активный мониторинг</button>
     <button type="button" class="subnav-btn" data-target="sec-passive-issuers">Пассивный мониторинг</button>
   </nav>
   <!-- Queue backlog indicator (DATA.queue_count) -- see renderQueueIndicator()
@@ -1718,6 +1804,11 @@
     </div>
   </section>
 
+  <!-- Активный мониторинг sub-tab (true-tab behavior, 2026-08-26): wraps
+       the filter panel + issuer table together so Фильтры stays visible
+       whenever this sub-tab is active, without needing its own nav entry
+       (see the watchlistSubnav comment above). -->
+  <div id="sec-active-monitoring" class="watchlist-section active">
   <section id="sec-filters">
     <div class="filter-bar-head">
       <h3 class="filter-bar-title">Фильтры</h3>
@@ -1737,8 +1828,9 @@
     <div id="issuerRowsView"></div>
     <div id="issuerRowsPaginationBottom" class="pgn-wrap"></div>
   </section>
+  </div>
 
-  <section id="sec-passive-issuers" class="collapsed">
+  <section id="sec-passive-issuers" class="collapsed watchlist-section">
     <h2 class="collapsible-h2"><span class="collapse-arrow">▼</span><span id="passiveIssuersHeader">Пассивный мониторинг</span></h2>
     <p class="section-note">Эмитенты tier=2 — данные собираются наравне с активным вотчлистом (МОЕХ, AZIPI, ГИР БО, шесть столпов, AEY), но без вердикта/рекомендации: известные, но не рекомендованные к позиции (подтверждённый дефолт, снятые с рассмотрения кандидаты и т.п.).</p>
     <div id="passiveIssuersView"></div>
@@ -1798,21 +1890,42 @@
   </div>
 
   <div class="tab-panel" id="tab-market">
-  <!-- Mini-nav: scoped to real content only, per the same "grow with the
-       content" principle as the Вотчлист mini-nav. "Кривая ОФЗ" targets
-       sec-market (like "Скринер") but also activates the ОФЗ instrument
-       toggle inside it -- that's real, already-shipped OFZ carry/roll-down
-       content, just gated behind a toggle rather than its own section (see
-       initSubnav()'s data-activate-ofz handling). "Размещения" (Первичные
-       размещения task, 2026-08-25) targets sec-primary-placements below --
-       no extra JS needed, initSubnav() is generic over data-target. -->
+  <!-- Mini-nav (true-tab behavior, 2026-08-26): "Новости" (moved here from
+       the ЦБ РФ tab's Лента событий, Task 4) opens by default. "Кривая ОФЗ"
+       targets sec-market (like "Скринер") but also activates the ОФЗ
+       instrument toggle inside it -- that's real, already-shipped OFZ
+       carry/roll-down content, just gated behind a toggle rather than its
+       own section (see initTrueSubnav()'s data-activate-ofz handling).
+       "G-спред" groups the three G-спред sections (screening/delta/history,
+       below) under one nav item via a wrapper div, same reasoning as
+       Вотчлист's sec-active-monitoring wrapper. -->
   <nav class="subnav-bar" id="marketSubnav">
-    <button type="button" class="subnav-btn active" data-target="sec-market">Скринер</button>
+    <button type="button" class="subnav-btn active" data-target="sec-market-news">Новости</button>
+    <button type="button" class="subnav-btn" data-target="sec-market">Скринер</button>
     <button type="button" class="subnav-btn" data-target="sec-aey-heatmap">Хитмап</button>
+    <button type="button" class="subnav-btn" data-target="sec-gspread">G-спред</button>
     <button type="button" class="subnav-btn" data-target="sec-market" data-activate-ofz="1">Кривая ОФЗ</button>
     <button type="button" class="subnav-btn" data-target="sec-primary-placements">Размещения</button>
   </nav>
-    <section id="sec-market">
+
+    <!-- Новости sub-tab (Task 4, 2026-08-26): moved bodily from the ЦБ РФ
+         tab's old #sec-events -- same inner ids (eventsTimeline etc.),
+         renderEvents() below is unchanged and untouched by the move. -->
+    <div id="sec-market-news" class="market-section active">
+      <h2>Лента событий</h2>
+      <div class="banner">Реальные данные: классифицированные материальные факты с e-disclosure.azipi.ru (ручная классификация через навык <code>hy-event-classify</code>, таксономия — <code>skills/hy-event-classify/references/taxonomy.md</code>) плюс вторичные новости Smart-Lab (<code>market_note</code>, помечены отдельно). Показаны только уже классифицированные записи — у большинства эмитентов накопленные filings ещё в очереди на классификацию (<code>hybond queue</code> / <code>hybond market-notes-queue</code>), это стадия конвейера, а не отсутствие данных.</div>
+      <div class="card">
+        <div class="events-filter">
+          <button id="eventsFilterToggle" class="active" data-mode="critical">Только high/critical</button>
+          <span class="events-filter-note" id="eventsFilterNote"></span>
+        </div>
+        <div id="eventsTimeline"></div>
+        <button type="button" class="events-passive-toggle" id="eventsPassiveToggle" style="display:none"></button>
+        <div class="events-passive-body" id="eventsPassiveBody"></div>
+      </div>
+    </div>
+
+    <section id="sec-market" class="market-section">
       <h2>Рынок ВДО — универсум и карта</h2>
       <p class="section-note">Полный список рублёвых корпоративных облигаций MOEX (не только вотчлист), как таблица-скринер и как scatter-карта — один и тот же отфильтрованный набор бумаг, переключаемый видом ниже. Собрано <code>hybond universe</code> (<code>src/hybond/universe_pipeline.py</code>). Раньше это были две отдельные вкладки с независимыми фильтрами (и «Карта рынка» жила в отдельном самодостаточном файле <code>market_map.html</code>) — объединены, чтобы порог рейтинга/ликвидности, диапазон срока погашения и диапазон AEY (скорр.) применялись одинаково в обоих представлениях.</p>
       <div class="banner" id="marketSnapBanner"></div>
@@ -2113,17 +2226,17 @@
 
         <div class="card" style="padding:10px 14px;margin-bottom:10px">
           <b style="font-size:14px">Свой сценарий</b>
-          <span style="font-size:13px;line-height:1.6;color:var(--text-muted)"> — целевая ключевая ставка и дата; carry+roll-down считается на этот горизонт напрямую (без градуированного 40/75/100% сдвига CBR-сценариев — вся дельта применяется сразу на указанную дату).</span>
+          <span style="font-size:14px;line-height:1.6;color:var(--text-muted)"> — целевая ключевая ставка и дата; carry+roll-down считается на этот горизонт напрямую (без градуированного 40/75/100% сдвига CBR-сценариев — вся дельта применяется сразу на указанную дату).</span>
           <div style="display:flex;gap:10px;align-items:flex-end;margin-top:8px;flex-wrap:wrap">
             <div>
               <label style="display:block;font-size:14px;color:var(--text-muted);margin-bottom:3px">Целевая ставка, %</label>
               <input type="number" id="ofzCustomRateInput" step="0.1" placeholder="напр. 10.0"
-                     style="width:110px;padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12.5px">
+                     style="width:110px;padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px">
             </div>
             <div>
               <label style="display:block;font-size:14px;color:var(--text-muted);margin-bottom:3px">Целевая дата</label>
               <input type="date" id="ofzCustomDateInput"
-                     style="padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12.5px">
+                     style="padding:6px 8px;border-radius:7px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);font-size:12px">
             </div>
             <button type="button" class="uni-btn" id="ofzCustomScenApplyBtn">Применить свой сценарий</button>
           </div>
@@ -2137,6 +2250,13 @@
       </div>
     </section>
 
+    <!-- G-спред sub-tab (true-tab behavior, 2026-08-26): one wrapper div,
+         one nav item, over the three previously-separate G-спред sections
+         (screening/delta/history, the latter two moved up to sit next to
+         this one) -- same reasoning as Вотчлист's sec-active-monitoring
+         wrapper. Original section ids kept as-is, nothing else references
+         them beyond CSS. -->
+    <div id="sec-gspread" class="market-section">
     <section id="sec-spread">
       <h2 class="collapsible-h2"><span class="collapse-arrow">▼</span>G-спред скрининг (день 1, реальные данные MOEX/CBR)</h2>
       <div class="collapsible-body">
@@ -2144,28 +2264,6 @@
       <div class="maturity-filter" id="maturityFilter"></div>
       <div class="card"><div id="spreadChart"></div></div>
       </div>
-    </section>
-
-    <section id="sec-aey-heatmap">
-      <h2>Карта доходности — AEY (скорр.) по рейтингу и сроку</h2>
-      <p class="section-note">Средний риск-скорректированный AEY (база) по рейтинговым группам и срокам до погашения — весь текущий универсум или только вотчлист. В отличие от сырой YTM, уже учитывает вероятность дефолта по рейтингу. Ячейки с &lt;2 облигациями показаны как «—» (недостаточно данных для среднего).</p>
-      <label class="uni-toggle" style="margin-bottom:10px"><input type="checkbox" id="aeyHeatmapWatchlistOnly"><span class="uni-toggle-switch"></span>Только вотчлист</label>
-      <div class="card table-scroll"><table id="aeyHeatmapTable"></table></div>
-    </section>
-
-    <section id="sec-primary-placements">
-      <h2>Первичные размещения</h2>
-      <p class="section-note">Объявления о размещениях за последние 30 дней — Google News (в основном republished Smart-Lab, <code>source=google_news</code>), отфильтровано до реальных сигналов нового выпуска (не рутинные выплаты купона). Предстоящие/самые свежие — золотым, прошедшие — приглушены.</p>
-      <div class="card table-scroll"><table id="placementsTable"></table></div>
-      <!-- Switched from moex_listing to google_news (2026-08-25 follow-up
-           task) -- audit found moex_listing structurally couldn't carry
-           issuer/YTM (issuer_id NULL, summary truncated ~200 chars), while
-           google_news/Smart-Lab headlines often do. Эмитент/Доходность are
-           BEST-EFFORT extraction (NEWS_ALIASES match + a YTM regex), not
-           guaranteed for every row -- live audit found ~33%/~19% hit rates
-           respectively across genuine placement-signal headlines. "—" means
-           not confidently extractable, never a guess. -->
-      <p class="section-note" style="margin-top:8px">Эмитент/Доходность — по возможности извлечены из заголовка (сопоставление с известными эмитентами вотчлиста + разбор «YTM N%»), не для каждой строки. «—» означает, что уверенно извлечь не удалось — не догадка.</p>
     </section>
 
     <section id="sec-spread-delta">
@@ -2188,6 +2286,29 @@
         <canvas id="spreadHistChart"></canvas>
       </div>
       <div class="legend-row" id="spreadHistLegend" style="margin-top:8px"></div>
+    </section>
+    </div><!-- /sec-gspread -->
+
+    <section id="sec-aey-heatmap" class="market-section">
+      <h2>Карта доходности — AEY (скорр.) по рейтингу и сроку</h2>
+      <p class="section-note">Средний риск-скорректированный AEY (база) по рейтинговым группам и срокам до погашения — весь текущий универсум или только вотчлист. В отличие от сырой YTM, уже учитывает вероятность дефолта по рейтингу. Ячейки с &lt;2 облигациями показаны как «—» (недостаточно данных для среднего).</p>
+      <label class="uni-toggle" style="margin-bottom:10px"><input type="checkbox" id="aeyHeatmapWatchlistOnly"><span class="uni-toggle-switch"></span>Только вотчлист</label>
+      <div class="card table-scroll"><table id="aeyHeatmapTable"></table></div>
+    </section>
+
+    <section id="sec-primary-placements" class="market-section">
+      <h2>Первичные размещения</h2>
+      <p class="section-note">Объявления о размещениях за последние 30 дней — Google News (в основном republished Smart-Lab, <code>source=google_news</code>), отфильтровано до реальных сигналов нового выпуска (не рутинные выплаты купона). Предстоящие/самые свежие — золотым, прошедшие — приглушены.</p>
+      <div class="card table-scroll"><table id="placementsTable"></table></div>
+      <!-- Switched from moex_listing to google_news (2026-08-25 follow-up
+           task) -- audit found moex_listing structurally couldn't carry
+           issuer/YTM (issuer_id NULL, summary truncated ~200 chars), while
+           google_news/Smart-Lab headlines often do. Эмитент/Доходность are
+           BEST-EFFORT extraction (NEWS_ALIASES match + a YTM regex), not
+           guaranteed for every row -- live audit found ~33%/~19% hit rates
+           respectively across genuine placement-signal headlines. "—" means
+           not confidently extractable, never a guess. -->
+      <p class="section-note" style="margin-top:8px">Эмитент/Доходность — по возможности извлечены из заголовка (сопоставление с известными эмитентами вотчлиста + разбор «YTM N%»), не для каждой строки. «—» означает, что уверенно извлечь не удалось — не догадка.</p>
     </section>
   </div>
 
@@ -2212,20 +2333,6 @@
       <section id="sec-ofz-curve-shape" style="margin-top:26px">
         <h2>Форма кривой ОФЗ — спред 10л минус 2л</h2>
         <div class="card" id="ofzCurveShapeCard"></div>
-      </section>
-
-      <section id="sec-events" style="margin-top:26px">
-        <h2>Лента событий</h2>
-        <div class="banner">Реальные данные: классифицированные материальные факты с e-disclosure.azipi.ru (ручная классификация через навык <code>hy-event-classify</code>, таксономия — <code>skills/hy-event-classify/references/taxonomy.md</code>) плюс вторичные новости Smart-Lab (<code>market_note</code>, помечены отдельно). Показаны только уже классифицированные записи — у большинства эмитентов накопленные filings ещё в очереди на классификацию (<code>hybond queue</code> / <code>hybond market-notes-queue</code>), это стадия конвейера, а не отсутствие данных.</div>
-        <div class="card">
-          <div class="events-filter">
-            <button id="eventsFilterToggle" class="active" data-mode="critical">Только high/critical</button>
-            <span class="events-filter-note" id="eventsFilterNote"></span>
-          </div>
-          <div id="eventsTimeline"></div>
-          <button type="button" class="events-passive-toggle" id="eventsPassiveToggle" style="display:none"></button>
-          <div class="events-passive-body" id="eventsPassiveBody"></div>
-        </div>
       </section>
 
       <h2 style="margin-top:26px;">Симулятор ставки</h2>
@@ -2373,7 +2480,7 @@
         <div id="pfGrowthPlanner"></div>
 
         <h3 class="pf-h3-sep" style="margin-top:22px">Стресс-тест дефолта</h3>
-        <p style="color:var(--text-muted);font-size:13px;margin:0 0 10px">Стресс-тест — что произойдёт с портфелем если один эмитент объявит дефолт</p>
+        <p style="color:var(--text-muted);font-size:14px;margin:0 0 10px">Стресс-тест — что произойдёт с портфелем если один эмитент объявит дефолт</p>
         <div id="pfStressTest"></div>
 
         <h3 class="pf-h3-sep" style="margin-top:22px">Стресс-тест: несколько дефолтов</h3>
@@ -2480,7 +2587,7 @@
 // applyFontScale() note: the spec'd mechanism is
 // `document.documentElement.style.fontSize = pct + '%'`. Every one of this
 // file's 218 font-size declarations is an absolute px value (grep confirms
-// zero em/rem usage), starting with `body { font-size: 15px }` -- an
+// zero em/rem usage), starting with `body { font-size: 16px }` -- an
 // absolute unit breaks the inheritance chain a %-based root font-size
 // relies on, so that line alone has NO visible effect anywhere in this
 // dashboard. Rewriting all 218 px declarations to rem was explicitly out of
@@ -3025,7 +3132,7 @@ function renderNarrativeCardHtml(idPrefix, c, md, badgeHtml) {
       ${dp.primary_risk ? `<div class="nc-conflict-box" style="border-left-color:var(--critical)"><b>Основной риск:</b> ${escapeHtml(dp.primary_risk)}</div>` : ''}
       ${pathwayHtml ? `<ol>${pathwayHtml}</ol>` : ''}
       ${mitigantsHtml ? `<div class="nc-section-title" style="margin-top:8px">Смягчающие факторы</div><ul class="nc-flag-list">${mitigantsHtml}</ul>` : ''}
-      ${dp.probability ? `<div style="font-size:13px;line-height:1.6;margin-top:8px"><b>Вероятность:</b> ${escapeHtml(dp.probability)}</div>` : ''}
+      ${dp.probability ? `<div style="font-size:14px;line-height:1.6;margin-top:8px"><b>Вероятность:</b> ${escapeHtml(dp.probability)}</div>` : ''}
     </div>
 
     <div class="nc-section"><div class="nc-section-title">Мониторинг (6–12 мес.)</div><ul class="nc-flag-list">${monitoringHtml}</ul></div>
@@ -3904,14 +4011,14 @@ function renderBondDetail(secid) {
   }
   html += `<div class="bond-detail-block"><b>Рейтинг</b>
     ${iss.rating || '—'}${staleBadge}
-    ${rd ? `<div style="color:var(--text-muted);font-size:13px;line-height:1.6;margin-top:2px">${rd.agency || '?'} · ${rd.action || ''} ${rd.rated_on || ''} · прогноз: ${rd.outlook || '—'}</div>` : ''}
+    ${rd ? `<div style="color:var(--text-muted);font-size:12px;line-height:1.6;margin-top:2px">${rd.agency || '?'} · ${rd.action || ''} ${rd.rated_on || ''} · прогноз: ${rd.outlook || '—'}</div>` : ''}
   </div>`;
 
   if (b.placement_pct != null && b.placement_pct < 99.5) {
     const pth = DATA.placement_thresholds || {};
     const stalledNote = b.is_placement_stalled
-      ? `<div style="color:var(--critical);font-size:13px;line-height:1.6;margin-top:2px">⚠ Ниже ${pth.stall_threshold_pct ?? 50}% размещено ${pth.stall_weeks ?? 4}+ недель без прогресса — возможный сигнал слабого спроса инвесторов.</div>`
-      : `<div style="color:var(--text-muted);font-size:13px;line-height:1.6;margin-top:2px">С ${b.placement_partial_since || '?'} — идёт размещение, ещё не полностью выкуплен выпуск.</div>`;
+      ? `<div style="color:var(--critical);font-size:14px;line-height:1.6;margin-top:2px">⚠ Ниже ${pth.stall_threshold_pct ?? 50}% размещено ${pth.stall_weeks ?? 4}+ недель без прогресса — возможный сигнал слабого спроса инвесторов.</div>`
+      : `<div style="color:var(--text-muted);font-size:14px;line-height:1.6;margin-top:2px">С ${b.placement_partial_since || '?'} — идёт размещение, ещё не полностью выкуплен выпуск.</div>`;
     html += `<div class="bond-detail-block"><b>Размещение</b>
       ${b.placement_pct.toFixed(1)}% от заявленного объёма
       ${stalledNote}
@@ -4822,8 +4929,8 @@ renderSpreadHistoryChart();
         ? '<span class="source-badge secondary" title="Рейтинг не верифицирован по первоисточнику агентства">⚠ не подтверждён</span>'
         : '<span style="color:var(--text-muted)">✓</span>';
       html += `<tr class="bond-row" data-secid="${r.secid}">
-        <td>${r.issuer}<div style="color:var(--text-muted);font-size:13px">${r.secid}</div></td>
-        <td>${r.short_name}<div style="color:var(--text-muted);font-size:13px">${r.mat_date||''}</div></td>
+        <td>${r.issuer}<div style="color:var(--text-muted);font-size:14px">${r.secid}</div></td>
+        <td>${r.short_name}<div style="color:var(--text-muted);font-size:14px">${r.mat_date||''}</div></td>
         <td>${r.rating||'—'}</td>
         <td class="num-key">${r.ytm_pct!=null?r.ytm_pct.toFixed(1):'—'}</td>
         <td>${misCell}</td>
@@ -5086,7 +5193,7 @@ function renderSignalsStrip() {
     row.addEventListener('click', () => openBondDrawer(row.dataset.secid));
   });
   const more = document.getElementById('ssMoreLink');
-  if (more) more.addEventListener('click', () => gotoTab('cbr', { scrollTo: 'sec-events' }));
+  if (more) more.addEventListener('click', () => gotoTab('market', { marketSubtab: 'sec-market-news' }));
 }
 renderSignalsStrip();
 
@@ -5444,7 +5551,7 @@ function renderIssuerRowsPage(pageIssuers) {
     const aey = bond && bond.aey_base_risk_adj_pct != null ? `${bond.aey_base_risk_adj_pct.toFixed(1)}%` : '—';
     const status = issuerStatusLine(iss);
     const showReason = (health === 'orange' || health === 'red') && iss.health_reason;
-    return `<div class="iw-row-wrap" data-issuer="${iss.issuer_id}" style="border-left-color:${healthColor}">
+    return `<div class="iw-row-wrap" data-issuer="${iss.issuer_id}" data-health="${health}" style="border-left-color:${healthColor}">
       <div class="iw-row">
         <div class="iw-row-top">
           <span class="iw-dot" style="background:${dotColor}" title="${v ? v.label : 'Недостаточно данных'}"></span>
@@ -5633,7 +5740,7 @@ function renderIssuerDetail(iss) {
       }).join('') +
       `</tbody></table></div>` +
       (iss.bonds.some(b => b.yield_source === 'moex')
-        ? `<p style="margin-top:4px;color:var(--text-muted);font-size:13px;line-height:1.6">* G-спред оценён по доходности MOEX (флоатер — купон ещё не зафиксирован), не по расчётной YTM (ACT/365F)</p>`
+        ? `<p style="margin-top:4px;color:var(--text-muted);font-size:14px;line-height:1.6">* G-спред оценён по доходности MOEX (флоатер — купон ещё не зафиксирован), не по расчётной YTM (ACT/365F)</p>`
         : '') +
       `</div>`;
   }
@@ -5763,60 +5870,64 @@ document.querySelectorAll('h2.collapsible-h2').forEach(h2 => {
 });
 
 // ================= In-tab mini-nav (Вотчлист / Рынок) ===================
-// Same scroll-spy pattern as the Справка tab's TOC (see renderSpravka()):
-// smooth scrollIntoView on click, IntersectionObserver-based active-state
-// highlighting on scroll. Unlike Справка's TOC, targets here are whole
-// <section> elements the tab already renders, not per-question anchors
-// generated at render time -- so this can run once at page load rather
-// than being re-run inside a render function.
-function initSubnav(navId) {
+// True-tab behavior (2026-08-26): was scroll-spy (click scrolled to an
+// anchor on one long page, IntersectionObserver highlighted whichever
+// section was in view). Now each button shows its one target section
+// (.market-section / .watchlist-section) and hides the rest -- same
+// show-one/hide-rest pattern as the Портфель subtabs' gotoPfSubtab(), just
+// without a localStorage-persisted default (Рынок always opens on
+// "Новости", Вотчлист on "Активный мониторинг" -- no "last
+// selected" memory expected here).
+function initTrueSubnav(navId, sectionClass) {
   const nav = document.getElementById(navId);
-  if (!nav) return;
+  if (!nav) return null;
   const buttons = Array.from(nav.querySelectorAll('.subnav-btn'));
+
+  function activate(target) {
+    const el = document.getElementById(target);
+    if (!el) return;
+    document.querySelectorAll('.' + sectionClass).forEach(s => s.classList.remove('active'));
+    // Harmless no-op for non-collapsible targets (sec-market,
+    // sec-aey-heatmap); actually expands sec-passive-issuers, which starts
+    // collapsed like sec-wall/sec-pillars.
+    el.classList.remove('collapsed');
+    el.classList.add('active');
+    // Two buttons can legitimately target the same section (Скринер and
+    // Кривая ОФЗ both point at sec-market) -- highlight every button pointing
+    // at whichever target is now active, not just the one clicked.
+    buttons.forEach(b => b.classList.toggle('active', b.dataset.target === target));
+    // Canvas-based charts inside these two sections compute their size from
+    // getBoundingClientRect(), which is 0 while their .market-section is
+    // display:none -- redraw once the section actually becomes visible
+    // (moved here from gotoTab()'s unconditional tab-level redraw, which
+    // would fire even while a *different* subtab, e.g. Новости, is the one
+    // actually showing).
+    if (target === 'sec-market' && window.__marketMapRedraw) window.__marketMapRedraw();
+    if (target === 'sec-gspread' && window.__spreadHistRedraw) window.__spreadHistRedraw();
+  }
 
   buttons.forEach(btn => {
     btn.addEventListener('click', () => {
-      const target = document.getElementById(btn.dataset.target);
-      if (!target) return;
-      // Harmless no-op for non-collapsible targets (sec-market,
-      // sec-aey-heatmap); actually expands sec-passive-issuers, which
-      // starts collapsed like sec-wall/sec-pillars.
-      target.classList.remove('collapsed');
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      activate(btn.dataset.target);
       // "Кривая ОФЗ": real, already-shipped OFZ carry/roll-down content,
       // just gated behind sec-market's instrument toggle rather than its
-      // own section -- activate it after the scroll starts, same
-      // scroll-then-activate-a-toggle pattern spravkaNavigate() already
-      // uses for the Рынок tab's Карта view (see opts.mapView there).
+      // own section.
       if (btn.dataset.activateOfz) {
-        requestAnimationFrame(() => {
-          const ofzBtn = document.querySelector(
-            '#marketInstrumentToggle .view-btn[data-instrument="ofz"]');
-          if (ofzBtn) ofzBtn.click();
-        });
+        const ofzBtn = document.querySelector(
+          '#marketInstrumentToggle .view-btn[data-instrument="ofz"]');
+        if (ofzBtn) ofzBtn.click();
       }
     });
   });
 
-  // Two buttons can legitimately target the same section (Скринер and
-  // Кривая ОФЗ both point at sec-market) -- observe each unique target
-  // once, but highlight every button pointing at whichever one is in view.
-  const targetIds = Array.from(new Set(buttons.map(b => b.dataset.target)));
-  const targets = targetIds.map(id => document.getElementById(id)).filter(Boolean);
-  if (targets.length && window.IntersectionObserver) {
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          const anchor = entry.target.id;
-          buttons.forEach(b => b.classList.toggle('active', b.dataset.target === anchor));
-        }
-      });
-    }, { root: null, rootMargin: '-10% 0px -75% 0px', threshold: 0 });
-    targets.forEach(t => observer.observe(t));
-  }
+  return activate;
 }
-initSubnav('watchlistSubnav');
-initSubnav('marketSubnav');
+// Cross-tab deep-link targets (home screen's compact events widget, the
+// ticker bar's flags item, Market Pulse tiles, etc.) -- same
+// window.__gotoXSubtab pattern portfolioTab() already uses for
+// window.__gotoPfSubtab, see gotoTab()'s opts handling below.
+window.__gotoWatchlistSubtab = initTrueSubnav('watchlistSubnav', 'watchlist-section');
+window.__gotoMarketSubtab = initTrueSubnav('marketSubnav', 'market-section');
 
 // ================= Tabs =================
 // Single shared tab-switch function -- the sidebar nav, the ticker bar's
@@ -5833,18 +5944,36 @@ function gotoTab(tab, opts) {
   // the one nav element left, used at both breakpoints (it collapses into
   // a bottom bar under 768px via its own @media rule, not a second nav).
   document.querySelectorAll('.sidebar-item[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    p.classList.toggle('active', p.id === 'tab-' + tab);
+    p.classList.remove('tab-panel-visible');
+  });
+  // Deferred one frame so the browser actually paints the display:block/
+  // opacity:0 state above before opacity flips to 1 -- without this, both
+  // class changes would land in the same style recalculation and the
+  // 120ms transition (see .tab-panel's CSS) would have nothing to animate
+  // from, same reasoning as renderPulseTiles()'s own rAF-deferred skeleton
+  // paint near the top of marketTab().
+  requestAnimationFrame(() => {
+    const activePanel = document.querySelector('.tab-panel.active');
+    if (activePanel) activePanel.classList.add('tab-panel-visible');
+  });
   // canvas-based charts compute their size from getBoundingClientRect(),
   // which is 0 while their tab-panel is display:none -- redraw once the
-  // panel actually becomes visible, not just at page load.
+  // panel actually becomes visible, not just at page load. (Рынок's own
+  // market-map/spread-history redraws moved into initTrueSubnav()'s
+  // activate() above -- those two canvases live inside specific
+  // .market-section subtabs, not the whole tab-panel, so redrawing them
+  // here regardless of which subtab is actually visible could hit a
+  // still-hidden, 0-sized container.)
   if (tab === 'cbr' && window.__cbrRedraw) window.__cbrRedraw();
-  if (tab === 'market' && window.__marketMapRedraw) window.__marketMapRedraw();
-  if (tab === 'market' && window.__spreadHistRedraw) window.__spreadHistRedraw();
   if (opts && opts.instrument) {
     const instBtn = document.querySelector(`#marketInstrumentToggle .view-btn[data-instrument="${opts.instrument}"]`);
     if (instBtn) instBtn.click();
   }
   if (tab === 'portfolio' && opts && opts.pftab && window.__gotoPfSubtab) window.__gotoPfSubtab(opts.pftab);
+  if (tab === 'market' && opts && opts.marketSubtab && window.__gotoMarketSubtab) window.__gotoMarketSubtab(opts.marketSubtab);
+  if (tab === 'watchlist' && opts && opts.watchlistSubtab && window.__gotoWatchlistSubtab) window.__gotoWatchlistSubtab(opts.watchlistSubtab);
   if (opts && opts.scrollTo) {
     requestAnimationFrame(() => {
       const el = document.getElementById(opts.scrollTo);
@@ -5974,7 +6103,7 @@ function queueIndicatorHtml() {
 }
 function wireQueueIndicatorClicks(root) {
   root.querySelectorAll('.queue-indicator').forEach(el => {
-    el.addEventListener('click', () => gotoTab('cbr', { scrollTo: 'sec-events' }));
+    el.addEventListener('click', () => gotoTab('market', { marketSubtab: 'sec-market-news' }));
   });
 }
 function renderQueueIndicator() {
@@ -6023,7 +6152,7 @@ function renderHomeHero() {
     { value: pulse.avgG != null ? fmtBp(pulse.avgG, heroMobile) : '—',
       label: 'Средний G-спред', tab: 'market' },
     { value: String(pulse.flagsToday), cls: pulse.flagsToday > 0 ? 'pt-bad' : 'pt-good',
-      label: 'Флаги', tab: 'cbr', opts: { scrollTo: 'sec-events' } },
+      label: 'Флаги', tab: 'market', opts: { marketSubtab: 'sec-market-news' } },
     { value: pulse.placementOpen ? 'Открыт' : 'Закрыт', cls: pulse.placementOpen ? 'pt-good' : 'pt-bad',
       label: 'Рынок размещений', tab: 'watchlist' },
   ];
@@ -6063,8 +6192,15 @@ function renderHomeWatchlistCol() {
   });
 }
 
+// Compact preview (Task 4, 2026-08-26): was up to 4 most recent events of
+// any severity; now only critical/high (same filter renderEvents()'s
+// default "Только high/critical" mode uses on the full feed, moved to
+// Рынок -> Новости, sec-market-news), capped to 3, with an explicit link to
+// the full feed rather than relying solely on the card header's own
+// click-to-navigate.
 function renderHomeEventsCol() {
   const el = document.getElementById('homeColEvents');
+  const header = document.getElementById('homeColEventsHeader');
   const all = [];
   (DATA.issuers || []).forEach(iss => {
     (iss.events_full || []).forEach(e => {
@@ -6075,19 +6211,25 @@ function renderHomeEventsCol() {
       // "SYNTHETIC" marker (see hasSynthEvent), which are fabricated and
       // must not appear in a "real events" preview.
       if ((e.summary || '').includes('SYNTHETIC')) return;
+      if (e.severity !== 'critical' && e.severity !== 'high') return;
       all.push({ ...e, issuerName: iss.name });
     });
   });
   all.sort((a, b) => (b.occurred || '').localeCompare(a.occurred || ''));
-  const shown = all.slice(0, 4);
-  if (!shown.length) { el.innerHTML = emptyStateHtml({ icon: 'check', title: 'Событий пока нет' }); return; }
+  const shown = all.slice(0, 3);
+  header.textContent = `Последние события (${shown.length}) →`;
+  if (!shown.length) { el.innerHTML = emptyStateHtml({ icon: 'check', title: 'Критичных событий нет' }); return; }
   el.innerHTML = shown.map(e => `
     <div class="home-event-row">
       <div><span class="home-event-tag" style="color:${SEV_COLOR[e.severity] || 'var(--text-muted)'}">${escapeHtml(e.severity || '')}</span>
       <span class="home-event-issuer">${escapeHtml(e.issuerName)}</span></div>
       <div class="home-event-desc">${escapeHtml(e.summary || '')}</div>
       <div class="home-event-date">${e.occurred || '—'}</div>
-    </div>`).join('');
+    </div>`).join('') + `<a class="ss-more" id="homeEventsMoreLink">Смотреть все →</a>`;
+  document.getElementById('homeEventsMoreLink').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    gotoTab('market', { marketSubtab: 'sec-market-news' });
+  });
 }
 
 function renderHomePortfolioCol() {
@@ -6156,7 +6298,7 @@ function renderHomeScreen() {
   renderHomeActions();
 }
 document.getElementById('homeColWatchlistHeader').addEventListener('click', () => gotoTab('watchlist'));
-document.getElementById('homeColEventsHeader').addEventListener('click', () => gotoTab('cbr', { scrollTo: 'sec-events' }));
+document.getElementById('homeColEventsHeader').addEventListener('click', () => gotoTab('market', { marketSubtab: 'sec-market-news' }));
 document.getElementById('homeColPortfolioHeader').addEventListener('click', () => gotoTab('portfolio'));
 
 // ---- Draggable home-screen tiles (2026-08-26): Sortable.js over the 4
@@ -6291,7 +6433,7 @@ function renderTicker() {
   items.push({ html: `Avg G-спред ВДО <b>${pulse.avgG != null ? fmtBp(pulse.avgG, tickerMobile) : '—'}</b>`, tab: 'market' });
   items.push({
     html: `Флаги сегодня <b>${pulse.flagsToday}</b>${pulse.flagsToday > 0 ? ' 🔴' : ''}`,
-    tab: 'cbr', opts: { scrollTo: 'sec-events' }, extraClass: pulse.flagsToday > 0 ? 'has-flags' : '', flags: true,
+    tab: 'market', opts: { marketSubtab: 'sec-market-news' }, extraClass: pulse.flagsToday > 0 ? 'has-flags' : '', flags: true,
   });
   if (hybondPortfolioAey) {
     items.push({ html: `<span title="${escapeHtml(AEY_BASE_TOOLTIP)}">AEY портфеля (база)</span> <b>${hybondPortfolioAey.pct >= 0 ? '+' : ''}${hybondPortfolioAey.pct.toFixed(1)}%</b>`, tab: 'portfolio' });
@@ -6361,7 +6503,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       { value: pulse.avgG != null ? fmtBp(pulse.avgG, pulseTilesMobile) : '—', cls: '',
         label: 'Средний G-спред ВДО', subHtml: gDeltaHtml, tab: 'market' },
       { value: String(pulse.flagsToday), cls: pulse.flagsToday > 0 ? 'pt-bad' : 'pt-good',
-        label: 'Флаги (высокие/критичные)', sub: 'сегодня', tab: 'cbr', opts: { scrollTo: 'sec-events' } },
+        label: 'Флаги (высокие/критичные)', sub: 'сегодня', tab: 'market', opts: { marketSubtab: 'sec-market-news' } },
       { value: pulse.placementOpen ? 'Открыт' : 'Закрыт', cls: pulse.placementOpen ? 'pt-good' : 'pt-bad',
         label: 'Рынок размещений', sub: 'по вотчлисту (37 эмитентов) — полного рынка размещений в этом экспорте нет', tab: 'watchlist' },
     ];
@@ -8295,7 +8437,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
       </div>`;
     } else {
       html += `<div class="cbr-sim-result-row"><span class="cbr-sim-result-label">ОФЗ-сравнение</span>` +
-        `<span class="cbr-sim-result-value" style="color:var(--text-muted);font-size:13px;font-weight:400">нет сопоставимой по дюрации ОФЗ</span></div>`;
+        `<span class="cbr-sim-result-value" style="color:var(--text-muted);font-size:12px;font-weight:400">нет сопоставимой по дюрации ОФЗ</span></div>`;
     }
 
     html += `<a href="#" id="cbrSimGotoPf" class="cbr-sim-goto">Перейти к портфелю →</a>`;
@@ -8357,7 +8499,7 @@ function renderOfzCurveShape() {
   const normal = spread >= 0;
   const color = normal ? 'var(--verdict-green)' : 'var(--verdict-red)';
   card.innerHTML = `
-    <div style="font-size:15px;font-weight:600;margin-bottom:8px">Форма кривой ОФЗ сегодня</div>
+    <div style="font-size:16px;font-weight:600;margin-bottom:8px">Форма кривой ОФЗ сегодня</div>
     <div style="font-size:14px;margin-bottom:6px">10л: ${b10.ytm_pct.toFixed(2)}% — 2л: ${b2.ytm_pct.toFixed(2)}% = Спред: <b style="color:${color}">${spread >= 0 ? '+' : ''}${spread.toFixed(2)}пп</b></div>
     <div style="font-weight:700;color:${color};font-size:14px">${normal ? 'Нормальная кривая ▲' : 'Инвертированная кривая ▼'}</div>
     <p class="section-note" style="margin-top:10px">Положительный спред — нормальная кривая, рынок ожидает снижения ставок. Отрицательный спред — инверсия, исторически предшествует экономическому стрессу.</p>

@@ -12,7 +12,7 @@ from hybond.store import db  # noqa: E402
 from export_dashboard_data import (  # noqa: E402
     spread_history_by_issuer, passive_issuers_export, passive_events_since,
     universe_snapshot_bundle, RATING_TREND_VALUE, rating_trend,
-    rating_history_by_issuer)
+    rating_history_by_issuer, _latest_spread_snap_date)
 
 ISSUER = "7701234567"
 
@@ -287,6 +287,68 @@ def test_earliest_snap_date_none_when_no_universe_history(tmp_path):
     bundle = universe_snapshot_bundle(con)
     con.close()
     assert bundle["earliest_snap_date"] is None
+
+
+# ---- day2_snap_date fix (2026-08-26): main() previously read
+# issuers[0]["snap_date"] -- whichever issuer happened to be first in the
+# per-issuer export loop -- as the dashboard's "how fresh is our data"
+# signal, not guaranteed to be the most recent date in the DB. Fixed to
+# MAX(snap_date) FROM spread_snapshot, the table `hybond run` (the daily
+# pipeline) actually writes.
+
+def _spread_bond(con, secid):
+    """spread_snapshot.secid has a FOREIGN KEY to bond -- these tests only
+    care about snap_date, so a minimal bond row (and its issuer) is enough
+    to satisfy the constraint."""
+    db.upsert_issuer(con, ISSUER, "Test Co")
+    db.upsert_bond(con, secid=secid, isin=f"RU{secid}", issuer_id=ISSUER,
+                    short_name=secid, mat_date="2028-01-01", face_value=1000.0,
+                    face_unit="SUR", coupon_pct=15.0, list_level=3, qualified=1,
+                    updated="2026-08-01")
+
+
+def test_latest_spread_snap_date_is_max_not_first_row(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    _spread_bond(con, "B1")
+    _spread_bond(con, "B2")
+    # Insertion order deliberately NOT date-sorted -- exactly the bug
+    # scenario (whichever row happens to be "first" is not the latest).
+    db.insert_spread_snapshot(con, secid="B2", snap_date="2026-08-06", ytm=0.15,
+                               tenor_yrs=1.5, rf_rate=0.14, g_spread_bp=300.0,
+                               mod_dur=1.0, convexity=None)
+    db.insert_spread_snapshot(con, secid="B1", snap_date="2026-08-20", ytm=0.15,
+                               tenor_yrs=1.5, rf_rate=0.14, g_spread_bp=250.0,
+                               mod_dur=1.0, convexity=None)
+    con.commit()
+
+    result = _latest_spread_snap_date(con)
+    con.close()
+    assert result == "2026-08-20"
+
+
+def test_latest_spread_snap_date_matches_raw_max_query(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    for secid, d in (("B1", "2026-07-27"), ("B2", "2026-07-30"), ("B3", "2026-08-06")):
+        _spread_bond(con, secid)
+        db.insert_spread_snapshot(con, secid=secid, snap_date=d, ytm=0.15,
+                                   tenor_yrs=1.5, rf_rate=0.14, g_spread_bp=300.0,
+                                   mod_dur=1.0, convexity=None)
+    con.commit()
+
+    result = _latest_spread_snap_date(con)
+    raw_max = con.execute("SELECT MAX(snap_date) m FROM spread_snapshot").fetchone()["m"]
+    con.close()
+    assert result == raw_max
+
+
+def test_latest_spread_snap_date_none_when_no_history(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    result = _latest_spread_snap_date(con)
+    con.close()
+    assert result is None
 
 
 # ---- Rating Trajectory task (2026-08-24) ------------------------------------
