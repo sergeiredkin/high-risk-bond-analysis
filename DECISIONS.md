@@ -73,3 +73,39 @@ screener, market map, and watchlist. User can manually add if desired.
 
 **Lesson:** Structural exclusions need explicit lists, not heuristic
 filters — commodity-linked bonds look like normal bonds in most fields.
+
+---
+
+## 2026-08-27 — Backtest status and honest positioning
+
+Current positioning: "institutional-grade methodology, retail-first
+in RU, one month live operation, backtest pending."
+
+History starts 2026-07-28. Meaningful backtest possible by 2027-02
+(6 months). Until then: anecdotal validation only (Оил Ресурс,
+Контрол Лизинг, АПРИ catches). Forward tracking: log every
+promotion/rejection with reason via existing flag_log + promotion
+audit trail. Review outcomes at 6 and 12 months.
+
+## 2026-08-27 — CSS token correction: --text-accent does not exist
+
+hybond's codebase does not have a --text-accent token. The correct
+accent token is --gold-primary (rebranded to teal in today's session
+but the token name is unchanged). Never substitute --text-accent —
+it silently breaks hover states with no error.
+
+## 2026-08-27 — six_pillars are normalized scores, not raw financials
+
+six_pillars stores 0–100 normalized pillar scores, not raw financial
+figures (Выручка, EBITDA, Net debt, ND/EBITDA etc.). Raw multi-year
+financials are not currently exported to dashboard_data.json.
+Financial trajectory table in bond drawer uses pillar scores labeled
+honestly as .../100. To show raw figures, ГИР БО data must be added
+to export_dashboard_data.py first.
+
+## 2026-08-27 — udActiveTab() false positive: #sidebarHomeBtn stale .active
+
+#sidebarHomeBtn retains .active class from initial load that
+gotoTab() never clears. Querying .sidebar-item.active matches it
+first and returns wrong tab context. Fix: always use
+.sidebar-item.active[data-tab] to exclude the home button.
