@@ -124,3 +124,19 @@ Backlog Tier 2: add ytm_to_offer() in bondmath.py using offer_date
 as terminal date, call in universe_pipeline.py when offer_date is
 not null and offer_date < mat_date, surface in unified bond drawer
 metrics strip.
+
+## 2026-08-27 — CBR tracker silent abort bug
+
+cbr_tracker.check_and_fetch_today() was missing `result =` before
+fetch_meeting(...), causing NameError on every actual CBR scheduled
+day. Since daily_run.sh runs under set -e, this aborted the entire
+daily pipeline including dashboard rebuild. Discovered during health
+logging Task 2 wiring. Fixed and regression test added.
+
+## 2026-08-27 — Live DB safety rule
+
+Never use file-level cp/restore against data/db/hybond.sqlite with
+concurrent cron writers active. Correct pattern for test isolation:
+sqlite3 data/db/hybond.sqlite ".backup /tmp/hybond_test.sqlite"
+Uses SQLite online backup API — safe with concurrent writers.
+Or accept small real writes (health log rows) directly to live DB.
