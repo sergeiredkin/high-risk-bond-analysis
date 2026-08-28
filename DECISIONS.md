@@ -109,3 +109,18 @@ to export_dashboard_data.py first.
 gotoTab() never clears. Querying .sidebar-item.active matches it
 first and returns wrong tab context. Fix: always use
 .sidebar-item.active[data-tab] to exclude the home button.
+
+## 2026-08-27 — yield_to_offer not yet computed
+
+universe_snapshot has a yield_to_offer column and offer_date is written
+by universe_pipeline.py (line 383, populated when MOEX reports an
+offer/put date). Confirmed: universe_pipeline.py line 387 sets
+yield_to_offer=None explicitly, with an existing comment "not derivable
+without per-bond cashflows" — this is a deliberate placeholder, not an
+oversight. export_dashboard_data.py (line 566) exports offer_date but
+not yield_to_offer (there is nothing to export).
+
+Backlog Tier 2: add ytm_to_offer() in bondmath.py using offer_date
+as terminal date, call in universe_pipeline.py when offer_date is
+not null and offer_date < mat_date, surface in unified bond drawer
+metrics strip.

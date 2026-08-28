@@ -2015,3 +2015,33 @@ def list_portfolios(con, status: str | None = None) -> list[dict]:
         return [dict(r) for r in con.execute(
             "SELECT * FROM portfolio WHERE status=? ORDER BY created_at DESC", (status,))]
     return [dict(r) for r in con.execute("SELECT * FROM portfolio ORDER BY created_at DESC")]
+
+
+# --- pipeline_health: cross-source data-quality/operational event log -----
+# (Pipeline Health Logging System, 2026-08-28). Source/stage/level vocab is
+# enforced in hybond.health, not here -- this module only owns the schema.
+
+PIPELINE_HEALTH_SCHEMA = """
+CREATE TABLE IF NOT EXISTS pipeline_health (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recorded_at TEXT DEFAULT (datetime('now')),
+    source TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    level TEXT NOT NULL CHECK(level IN ('ok','warn','error','critical')),
+    code TEXT NOT NULL,
+    detail TEXT,
+    issuer_id TEXT,
+    resolved INTEGER DEFAULT 0,
+    resolved_at TEXT,
+    resolved_note TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_ph_level
+    ON pipeline_health(level, resolved, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_ph_source
+    ON pipeline_health(source, recorded_at);
+"""
+
+
+def init_pipeline_health(con) -> None:
+    con.executescript(PIPELINE_HEALTH_SCHEMA)

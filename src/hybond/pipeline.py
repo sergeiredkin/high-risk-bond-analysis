@@ -19,6 +19,7 @@ import requests
 
 from .calendar.wall import build_wall, redemptions_by_issuer
 from .compute import bondmath, cashflows, default_probs, expected_return
+from .health import log_health
 from .ingest import sources
 from .store import db
 
@@ -185,6 +186,10 @@ def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
                         "skipping implausible floater YIELD for %s on %s: "
                         "raw=%s -> ytm=%.4f (outside (0, %.1f])",
                         secid, snap_date, yld, ytm, FLOATER_YIELD_SANITY_MAX)
+                    log_health(con, 'moex', 'compute', 'warn',
+                               'YTM_SANITY_FAIL',
+                               f'ytm={ytm:.2f} rejected for {secid} — exceeds FLOATER_YIELD_SANITY_MAX',
+                               issuer_id=issuer_id)
                     continue
                 tenor = (mat - snap_date).days / 365.0
                 rf = bondmath.interp_curve(tenor, curve)

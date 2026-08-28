@@ -1231,6 +1231,65 @@ def _print_fetch_result(fetch_date: str, is_anchor: bool, result: dict) -> None:
           f"change_bp={result.get('rate_change_bp')}")
 
 
+def _fmt_health_row(row: dict) -> str:
+    recorded = (row.get("recorded_at") or "")[:16]  # "YYYY-MM-DD HH:MM"
+    source_stage = f"{row['source']}/{row['stage']}"
+    line1 = f"[{row['level'].upper():<8}] {recorded:<16}  {source_stage:<18}{row['code']}"
+    detail = row.get("detail") or ""
+    if row.get("issuer_id"):
+        detail = f"{detail} ({row['issuer_id']})" if detail else f"({row['issuer_id']})"
+    line2 = f"          {detail}" if detail else None
+    return line1 + ("\n" + line2 if line2 else "")
+
+
+def cmd_health(args) -> int:
+    from . import health
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    db.init_pipeline_health(con)
+
+    if args.resolve is not None:
+        health.resolve(con, args.resolve, note=args.note or "")
+        con.close()
+        print(f"resolved id={args.resolve}")
+        return 0
+
+    if args.resolve_code is not None:
+        n = health.resolve_code(con, args.resolve_code, note=args.note or "")
+        con.close()
+        print(f"resolved {n} entr{'y' if n == 1 else 'ies'} with code={args.resolve_code!r}")
+        return 0
+
+    if args.rotate:
+        result = health.rotate_pipeline_health(con)
+        con.close()
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.summary:
+        result = health.summary(con)
+        con.close()
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.all:
+        rows = [dict(r) for r in con.execute(
+            "SELECT * FROM pipeline_health ORDER BY recorded_at DESC LIMIT 50")]
+        con.close()
+        print(f"PIPELINE HEALTH — {len(rows)} entries (including resolved)\n")
+    else:
+        rows = health.get_unresolved(con, min_level='warn', limit=50)
+        con.close()
+        n = len(rows)
+        print(f"PIPELINE HEALTH — {n} unresolved issue{'' if n == 1 else 's'}\n")
+
+    for row in rows:
+        print(_fmt_health_row(row))
+    return 0
+
+
 def cmd_cbr(args) -> int:
     from . import cbr_tracker
     from .store import db
@@ -1615,6 +1674,21 @@ def main(argv=None) -> int:
     pc.add_argument("--diff-all", action="store_true",
                     help="(re)compute diffs for every meeting that has a qualifying prior")
     pc.set_defaults(func=cmd_cbr)
+
+    ph = sub.add_parser("health", help="Pipeline health log: data-quality/operational events")
+    ph.add_argument("--all", action="store_true",
+                     help="show all entries including resolved (last 50)")
+    ph.add_argument("--resolve", type=int, metavar="ID",
+                     help="mark entry ID as resolved")
+    ph.add_argument("--resolve-code", metavar="CODE",
+                     help="mark all unresolved entries with CODE resolved")
+    ph.add_argument("--note", default="", help="optional note for --resolve/--resolve-code")
+    ph.add_argument("--rotate", action="store_true",
+                     help="delete ok/warn rows older than 7 days")
+    ph.add_argument("--summary", action="store_true",
+                     help="print JSON summary (for scripting)")
+    ph.set_defaults(func=cmd_health)
+
     args = p.parse_args(argv)
     return args.func(args)
 
