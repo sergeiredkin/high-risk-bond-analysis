@@ -12,7 +12,9 @@ from hybond.store import db  # noqa: E402
 from export_dashboard_data import (  # noqa: E402
     spread_history_by_issuer, passive_issuers_export, passive_events_since,
     universe_snapshot_bundle, RATING_TREND_VALUE, rating_trend,
-    rating_history_by_issuer, _latest_spread_snap_date, portfolio_data_freshness)
+    rating_history_by_issuer, _latest_spread_snap_date, portfolio_data_freshness,
+    pipeline_health_export)
+from hybond import health  # noqa: E402
 
 ISSUER = "7701234567"
 
@@ -512,3 +514,47 @@ def test_portfolio_data_freshness_empty_db_returns_none(tmp_path):
     result = portfolio_data_freshness(con)
     con.close()
     assert result == {"universe_snapshot_date": None, "spread_snapshot_date": None}
+
+
+# --- pipeline_health_export (Pipeline Health Dashboard task, Phase 1) ------
+
+def test_pipeline_health_export_shape_ok_when_clean(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_pipeline_health(con)
+    con.commit()
+    result = pipeline_health_export(con, latest_spread=None)
+    con.close()
+    assert result["status"] == "ok"
+    assert result["unresolved_counts"] == {"warn": 0, "error": 0, "critical": 0}
+    assert result["latest_error"] is None
+    assert result["unresolved"] == []
+
+
+def test_pipeline_health_export_includes_unresolved_entries(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_pipeline_health(con)
+    health.log_health(con, 'moex', 'ingest', 'error', 'MOEX_EMPTY', 'No bonds returned')
+    con.commit()
+    result = pipeline_health_export(con, latest_spread=None)
+    con.close()
+    assert result["status"] == "error"
+    assert len(result["unresolved"]) == 1
+    assert result["unresolved"][0]["code"] == "MOEX_EMPTY"
+    assert "id" in result["unresolved"][0]
+
+
+def test_pipeline_health_export_logs_export_stale_when_spread_snapshot_old(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_pipeline_health(con)
+    con.commit()
+    result = pipeline_health_export(con, latest_spread="2020-01-01")
+    con.close()
+    codes = {r["code"] for r in result["unresolved"]}
+    assert "EXPORT_STALE" in codes
+    assert result["status"] == "warn"

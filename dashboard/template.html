@@ -726,6 +726,19 @@
   .si-badge-count { position: absolute; top: -6px; right: 2px; min-width: 16px; height: 16px;
     padding: 0 3px; border-radius: 8px; background: var(--verdict-red); color: #fff;
     font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+  /* Pipeline health badge (2026-08-28): amber/red dot on Настройки, same
+     .si-badge-dot base as the ЦБ РФ badge above -- color set inline per
+     status since .si-badge-dot's own default (--verdict-red) only covers
+     error/critical, not warn. Pulsing is critical-only, a new animation --
+     no existing dot-pulse keyframe was already in the codebase to reuse
+     despite the task spec's "same pattern as existing si-badge-dot"
+     assumption (that class itself is static; only .spinner/.pulse-tile had
+     any @keyframes at all, neither dot-shaped). */
+  .si-badge-dot.si-badge-pulse { animation: si-badge-pulse 1.4s ease-in-out infinite; }
+  @keyframes si-badge-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.5; transform: scale(1.25); }
+  }
   @media (min-width: 769px) {
     body { margin-left: 64px; }
   }
@@ -1575,6 +1588,40 @@
   .settings-lang-select { border: 1px solid var(--bg-border); background: var(--bg-elevated);
     color: var(--text-muted); border-radius: var(--radius-btn); padding: 5px 10px; font-size: 12px;
     cursor: not-allowed; }
+  /* Pipeline health panel (2026-08-28) -------------------------------- */
+  #healthPanel { padding-bottom: 14px; border-bottom: 0.5px solid var(--border); margin-bottom: 4px; }
+  .hp-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .hp-header-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .hp-refresh-btn { border: 1px solid var(--bg-border); background: var(--bg-elevated);
+    color: var(--text-secondary); border-radius: var(--radius-btn); padding: 4px 10px;
+    font-size: 11px; cursor: pointer; }
+  .hp-refresh-btn:hover { color: var(--text-primary); border-color: var(--gold-primary); }
+  .hp-header-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .hp-entry { border: 0.5px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    margin-top: 8px; position: relative; }
+  .hp-entry-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .hp-level-pill { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+    color: #fff; display: inline-flex; align-items: center; gap: 4px; }
+  .hp-level-pill.hp-level-warn { background: var(--verdict-yellow); }
+  .hp-level-pill.hp-level-error, .hp-level-pill.hp-level-critical { background: var(--verdict-red); }
+  .hp-entry-code { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+  .hp-entry-time { font-size: 10.5px; color: var(--text-muted); margin-left: auto; }
+  .hp-entry-detail { font-size: 12px; color: var(--text-secondary); margin-top: 4px; line-height: 1.4; }
+  .hp-resolve-btn { margin-top: 6px; border: 1px solid var(--bg-border); background: none;
+    color: var(--text-secondary); border-radius: var(--radius-btn); padding: 3px 8px;
+    font-size: 11px; cursor: pointer; }
+  .hp-resolve-btn:hover { color: var(--text-primary); border-color: var(--gold-primary); }
+  .hp-cli-popover { position: absolute; z-index: 5; left: 8px; right: 8px; margin-top: 6px;
+    background: var(--bg-elevated); border: 0.5px solid var(--gold-primary); border-radius: 8px;
+    padding: 8px 10px; font-size: 11px; }
+  .hp-cli-popover code { display: block; background: var(--bg-surface); border-radius: 6px;
+    padding: 6px 8px; margin: 4px 0 6px; word-break: break-all; color: var(--text-primary); }
+  .hp-cli-copy-btn { border: 1px solid var(--bg-border); background: none; color: var(--text-secondary);
+    border-radius: var(--radius-btn); padding: 3px 8px; font-size: 11px; cursor: pointer; }
+  .hp-cli-copy-btn:hover { color: var(--text-primary); border-color: var(--gold-primary); }
+  .hp-empty { display: flex; align-items: center; gap: 8px; padding: 12px 0 4px; font-size: 13px;
+    color: var(--verdict-green); }
+  .hp-empty-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
   @media (max-width: 640px) {
     .settings-drawer {
       top: auto; right: 0; bottom: 0; left: 0; width: 100%; height: 85vh;
@@ -1752,7 +1799,8 @@
     <span class="si-icon"><i class="ti ti-book"></i></span><span class="si-label">Справка</span>
   </button>
   <button type="button" class="sidebar-item sidebar-secondary sidebar-settings" id="sidebarSettingsBtn" title="Настройки">
-    <span class="si-icon"><i class="ti ti-settings"></i></span><span class="si-label">Настройки</span>
+    <span class="si-icon"><i class="ti ti-settings"></i><span class="si-badge-dot" id="sidebarHealthBadge" style="display:none"></span></span>
+    <span class="si-label">Настройки</span>
   </button>
 </nav>
 <!-- Issuer detail drawer (Вотчлист card redesign): one shared right-side
@@ -1788,6 +1836,18 @@
 <aside class="settings-drawer" id="settingsDrawer" aria-hidden="true">
   <button type="button" class="iw-drawer-close" id="settingsDrawerClose" aria-label="Закрыть">×</button>
   <h3 class="iw-drawer-title">Настройки</h3>
+  <!-- Pipeline health panel (2026-08-28): rendered by renderHealthPanel()
+       into #healthPanelBody, shown only when DATA.pipeline_health.status is
+       warn/error/critical -- see openSettingsDrawer(). Sits ahead of the
+       existing settings-row controls below, per the task spec. -->
+  <div id="healthPanel" style="display:none">
+    <div class="hp-header">
+      <span class="hp-header-title">Состояние системы</span>
+      <button type="button" class="hp-refresh-btn" id="healthPanelRefresh">Обновить</button>
+    </div>
+    <div class="hp-header-sub" id="healthPanelSubline"></div>
+    <div id="healthPanelBody"></div>
+  </div>
   <div class="settings-row">
     <span class="settings-row-label">Тема</span>
     <button type="button" class="theme-toggle-btn" id="themeToggle" title="Переключить тему" aria-label="Переключить тему"></button>
@@ -6677,6 +6737,7 @@ function openSettingsDrawer() {
   document.getElementById('settingsDrawer').classList.add('open');
   document.getElementById('settingsDrawer').setAttribute('aria-hidden', 'false');
   document.getElementById('settingsDrawerOverlay').classList.add('open');
+  renderHealthPanel();
 }
 function closeSettingsDrawer() {
   document.getElementById('settingsDrawer').classList.remove('open');
@@ -6709,8 +6770,107 @@ function renderSidebarBadges() {
   }
   const cbrBadge = document.getElementById('sidebarCbrBadge');
   if (cbrBadge) cbrBadge.style.display = (daysToMeeting != null && daysToMeeting <= 3 && daysToMeeting >= 0) ? '' : 'none';
+
+  // Pipeline health badge (2026-08-28): amber for warn, red for error,
+  // pulsing red for critical -- see .si-badge-pulse above.
+  const health = DATA.pipeline_health;
+  const healthBadge = document.getElementById('sidebarHealthBadge');
+  if (healthBadge) {
+    const status = health && health.status;
+    healthBadge.classList.remove('si-badge-pulse');
+    if (status === 'warn') {
+      healthBadge.style.display = '';
+      healthBadge.style.background = 'var(--verdict-yellow)';
+    } else if (status === 'error' || status === 'critical') {
+      healthBadge.style.display = '';
+      healthBadge.style.background = 'var(--verdict-red)';
+      if (status === 'critical') healthBadge.classList.add('si-badge-pulse');
+    } else {
+      healthBadge.style.display = 'none';
+    }
+  }
 }
 renderSidebarBadges();
+
+// ---- Pipeline health panel (2026-08-28) ------------------------------------
+// Renders DATA.pipeline_health into #healthPanel, shown inside the settings
+// drawer (openSettingsDrawer() calls this on every open) ahead of the
+// existing theme/font/disclosure controls -- per the task spec, only visible
+// when status is warn/error/critical. "Обновить" re-reads DATA.pipeline_health
+// (already embedded at build time, no network call the dashboard could make)
+// rather than hitting a live endpoint -- see the header sub timestamp using
+// day2_snap_date/rebuild_at as the "as of last build" marker.
+const HP_LEVEL_LABEL = { warn: 'WARN', error: 'ERROR', critical: 'CRITICAL' };
+
+function hpEntryHtml(entry) {
+  const level = entry.level === 'critical' ? 'critical' : (entry.level === 'error' ? 'error' : 'warn');
+  const time = (entry.recorded_at || '').slice(0, 16);
+  return `<div class="hp-entry" data-health-id="${entry.id}">
+    <div class="hp-entry-top">
+      <span class="hp-level-pill hp-level-${level}">${HP_LEVEL_LABEL[level] || level.toUpperCase()}</span>
+      <span class="hp-entry-code">${escapeHtml(entry.code)}</span>
+      <span class="hp-entry-time">${escapeHtml(time)}</span>
+    </div>
+    <div class="hp-entry-detail">${escapeHtml(entry.detail || '')}</div>
+    <button type="button" class="hp-resolve-btn" data-hp-resolve="${entry.id}">Отметить решённым</button>
+  </div>`;
+}
+
+function renderHealthPanel() {
+  const panel = document.getElementById('healthPanel');
+  const body = document.getElementById('healthPanelBody');
+  const subline = document.getElementById('healthPanelSubline');
+  if (!panel || !body) return;
+  const health = DATA.pipeline_health;
+  const status = health && health.status;
+  if (!status || status === 'ok') { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+
+  const unresolved = (health.unresolved || []);
+  subline.textContent = `Данные на момент последней сборки дашборда: ${DATA.rebuild_at ? DATA.rebuild_at.replace('T', ' ').slice(0, 16) : '—'}`;
+
+  if (unresolved.length === 0) {
+    body.innerHTML = `<div class="hp-empty">✅ Все системы работают нормально</div>
+      <div class="hp-empty-sub">${health.last_rotation ? `Последняя ротация: ${escapeHtml(health.last_rotation)}` : ''}</div>`;
+    return;
+  }
+
+  const n = unresolved.length;
+  const label = n === 1 ? 'нерешённая проблема' : (n < 5 ? 'нерешённые проблемы' : 'нерешённых проблем');
+  body.innerHTML = `<div class="hp-header-sub" style="margin-bottom:2px">${n} ${label}</div>`
+    + unresolved.map(hpEntryHtml).join('');
+}
+
+document.getElementById('healthPanelRefresh').addEventListener('click', renderHealthPanel);
+
+// Event delegation: "Отметить решённым" toggles a small copyable-CLI-command
+// popover under the clicked entry (dashboard is static, can't write to the
+// DB itself) -- click again (or click the entry's own button again) closes
+// it; only one popover open at a time.
+document.getElementById('healthPanel').addEventListener('click', (e) => {
+  const resolveBtn = e.target.closest('[data-hp-resolve]');
+  if (resolveBtn) {
+    const existing = resolveBtn.parentElement.querySelector('.hp-cli-popover');
+    document.querySelectorAll('.hp-cli-popover').forEach(p => p.remove());
+    if (existing) return; // second click on the same entry just closes it
+    const id = resolveBtn.dataset.hpResolve;
+    const cmd = `hybond health --resolve ${id}`;
+    const pop = document.createElement('div');
+    pop.className = 'hp-cli-popover';
+    pop.innerHTML = `Выполните в терминале:<code>${escapeHtml(cmd)}</code>`
+      + `<button type="button" class="hp-cli-copy-btn" data-hp-copy="${escapeHtml(cmd)}">Копировать</button>`;
+    resolveBtn.insertAdjacentElement('afterend', pop);
+    return;
+  }
+  const copyBtn = e.target.closest('[data-hp-copy]');
+  if (copyBtn) {
+    const cmd = copyBtn.dataset.hpCopy;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmd).catch(() => {});
+    }
+    copyBtn.textContent = 'Скопировано';
+  }
+});
 
 // ================= Home screen (landing view) =============================
 // Renders from DATA + existing exposed functions only -- no new computation,

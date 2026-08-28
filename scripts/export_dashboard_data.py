@@ -24,7 +24,9 @@ from pathlib import Path
 sys.path.insert(0, "src")
 
 from hybond.classify_utils import queue_bucket  # noqa: E402
+from hybond.health import get_unresolved as health_unresolved  # noqa: E402
 from hybond.health import log_health  # noqa: E402
+from hybond.health import summary as health_summary  # noqa: E402
 from hybond.compute.default_probs import (  # noqa: E402
     DEFAULT_PROBS, LGD, RATING_ORDER, RECOVERY_RATE, implied_fair_spread_bp, lookup)
 from hybond.compute import inflection  # noqa: E402
@@ -499,6 +501,32 @@ def _latest_spread_snap_date(con) -> str | None:
     factlist/rating touch predates the actual latest pipeline run."""
     row = con.execute("SELECT MAX(snap_date) m FROM spread_snapshot").fetchone()
     return row["m"] if row else None
+
+
+def pipeline_health_export(con, latest_spread: str | None) -> dict:
+    """Pipeline Health Dashboard task, Phase 1 (2026-08-28): EXPORT_STALE
+    check + summary()/get_unresolved() assembly for DATA.pipeline_health.
+
+    'unresolved' is added beyond the task spec's literal JSON shape (which
+    only listed summary()'s aggregate fields) -- Phase 3's health panel
+    needs each entry's id/code/detail/recorded_at to render the list and
+    build a per-entry "hybond health --resolve ID" command, which the
+    aggregate summary alone can't supply.
+
+    Staleness is checked on the underlying data (dates only, day-level
+    granularity) -- "24h" is interpreted as "not today's snapshot", the
+    finest resolution these snapshots actually carry.
+    """
+    latest_universe = db.latest_universe_snap_date(con)
+    today_iso = date.today().isoformat()
+    for label, snap in (("spread_snapshot", latest_spread), ("universe_snapshot", latest_universe)):
+        if snap and snap < today_iso:
+            log_health(con, 'dashboard', 'export', 'warn', 'EXPORT_STALE',
+                       f'{label} latest date is {snap}, expected {today_iso}')
+
+    result = health_summary(con)
+    result["unresolved"] = health_unresolved(con, min_level="warn", limit=20)
+    return result
 
 
 def _coupon_freq_bucket(coupon_period: int | None) -> str | None:
@@ -1392,16 +1420,7 @@ def main() -> None:
     company_scan_history = company_scan_history_export(con)
     queue_count_val = queue_count(con)
     latest_spread = _latest_spread_snap_date(con)
-    latest_universe = db.latest_universe_snap_date(con)
-
-    # health logging: staleness is checked on the underlying data (dates
-    # only, day-level granularity) -- "24h" is interpreted as "not today's
-    # snapshot", the finest resolution these snapshots actually carry.
-    today_iso = date.today().isoformat()
-    for label, snap in (("spread_snapshot", latest_spread), ("universe_snapshot", latest_universe)):
-        if snap and snap < today_iso:
-            log_health(con, 'dashboard', 'export', 'warn', 'EXPORT_STALE',
-                       f'{label} latest date is {snap}, expected {today_iso}')
+    pipeline_health = pipeline_health_export(con, latest_spread)
 
     out = {
         "generated_at": report.get("snap_date"),
@@ -1490,6 +1509,7 @@ def main() -> None:
         "spravka": (spravka_parser.parse(SPRAVKA_MD_PATH.read_text(encoding="utf-8"))
                     if SPRAVKA_MD_PATH.exists() else None),
         "sector_labels": SECTOR_LABELS_RU,
+        "pipeline_health": pipeline_health,
     }
     payload = json.dumps(out, ensure_ascii=False, indent=2)
     if len(payload.encode("utf-8")) < 10_000:
