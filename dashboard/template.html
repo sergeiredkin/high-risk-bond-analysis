@@ -1122,7 +1122,13 @@
   .mm-empty-overlay { position: absolute; left: var(--space-4); right: var(--space-4); top: var(--space-4); height: 520px;
     display: flex; align-items: center; justify-content: center; pointer-events: none; }
   .mm-empty-overlay .empty-state-action { pointer-events: auto; }
-  .mm-legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
+  /* Legend card styling (Map A/B Feature 7, 2026-08-27): var(--surface-1)/
+     var(--border) card, 11px items, 10px swatches -- was borderless/bare
+     text before. */
+  .mm-legend-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 11px;
+    color: var(--text-secondary); background: var(--surface-1); border: 0.5px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; }
+  .mm-legend-row:empty { display: none; }
   .mm-legend-item { display: flex; align-items: center; gap: 5px; }
   .mm-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .mm-stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
@@ -1153,6 +1159,31 @@
   }
   .mm-selection-tray[data-visible="1"] { opacity: 1; }
   #marketTable tr.map-selected-row { background: color-mix(in srgb, var(--series-2) 12%, transparent); }
+
+  /* Map B spec (2026-08-27): zoom/pan, side panel, size legend. */
+  #mmZoomLayer { position: relative; }
+  .mm-zoom-controls { position: absolute; top: 10px; right: 10px; z-index: 6; display: flex; flex-direction: column; gap: 4px; }
+  .mm-zoom-controls button { width: 28px; height: 28px; border-radius: 6px; border: 0.5px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); cursor: pointer; font-size: 15px; line-height: 1; }
+  .mm-zoom-controls button:hover { background: var(--bg-elevated); }
+  .mm-side-panel { position: absolute; left: 0; top: 0; bottom: 0; z-index: 6; display: flex;
+    background: var(--surface-1); border-right: 0.5px solid var(--border); width: 28px; transition: width .15s; overflow: hidden; }
+  .mm-side-panel[data-open="1"] { width: 160px; }
+  .mm-side-toggle { width: 28px; min-width: 28px; height: 100%; border: none; background: none; color: var(--text-secondary);
+    cursor: pointer; font-size: 14px; }
+  .mm-side-panel[data-open="1"] .mm-side-toggle { transform: rotate(180deg); }
+  .mm-side-content { padding: 10px 8px; font-size: 12px; overflow-y: auto; flex: 1; white-space: nowrap; }
+  .mm-side-section-title { font-weight: 600; color: var(--text-primary); margin: 8px 0 4px; }
+  .mm-side-section-title:first-child { margin-top: 0; }
+  .mm-side-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: var(--text-secondary); cursor: pointer; }
+  .mm-side-item .cnt { margin-left: auto; color: var(--text-muted); }
+  .mm-size-legend { position: absolute; right: 10px; bottom: 10px; z-index: 6;
+    background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    font-size: 11px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px; }
+  .mm-size-legend-row { display: flex; align-items: center; gap: 6px; }
+  .mm-size-legend-dot { border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+  .mm-cluster-label { position: absolute; font-size: 11px; color: var(--text-muted); pointer-events: none;
+    transform: translate(-50%, -50%); white-space: nowrap; z-index: 4; }
   .pd-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
   .pd-row .pd-label { width: 92px; font-size: 12px; opacity: 0.85; }
   .pd-bar-track { flex: 1; height: 6px; background: rgba(255,255,255,0.18); border-radius: 4px; overflow: hidden; }
@@ -2257,8 +2288,23 @@
         </div>
         <div class="mm-signal-bar" id="mmSignalBar"></div>
         <div class="mm-chart-card" id="mmChartCard" style="position:relative">
-          <canvas id="mmChart"></canvas>
-          <div class="mm-lasso-box" id="mmLassoBox" style="display:none"></div>
+          <!-- Map B spec (2026-08-27): canvas + lasso box share one transformed
+               layer so a CSS zoom/pan transform moves them together; controls,
+               side panel, legends stay outside it (unaffected by zoom). -->
+          <div id="mmZoomLayer" style="transform-origin:0 0">
+            <canvas id="mmChart"></canvas>
+            <div class="mm-lasso-box" id="mmLassoBox" style="display:none"></div>
+          </div>
+          <div class="mm-side-panel" id="mmSidePanel" data-open="0">
+            <button type="button" class="mm-side-toggle" id="mmSidePanelToggle" title="Секторы и рейтинги">›</button>
+            <div class="mm-side-content" id="mmSidePanelContent"></div>
+          </div>
+          <div class="mm-zoom-controls" id="mmZoomControls">
+            <button type="button" id="mmZoomInBtn" title="Увеличить">+</button>
+            <button type="button" id="mmZoomOutBtn" title="Уменьшить">−</button>
+            <button type="button" id="mmZoomResetBtn" title="Сбросить масштаб">⊡</button>
+          </div>
+          <div class="mm-size-legend" id="mmSizeLegend"></div>
           <div class="mm-empty-overlay" id="mmEmptyOverlay" style="display:none"></div>
           <div class="mm-legend-row" id="mmLegendRow"></div>
         </div>
@@ -2885,6 +2931,7 @@ window.screenFilter = {
   watchlistOnly: false,
   selectedSecid: null,
   selectedSecids: [],
+  ratings: [],       // [] = no rating restriction (Map B side panel, allow-list like sectors)
   listeners: [],
   update(patch) {
     Object.assign(this, patch);
@@ -7359,21 +7406,34 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     const b = Math.round(160 * (1 - t) + 220 * t);
     return `rgb(${rr},${g},${b})`;
   }
-  function mmMisColor(v) {
-    if (v === null || v === undefined) return '#9a9890';
-    if (v > 300) return '#0ca30c';
-    if (v >= -300) return '#c98a00';
-    return '#d03b3b';
+  // Feature 7 (2026-08-27): this is the actual per-bubble fill color for the
+  // default "mispricing" color mode (and the tooltip badge), previously a
+  // hardcoded green/amber/red literal picked for the dark theme -- the
+  // 1fd55f6 theme-awareness pass only fixed the map's OVERLAY colors
+  // (fair-value bands, ceiling/caution lines), not colorFor()'s own bubble
+  // colors. Reads the same --verdict-* tokens the rest of the app uses so
+  // it doesn't wash out in light mode.
+  function mmMisColor(v, cache) {
+    const c = cache || {
+      green: getComputedStyle(document.documentElement).getPropertyValue('--verdict-green').trim() || '#0ca30c',
+      yellow: getComputedStyle(document.documentElement).getPropertyValue('--verdict-yellow').trim() || '#c98a00',
+      red: getComputedStyle(document.documentElement).getPropertyValue('--verdict-red').trim() || '#d03b3b',
+      grey: getComputedStyle(document.documentElement).getPropertyValue('--verdict-grey').trim() || '#9a9890',
+    };
+    if (v === null || v === undefined) return c.grey;
+    if (v > 300) return c.green;
+    if (v >= -300) return c.yellow;
+    return c.red;
   }
-  function pdGapColor(v) {
-    if (v === null || v === undefined) return '#9a9890';
-    return mmMisColor(v * 10000);
+  function pdGapColor(v, cache) {
+    if (v === null || v === undefined) return (cache || {}).grey || '#9a9890';
+    return mmMisColor(v * 10000, cache);
   }
   const mmState = { y: 'ytm', x: 'moddur', color: 'mispricing', size: 'volume', fOfz: true, fFair: true, fPdIso: false, fStar: true, fYieldCeiling: false };
-  function colorFor(b) {
+  function colorFor(b, cache) {
     switch (mmState.color) {
-      case 'mispricing': return mmMisColor(b.mispricing_bp);
-      case 'pdgap': return pdGapColor(b.pd_gap);
+      case 'mispricing': return mmMisColor(b.mispricing_bp, cache);
+      case 'pdgap': return pdGapColor(b.pd_gap, cache);
       case 'rating': return ratingColor(b.rating);
       case 'sector': return sectorColor(b.sector);
       case 'liquidity': return liquidityColor(b.num_trades);
@@ -7405,18 +7465,24 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     const days = (off - sd) / 86400000;
     return days > 0 ? days / 365 : null;
   }
+  // Feature 7 (2026-08-27): per-axis tick formatting -- bp-scale metrics
+  // round to the nearest 50 (a bond-by-bond bp reading finer than that is
+  // noise at this chart's scale), percent-scale metrics keep 1 decimal.
+  const mmFmtBp50 = v => `${Math.round(v / 50) * 50}бп`;
+  const mmFmtPct1 = v => `${v.toFixed(1)}%`;
+  const mmFmtYrs1 = v => v.toFixed(1);
   const Y_DEFS = {
-    mispricing: { label: 'Недооценка/переоценка, бп', get: b => b.mispricing_bp },
-    ytm: { label: 'YTM, %', get: b => b.ytm_pct },
-    gspread: { label: 'G-спред, бп', get: b => b.g_spread_bp },
-    pdgap: { label: 'PD рынок−PD рейтинг, %', get: b => b.pd_gap !== null && b.pd_gap !== undefined ? b.pd_gap * 100 : null },
-    pdmarket: { label: 'PD по цене рынка, %', get: b => b.pd_market !== null && b.pd_market !== undefined ? b.pd_market * 100 : null },
+    mispricing: { label: 'Недооценка/переоценка, бп', get: b => b.mispricing_bp, fmt: mmFmtBp50 },
+    ytm: { label: 'YTM, %', get: b => b.ytm_pct, fmt: mmFmtPct1 },
+    gspread: { label: 'G-спред, бп', get: b => b.g_spread_bp, fmt: mmFmtBp50 },
+    pdgap: { label: 'PD рынок−PD рейтинг, %', get: b => b.pd_gap !== null && b.pd_gap !== undefined ? b.pd_gap * 100 : null, fmt: mmFmtPct1 },
+    pdmarket: { label: 'PD по цене рынка, %', get: b => b.pd_market !== null && b.pd_market !== undefined ? b.pd_market * 100 : null, fmt: mmFmtPct1 },
   };
   const X_DEFS = {
-    moddur: { label: 'Модифицированная дюрация, лет', get: b => b.mod_dur },
-    duration: { label: 'Дюрация, лет', get: b => b.duration_yrs },
-    maturity: { label: 'Срок до погашения, лет', get: b => b.tenor_yrs },
-    offer: { label: 'Срок до оферты, лет', get: (b, snapDate) => tenorToOffer(b, snapDate) },
+    moddur: { label: 'Модифицированная дюрация, лет', get: b => b.mod_dur, fmt: mmFmtYrs1 },
+    duration: { label: 'Дюрация, лет', get: b => b.duration_yrs, fmt: mmFmtYrs1 },
+    maturity: { label: 'Срок до погашения, лет', get: b => b.tenor_yrs, fmt: mmFmtYrs1 },
+    offer: { label: 'Срок до оферты, лет', get: (b, snapDate) => tenorToOffer(b, snapDate), fmt: mmFmtYrs1 },
   };
   function sizeFor(b) {
     if (mmState.size === 'equal') return 4.5;
@@ -7465,6 +7531,18 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   let mmLassoJustFinished = false; // suppresses the native click that follows a drag's mouseup
   let mmMouseDownOnBubble = false;
 
+  // Map B spec (2026-08-27): zoom/pan state. Applied as a CSS transform on
+  // #mmZoomLayer (canvas + lasso box together, see the HTML) rather than
+  // touching drawMap()'s own coordinate math -- mmPlotPoints stay expressed
+  // in the canvas's own untransformed local space, and every mouse-coordinate
+  // conversion below divides by mmZoomScale to account for it (getBoundingClientRect()
+  // on a transformed element already reflects both the translate and the
+  // scale, so this one division is the whole adjustment needed).
+  let mmZoomScale = 1, mmOffsetX = 0, mmOffsetY = 0;
+  let mmPanStart = null;   // {clientX, clientY, offsetX, offsetY} while a plain drag pans
+  let mmPanMoved = false;
+  let mmPanJustFinished = false; // suppresses the native click after a real pan drag, like mmLassoJustFinished
+
   function mmPad() { return { l: 56, r: 18, t: 18, b: 42 }; }
   function mmResizeCanvas() {
     const rect = mmCanvas.getBoundingClientRect();
@@ -7493,11 +7571,23 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     const styles = getComputedStyle(document.documentElement);
     const gridColor = styles.getPropertyValue('--grid').trim() || '#e1e0d9';
     const textColor = styles.getPropertyValue('--text-secondary').trim() || '#52514e';
+    // Feature 7 (2026-08-27): axis TITLES are --text-primary/14px/500,
+    // distinct from tick labels (textColor, --text-secondary/12px, above).
+    const textColorPrimary = styles.getPropertyValue('--text-primary').trim() || '#0b0b0b';
     // Fair-value point recoloring (#mmFFair, when checked) -- read once per
     // frame, same pattern as gridColor/textColor above.
     const fairRedColor = styles.getPropertyValue('--verdict-red').trim() || '#E74C3C';
     const fairGreenColor = styles.getPropertyValue('--verdict-green').trim() || '#2ECC71';
     const fairNeutralColor = textColor;
+    // Feature 7 (2026-08-27): precomputed once per frame, same pattern as
+    // the colors above -- passed into colorFor()/mmMisColor() below so the
+    // per-bond render loop (up to ~2000 points) doesn't call
+    // getComputedStyle for every single dot.
+    const mmColorCache = {
+      green: fairGreenColor, red: fairRedColor,
+      yellow: styles.getPropertyValue('--verdict-yellow').trim() || '#c98a00',
+      grey: styles.getPropertyValue('--verdict-grey').trim() || '#9a9890',
+    };
 
     const emptyOverlay = document.getElementById('mmEmptyOverlay');
     if (!pts.length) {
@@ -7519,26 +7609,44 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     const sx = v => P.l + (v - xLo) / (xHi - xLo) * plotW;
     const sy = v => P.t + plotH - (v - yLo) / (yHi - yLo) * plotH;
 
+    // Feature 7 (2026-08-27): tick font/color (12px, --text-secondary) now
+    // explicitly distinct from the axis title font (14px/500, --text-primary)
+    // drawn further below -- previously both used the same 10.5px/muted
+    // style, so titles never stood out from ticks.
+    const yDefTick = Y_DEFS[mmState.y], xDefTick = X_DEFS[mmState.x];
     mmCtx.strokeStyle = gridColor; mmCtx.fillStyle = textColor;
-    mmCtx.font = '10.5px system-ui'; mmCtx.lineWidth = 1;
+    mmCtx.font = '12px system-ui'; mmCtx.lineWidth = 1;
     const NX = 6, NY = 6;
     for (let i = 0; i <= NX; i++) {
       const v = xLo + (xHi - xLo) * i / NX;
       const px = sx(v);
       mmCtx.beginPath(); mmCtx.moveTo(px, P.t); mmCtx.lineTo(px, P.t + plotH); mmCtx.stroke();
-      mmCtx.fillText(v.toFixed(1), px - 10, P.t + plotH + 16);
+      mmCtx.fillText(xDefTick.fmt(v), px - 12, P.t + plotH + 16);
     }
     for (let i = 0; i <= NY; i++) {
       const v = yLo + (yHi - yLo) * i / NY;
       const py = sy(v);
       mmCtx.beginPath(); mmCtx.moveTo(P.l, py); mmCtx.lineTo(P.l + plotW, py); mmCtx.stroke();
-      mmCtx.fillText(v.toFixed(0), 4, py + 3);
+      mmCtx.fillText(yDefTick.fmt(v), 4, py + 3);
     }
+    // Zero/reference line (Feature 7): only meaningful for the
+    // "Недооценка/переоценка" axis -- 0 is the fair-value boundary the
+    // mispricing color mode itself is keyed off (see mmMisColor above).
+    // Solid + slightly thicker than the dotted gridlines so it doesn't read
+    // as just another tick line.
+    if (mmState.y === 'mispricing' && yLo < 0 && yHi > 0) {
+      const zy = sy(0);
+      mmCtx.save(); mmCtx.strokeStyle = textColor; mmCtx.lineWidth = 1.4;
+      mmCtx.beginPath(); mmCtx.moveTo(P.l, zy); mmCtx.lineTo(P.l + plotW, zy); mmCtx.stroke();
+      mmCtx.fillText('Справедливая оценка', P.l + 6, zy - 4);
+      mmCtx.restore();
+    }
+    mmCtx.font = '500 14px system-ui'; mmCtx.fillStyle = textColorPrimary;
     mmCtx.save();
     mmCtx.translate(14, P.t + plotH / 2); mmCtx.rotate(-Math.PI / 2);
-    mmCtx.fillText(Y_DEFS[mmState.y].label, -40, 0);
+    mmCtx.fillText(yDefTick.label, -50, 0);
     mmCtx.restore();
-    mmCtx.fillText(X_DEFS[mmState.x].label, P.l + plotW / 2 - 60, H - 6);
+    mmCtx.fillText(xDefTick.label, P.l + plotW / 2 - 70, H - 6);
 
     if (mmState.y === 'mispricing') {
       // Same undervalue/overvalue semantic as fairGreenColor/fairRedColor
@@ -7680,7 +7788,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
         const distToHovered = Math.hypot(px - mmHoveredPx, py - mmHoveredPy);
         if (distToHovered < 80) fillAlpha = 0.4;
       }
-      let col = colorFor(b);
+      let col = colorFor(b, mmColorCache);
       // Fair-value overlay recoloring: only overrides the point's default
       // color while #mmFFair is checked, and only for bonds with a
       // comparable tier (fairValueDeltaBp returns null otherwise, e.g.
@@ -7755,6 +7863,8 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     updateMmStats(pts.map(p => p.b));
     updateLegend();
     window.hybondMmPlotPoints = mmPlotPoints; // debug/test hook, same convention as window.hybondComputeVerdict
+    renderMmSizeLegend();
+    mmUpdateClusterLabels();
   }
 
   function updateSignalBar(bonds) {
@@ -7797,28 +7907,96 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     // (not shared with drawMap()'s local fairRedColor/etc.) since this is a
     // sibling function, not a nested closure -- same getComputedStyle
     // pattern those were read with in the first place.
+    const s = getComputedStyle(document.documentElement);
+    const red = s.getPropertyValue('--verdict-red').trim() || '#E74C3C';
+    const green = s.getPropertyValue('--verdict-green').trim() || '#2ECC71';
+    const yellow = s.getPropertyValue('--verdict-yellow').trim() || '#c98a00';
+    const grey = s.getPropertyValue('--verdict-grey').trim() || '#9a9890';
+    const neutral = s.getPropertyValue('--text-secondary').trim() || '#52514e';
     if (mmState.fFair) {
-      const s = getComputedStyle(document.documentElement);
-      const red = s.getPropertyValue('--verdict-red').trim() || '#E74C3C';
-      const green = s.getPropertyValue('--verdict-green').trim() || '#2ECC71';
-      const neutral = s.getPropertyValue('--text-secondary').trim() || '#52514e';
-      items = [[red, '> +10% выше справедливого спреда'], [neutral, '±10% от справедливого'], [green, '> 10% ниже справедливого'], ['#9a9890', 'нет сопоставимого тира (AA/A/BBB/BB)']];
+      items = [[red, '> +10% выше справедливого спреда'], [neutral, '±10% от справедливого'], [green, '> 10% ниже справедливого'], [grey, 'нет сопоставимого тира (AA/A/BBB/BB)']];
     } else if (mmState.color === 'mispricing') {
-      items = [['#0ca30c','> +300бп недооценка'], ['#c98a00','±300бп справедливо'], ['#d03b3b','< -300бп переоценка'], ['#9a9890','нет рейтинга']];
+      // Feature 7 (2026-08-27): was hardcoded hex here, independently of
+      // colorFor()'s own theme-aware fix above -- the legend must show the
+      // SAME colors the bubbles actually render in, or it silently
+      // mismatches after a theme switch.
+      items = [[green,'> +300бп недооценка'], [yellow,'±300бп справедливо'], [red,'< -300бп переоценка'], [grey,'нет рейтинга']];
     } else if (mmState.color === 'pdgap') {
-      items = [['#0ca30c','рынок пессимистичнее рейтинга'], ['#c98a00','близко к рейтингу'], ['#d03b3b','рынок оптимистичнее рейтинга'], ['#9a9890','нет рейтинга']];
+      items = [[green,'рынок пессимистичнее рейтинга'], [yellow,'близко к рейтингу'], [red,'рынок оптимистичнее рейтинга'], [grey,'нет рейтинга']];
     } else if (mmState.color === 'rating') {
       items = [['rgb(40,190,70)','AAA/AA'], ['rgb(120,160,70)','A'], ['rgb(190,130,70)','BBB'], ['rgb(200,70,70)','BB и ниже']];
     } else if (mmState.color === 'sector') {
       const sectors = [...new Set((bucket(timeKey).bonds || []).map(b => b.sector).filter(Boolean))].slice(0, 8);
-      items = sectors.map(s => [sectorColor(s), sectorLabel(s)]);
+      items = sectors.map(s2 => [sectorColor(s2), sectorLabel(s2)]);
     } else if (mmState.color === 'liquidity') {
       items = [['rgb(160,160,160)','мало сделок'], ['rgb(40,120,220)','активно торгуется']];
     }
     legendEl.innerHTML = items.map(([c, l]) =>
       `<div class="mm-legend-item"><span class="mm-swatch" style="background:${c}"></span>${l}</div>`).join('')
-      + `<div class="mm-legend-item"><span style="color:#0ca30c">◎</span> зелёное кольцо: мисценка &gt; 1000бп</div>`
-      + `<div class="mm-legend-item"><span style="color:#d03b3b">◎</span> красное кольцо: PD-разрыв &gt; 10%</div>`;
+      + `<div class="mm-legend-item"><span style="color:${green}">◎</span> зелёное кольцо: мисценка &gt; 1000бп</div>`
+      + `<div class="mm-legend-item"><span style="color:${red}">◎</span> красное кольцо: PD-разрыв &gt; 10%</div>`;
+  }
+
+  // Feature 6b (2026-08-27): size legend. volume is raw MOEX VALTODAY units,
+  // NOT rubles (same caveat already documented elsewhere in this dashboard
+  // for that field) -- labeled honestly with real reference values pulled
+  // from the currently-plotted bonds rather than fabricated "100к/1М/10М ₽"
+  // figures the spec's example implied but this field can't actually back.
+  function renderMmSizeLegend() {
+    const el = document.getElementById('mmSizeLegend');
+    if (mmState.size === 'equal' || !mmPlotPoints.length) { el.innerHTML = ''; return; }
+    const isVolume = mmState.size === 'volume';
+    const vals = mmPlotPoints.map(p => isVolume ? (p.b.volume || 0) : (p.b.mod_dur || 0))
+      .filter(v => v > 0).sort((a, b) => a - b);
+    if (!vals.length) { el.innerHTML = ''; return; }
+    const pick = pct => vals[Math.min(vals.length - 1, Math.floor(vals.length * pct))];
+    const refs = [pick(0.1), pick(0.5), pick(0.95)];
+    const toBond = v => isVolume ? { volume: v } : { mod_dur: v };
+    const title = isVolume ? 'Объём, усл. ед. MOEX' : 'Мод. дюрация, лет';
+    const fmtVal = v => isVolume ? Math.round(v).toLocaleString('ru-RU') : v.toFixed(1);
+    el.innerHTML = `<div style="font-weight:600;color:var(--text-primary)">${title}</div>` +
+      refs.map(v => {
+        const r = sizeFor(toBond(v));
+        return `<div class="mm-size-legend-row"><span class="mm-size-legend-dot" style="width:${r * 2}px;height:${r * 2}px"></span><span>${fmtVal(v)}</span></div>`;
+      }).join('');
+  }
+
+  // Feature 6c (2026-08-27): sector cluster labels, zoomed-out only. Note:
+  // bonds are NOT laid out by sector -- the scatter positions them by
+  // whatever financial metrics the X/Y dropdowns pick, so a sector's bonds
+  // can be spread across the whole chart rather than forming a visually
+  // tight cluster. This still places each label at that sector's real
+  // centroid among the CURRENTLY plotted points (literal reading of "at the
+  // centroid of each sector cluster"), which is informative when a sector
+  // does happen to concentrate in one area but can otherwise just mark its
+  // average position.
+  function mmUpdateClusterLabels() {
+    const container = document.getElementById('mmChartCard');
+    container.querySelectorAll('.mm-cluster-label').forEach(el => el.remove());
+    if (mmZoomScale >= 3 || !mmPlotPoints.length) return;
+    const opacity = mmZoomScale <= 1.5 ? 1 : Math.max(0, 1 - (mmZoomScale - 1.5) / 1.5);
+    if (opacity <= 0) return;
+    const bySector = new Map();
+    mmPlotPoints.forEach(p => {
+      const sec = p.b.sector;
+      if (!sec) return;
+      if (!bySector.has(sec)) bySector.set(sec, { sx: 0, sy: 0, n: 0 });
+      const c = bySector.get(sec);
+      c.sx += p.sx; c.sy += p.sy; c.n++;
+    });
+    const cardRect = container.getBoundingClientRect();
+    const canvasRect = mmCanvas.getBoundingClientRect(); // already reflects the zoom transform
+    bySector.forEach((c, sec) => {
+      if (c.n < 3) return; // a 1-2 point "cluster" centroid isn't a meaningful label
+      const localX = c.sx / c.n, localY = c.sy / c.n;
+      const x = canvasRect.left + localX * mmZoomScale - cardRect.left;
+      const y = canvasRect.top + localY * mmZoomScale - cardRect.top;
+      const labelEl = document.createElement('div');
+      labelEl.className = 'mm-cluster-label';
+      labelEl.style.left = x + 'px'; labelEl.style.top = y + 'px'; labelEl.style.opacity = opacity;
+      labelEl.textContent = sectorLabel(sec);
+      container.appendChild(labelEl);
+    });
   }
 
   // Map A spec (2026-08-27): the old mousemove/click handlers here drove
@@ -7869,9 +8047,33 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     mmRichTooltip.style.opacity = 1;
   }
 
-  mmCanvas.addEventListener('mousemove', (e) => {
+  // Map B spec (2026-08-27): every mouse coordinate below divides by
+  // mmZoomScale to convert a raw viewport click into the canvas's own local
+  // coordinate space -- see the mmZoomScale state comment above for why
+  // that one division is sufficient (getBoundingClientRect() on the
+  // transformed #mmZoomLayer already reflects the translate too).
+  function mmLocalXY(e) {
     const rect = mmCanvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    return { mx: (e.clientX - rect.left) / mmZoomScale, my: (e.clientY - rect.top) / mmZoomScale };
+  }
+
+  mmCanvas.addEventListener('mousemove', (e) => {
+    // Feature 4 -- pan drag in progress (plain drag on empty space; see the
+    // resolved drag-semantics question -- shift+drag is the lasso instead).
+    if (mmPanStart && e.buttons === 1) {
+      const dx = e.clientX - mmPanStart.clientX, dy = e.clientY - mmPanStart.clientY;
+      if (!mmPanMoved && Math.hypot(dx, dy) > 4) mmPanMoved = true;
+      if (mmPanMoved) {
+        mmHideTooltip();
+        mmOffsetX = mmPanStart.offsetX + dx;
+        mmOffsetY = mmPanStart.offsetY + dy;
+        mmClampPan();
+        mmApplyZoomTransform(false);
+        return;
+      }
+    }
+
+    const { mx, my } = mmLocalXY(e);
 
     // Feature 2 -- lasso drag in progress: draw the box, skip hover/tooltip
     // entirely for this move (mmMouseDownOnBubble means the drag STARTED on
@@ -7881,6 +8083,10 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       if (!mmLassoActive && Math.hypot(dx, dy) > 4) mmLassoActive = true;
       if (mmLassoActive) {
         mmHideTooltip();
+        // The box is a sibling of the canvas INSIDE #mmZoomLayer, so it's
+        // positioned in the same untransformed local units mmPlotPoints use
+        // -- the layer's own CSS transform scales/moves it automatically,
+        // same as the canvas.
         const box = document.getElementById('mmLassoBox');
         box.style.display = 'block';
         box.style.left = Math.min(mmLassoStart.mx, mx) + 'px';
@@ -7911,25 +8117,34 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   });
   mmCanvas.addEventListener('mouseleave', mmHideTooltip);
 
-  // Feature 2 -- lasso start: only from empty canvas space. A mousedown ON
+  // Feature 2/4 -- drag start: only from empty canvas space. A mousedown ON
   // a bubble is left alone here so the eventual click/dblclick handlers
-  // below see it as a normal click gesture, not a drag.
+  // below see it as a normal click gesture, not a drag. Shift held down ->
+  // lasso (Map B's resolved drag-semantics choice); otherwise -> pan.
   mmCanvas.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
-    const rect = mmCanvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const { mx, my } = mmLocalXY(e);
     const best = mmHitTest(mx, my);
     mmMouseDownOnBubble = !!best;
-    if (!best) { mmLassoStart = { mx, my }; mmLassoActive = false; }
+    if (best) return;
+    if (e.shiftKey) {
+      mmLassoStart = { mx, my }; mmLassoActive = false;
+    } else {
+      mmPanStart = { clientX: e.clientX, clientY: e.clientY, offsetX: mmOffsetX, offsetY: mmOffsetY };
+      mmPanMoved = false;
+    }
   });
   // Bound to window, not mmCanvas -- a fast drag can end with the cursor
   // outside the canvas, and mouseup wouldn't otherwise fire there.
   window.addEventListener('mouseup', (e) => {
     mmMouseDownOnBubble = false;
+    if (mmPanStart) {
+      if (mmPanMoved) mmPanJustFinished = true; // browser still fires 'click' right after -- swallowed below
+      mmPanStart = null; mmPanMoved = false;
+    }
     if (!mmLassoStart) return;
     if (mmLassoActive) {
-      const rect = mmCanvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const { mx, my } = mmLocalXY(e);
       const x0 = Math.min(mmLassoStart.mx, mx), x1 = Math.max(mmLassoStart.mx, mx);
       const y0 = Math.min(mmLassoStart.my, my), y1 = Math.max(mmLassoStart.my, my);
       const picked = mmPlotPoints.filter(p => p.sx >= x0 && p.sx <= x1 && p.sy >= y0 && p.sy <= y1).map(p => p.b.secid);
@@ -7945,8 +8160,8 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   // drawer") -- a plain click now drives selectedSecids instead.
   mmCanvas.addEventListener('click', (e) => {
     if (mmLassoJustFinished) { mmLassoJustFinished = false; return; }
-    const rect = mmCanvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    if (mmPanJustFinished) { mmPanJustFinished = false; return; }
+    const { mx, my } = mmLocalXY(e);
     const best = mmHitTest(mx, my);
     if (!best) {
       mmHideTooltip();
@@ -7968,11 +8183,140 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     mmShowTooltipFor(best.b, e.clientX, e.clientY);
   });
   mmCanvas.addEventListener('dblclick', (e) => {
-    const rect = mmCanvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const { mx, my } = mmLocalXY(e);
     const best = mmHitTest(mx, my);
     if (best) openBondDrawer(best.b.secid);
   });
+
+  // Feature 4 -- zoom/pan controls.
+  function mmApplyZoomTransform(animate) {
+    const layer = document.getElementById('mmZoomLayer');
+    layer.style.transition = animate ? 'transform .2s ease' : 'none';
+    layer.style.transform = `translate(${mmOffsetX}px, ${mmOffsetY}px) scale(${mmZoomScale})`;
+    mmUpdateClusterLabels();
+  }
+  // "minimum 20% of bonds must remain visible": approximated as at least
+  // 20% of the SCALED content's width/height staying inside the viewport --
+  // a literal per-bond visibility count isn't worth the cost here, and this
+  // bound produces the same practical result (can't pan the content
+  // entirely out of view).
+  function mmClampPan() {
+    const W = mmCanvas.clientWidth, H = mmCanvas.clientHeight;
+    const scaledW = W * mmZoomScale, scaledH = H * mmZoomScale;
+    const minVisW = scaledW * 0.2, minVisH = scaledH * 0.2;
+    mmOffsetX = Math.min(W - minVisW, Math.max(minVisW - scaledW, mmOffsetX));
+    mmOffsetY = Math.min(H - minVisH, Math.max(minVisH - scaledH, mmOffsetY));
+  }
+  function mmZoomAt(clientX, clientY, factor, animate) {
+    const rect = mmCanvas.getBoundingClientRect();
+    const localX = (clientX - rect.left) / mmZoomScale, localY = (clientY - rect.top) / mmZoomScale;
+    const staticLeft = rect.left - mmOffsetX, staticTop = rect.top - mmOffsetY;
+    const newScale = Math.min(8, Math.max(1, mmZoomScale * factor));
+    mmOffsetX = clientX - staticLeft - localX * newScale;
+    mmOffsetY = clientY - staticTop - localY * newScale;
+    mmZoomScale = newScale;
+    mmClampPan();
+    mmApplyZoomTransform(animate);
+  }
+  mmCanvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    mmZoomAt(e.clientX, e.clientY, factor, false);
+  }, { passive: false });
+  document.getElementById('mmZoomInBtn').addEventListener('click', () => {
+    const rect = mmCanvas.getBoundingClientRect();
+    mmZoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.5, true);
+  });
+  document.getElementById('mmZoomOutBtn').addEventListener('click', () => {
+    const rect = mmCanvas.getBoundingClientRect();
+    mmZoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1 / 1.5, true);
+  });
+  document.getElementById('mmZoomResetBtn').addEventListener('click', () => {
+    mmZoomScale = 1; mmOffsetX = 0; mmOffsetY = 0;
+    mmApplyZoomTransform(true);
+  });
+
+  // Feature 5 -- sector/rating collapsible side panel. Sector clicks toggle
+  // window.screenFilter.sectors, the SAME allow-list the screener's sector
+  // pills already drive -- so a pick here is instantly visible on both the
+  // table and the map through the one shared computeFiltered() gate, no
+  // second filtering path. Rating clicks toggle the table's own
+  // #mRatingChecks checkboxes directly (computeFiltered() already reads
+  // those) and mirror the resulting set into window.screenFilter.ratings
+  // purely for external observability -- one source of truth, not two.
+  const MM_SIDEPANEL_LS_KEY = 'hybond-mm-sidepanel-open';
+  function mmAllSectors() {
+    return [...new Set((bucket(timeKey).bonds || []).map(b => b.sector).filter(Boolean))].sort();
+  }
+  function mmSectorCounts() {
+    // Reflects vdoOnly/watchlistOnly (the other screenFilter-level gates)
+    // but NOT the sector allow-list itself, so the panel always shows what's
+    // available to pick from rather than shrinking as sectors get excluded.
+    const sf = window.screenFilter;
+    const bonds = (bucket(timeKey).bonds || []).filter(b =>
+      (!sf.vdoOnly || b.vdo_scope) && (!sf.watchlistOnly || b.in_watchlist));
+    const counts = new Map();
+    bonds.forEach(b => { if (b.sector) counts.set(b.sector, (counts.get(b.sector) || 0) + 1); });
+    return counts;
+  }
+  // window.screenFilter.sectors is an ALLOW-list ([] = everyone shown), but
+  // the panel's own default view is "everything checked, uncheck to
+  // narrow" -- unchecking ONE sector out of an implicit "all" has to
+  // materialize the allow-list as every OTHER real sector, not just drop
+  // one name from an empty array (which would do nothing).
+  function mmToggleSector(sector, allSectors) {
+    const cur = window.screenFilter.sectors;
+    const currentlyShown = cur.length === 0 ? allSectors : cur;
+    const isChecked = currentlyShown.includes(sector);
+    const next = isChecked ? currentlyShown.filter(s => s !== sector) : currentlyShown.concat([sector]);
+    window.screenFilter.update({ sectors: next.length === allSectors.length ? [] : next });
+  }
+  const MM_RATING_TIERS = ['BBB', 'BB', 'B', 'CCC', 'CC', 'none'];
+  const MM_RATING_TIER_LABEL = { BBB: 'ruBBB', BB: 'ruBB', B: 'ruB', CCC: 'ruCCC', CC: 'ruCC', none: 'Без рейтинга' };
+  function mmToggleRatingTier(tier) {
+    const cb = document.querySelector(`#mRatingChecks input[value="${tier}"]`);
+    if (!cb) return;
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event('change', { bubbles: true })); // #mAdvFilters already listens for this -> renderActive()
+    window.screenFilter.update({ ratings: checkedValues('mRatingChecks') });
+  }
+  function renderMmSidePanel() {
+    const allSectors = mmAllSectors();
+    const counts = mmSectorCounts();
+    const sel = window.screenFilter.sectors;
+    const sectorHtml = allSectors.map(s => {
+      const checked = sel.length === 0 || sel.includes(s);
+      return `<div class="mm-side-item" data-sector="${escapeHtml(s)}"><input type="checkbox" tabindex="-1" ${checked ? 'checked' : ''}><span>${escapeHtml(sectorLabel(s))}</span><span class="cnt">${counts.get(s) || 0}</span></div>`;
+    }).join('');
+    const ratingCheckedVals = new Set(checkedValues('mRatingChecks'));
+    const ratingHtml = MM_RATING_TIERS.map(t =>
+      `<div class="mm-side-item" data-rating-tier="${t}"><input type="checkbox" tabindex="-1" ${ratingCheckedVals.has(t) ? 'checked' : ''}><span>${MM_RATING_TIER_LABEL[t]}</span></div>`).join('');
+    const content = document.getElementById('mmSidePanelContent');
+    content.innerHTML = `
+      <div class="mm-side-section-title">Секторы</div>${sectorHtml || '<div class="mm-side-item">нет данных</div>'}
+      <div class="mm-side-section-title">Рейтинги</div>${ratingHtml}
+    `;
+    content.querySelectorAll('[data-sector]').forEach(row => {
+      row.addEventListener('click', () => mmToggleSector(row.dataset.sector, allSectors));
+    });
+    content.querySelectorAll('[data-rating-tier]').forEach(row => {
+      row.addEventListener('click', () => { mmToggleRatingTier(row.dataset.ratingTier); renderMmSidePanel(); });
+    });
+  }
+  document.getElementById('mmSidePanelToggle').addEventListener('click', () => {
+    const panel = document.getElementById('mmSidePanel');
+    const open = panel.getAttribute('data-open') !== '1';
+    panel.setAttribute('data-open', open ? '1' : '0');
+    document.getElementById('mmSidePanelToggle').textContent = open ? '‹' : '›';
+    localStorage.setItem(MM_SIDEPANEL_LS_KEY, open ? '1' : '0');
+  });
+  {
+    const savedOpen = localStorage.getItem(MM_SIDEPANEL_LS_KEY) === '1';
+    document.getElementById('mmSidePanel').setAttribute('data-open', savedOpen ? '1' : '0');
+    document.getElementById('mmSidePanelToggle').textContent = savedOpen ? '‹' : '›';
+  }
+  renderMmSidePanel();
+  window.screenFilter.listeners.push(renderMmSidePanel);
 
   // Feature 3 -- selection tray. Registered as a window.screenFilter
   // listener (alongside renderActive above) so it stays correct regardless
