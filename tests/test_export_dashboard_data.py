@@ -13,7 +13,7 @@ from export_dashboard_data import (  # noqa: E402
     spread_history_by_issuer, passive_issuers_export, passive_events_since,
     universe_snapshot_bundle, RATING_TREND_VALUE, rating_trend,
     rating_history_by_issuer, _latest_spread_snap_date, portfolio_data_freshness,
-    pipeline_health_export)
+    pipeline_health_export, cleanup_export_stale_duplicates)
 from hybond import health  # noqa: E402
 
 ISSUER = "7701234567"
@@ -558,3 +558,42 @@ def test_pipeline_health_export_logs_export_stale_when_spread_snapshot_old(tmp_p
     codes = {r["code"] for r in result["unresolved"]}
     assert "EXPORT_STALE" in codes
     assert result["status"] == "warn"
+
+
+def test_pipeline_health_export_does_not_duplicate_export_stale_same_day(tmp_path):
+    """2026-08-28 fix: this export runs every 30 min via rebuild_dashboard.sh
+    -- a stale snapshot must log EXPORT_STALE once per day, not once per
+    cycle (log_health_once_today, not log_health)."""
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_pipeline_health(con)
+    con.commit()
+    pipeline_health_export(con, latest_spread="2020-01-01")
+    pipeline_health_export(con, latest_spread="2020-01-01")
+    rows = con.execute("SELECT * FROM pipeline_health WHERE code='EXPORT_STALE'").fetchall()
+    con.close()
+    assert len(rows) == 1
+
+
+def test_cleanup_export_stale_duplicates_resolves_existing_unresolved(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_pipeline_health(con)
+    health.log_health(con, 'dashboard', 'export', 'warn', 'EXPORT_STALE', 'dup 1')
+    health.log_health(con, 'dashboard', 'export', 'warn', 'EXPORT_STALE', 'dup 2')
+    con.commit()
+    cleanup_export_stale_duplicates(con)
+    unresolved = health.get_unresolved(con, min_level='warn')
+    con.close()
+    assert not any(r["code"] == "EXPORT_STALE" for r in unresolved)
+
+
+def test_cleanup_export_stale_duplicates_does_not_raise_on_db_error(tmp_path, capsys):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_pipeline_health(con)
+    con.close()  # force a DB error on the next operation
+    cleanup_export_stale_duplicates(con)  # must not raise
+    captured = capsys.readouterr()
+    assert "skipped" in captured.err

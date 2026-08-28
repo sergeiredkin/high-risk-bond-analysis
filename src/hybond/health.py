@@ -59,6 +59,23 @@ def log_health(con, source, stage, level, code,
         return None
 
 
+def log_health_once_today(con, source, stage, level, code,
+                           detail=None, issuer_id=None) -> int | None:
+    """
+    Like log_health() but skips if an unresolved entry with the same
+    code already exists from today. Returns row id or None if skipped.
+    """
+    db.init_pipeline_health(con)
+    existing = con.execute(
+        "SELECT id FROM pipeline_health WHERE code = ? AND resolved = 0 "
+        "AND date(recorded_at) = date('now') LIMIT 1",
+        (code,),
+    ).fetchone()
+    if existing:
+        return None
+    return log_health(con, source, stage, level, code, detail, issuer_id)
+
+
 def get_unresolved(con, min_level='warn', limit=50) -> list[dict]:
     """
     Return unresolved entries at or above min_level,

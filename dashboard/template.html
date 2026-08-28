@@ -386,6 +386,35 @@
   }
   .dual-slider-track { position: absolute; top: 11px; left: 0; right: 0; height: 4px; background: var(--border); border-radius: 2px; }
   .dual-slider-fill { position: absolute; top: 11px; height: 4px; background: var(--series-1); border-radius: 2px; }
+  /* ---- Unified filter bar + Эмитенты/Облигации tabs (2026-08-28) -------- */
+  .scr-preset-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+  .scr-preset-pill { padding: 6px 14px; border-radius: 999px; border: 1.5px solid var(--border);
+    background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; font-weight: 500;
+    cursor: pointer; }
+  .scr-preset-pill:hover { border-color: var(--gold-primary); color: var(--text-primary); }
+  .scr-preset-pill.active { border-color: var(--gold-primary); color: var(--gold-primary);
+    background: var(--gold-muted); font-weight: 700; }
+  .scr-tier2 { border: 0.5px solid var(--border); border-radius: var(--radius-card); padding: 12px 14px;
+    background: var(--bg-surface); margin-bottom: 14px; }
+  .scr-filter-group { margin-bottom: 12px; }
+  .scr-filter-group:last-child { margin-bottom: 0; }
+  .scr-filter-group-label { font-size: 12px; color: var(--text-secondary); font-weight: 600;
+    margin-bottom: 6px; }
+  .scr-aey-row { display: flex; align-items: center; gap: 10px; max-width: 520px; }
+  .scr-aey-input { width: 60px; border: 1px solid var(--bg-border); background: var(--bg-elevated);
+    color: var(--text-primary); border-radius: var(--radius-btn); padding: 4px 6px; font-size: 13px;
+    text-align: center; }
+  .scr-aey-row .dual-slider { flex: 1; }
+  .scr-toggle-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+  .scr-tabs { display: flex; gap: 4px; border-bottom: 0.5px solid var(--border); margin-bottom: 12px; }
+  .scr-tab-btn { padding: 8px 16px; border: none; background: none; color: var(--text-secondary);
+    font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent;
+    margin-bottom: -1px; }
+  .scr-tab-btn:hover { color: var(--text-primary); }
+  .scr-tab-btn.active { color: var(--gold-primary); border-bottom-color: var(--gold-primary); font-weight: 700; }
+  .scr-tab-panel { display: none; opacity: 0; transition: opacity 0.12s ease; }
+  .scr-tab-panel.active { display: block; opacity: 1; }
+  .scr-count-line { font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; }
   #portfolioRankTable tbody tr.bond-row, #marketTable tbody tr.bond-row { cursor: pointer; }
   #portfolioRankTable tbody tr.bond-row:hover, #marketTable tbody tr.bond-row:hover { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
   .pf-pick-table input[type="checkbox"] { cursor: pointer; accent-color: var(--series-1); width: 16px; height: 16px; }
@@ -2105,6 +2134,7 @@
   <nav class="subnav-bar" id="marketSubnav">
     <button type="button" class="subnav-btn active" data-target="sec-market-news">Новости</button>
     <button type="button" class="subnav-btn" data-target="sec-market">Скринер</button>
+    <button type="button" class="subnav-btn" data-target="sec-screening">Скрининг</button>
     <button type="button" class="subnav-btn" data-target="sec-aey-heatmap">Хитмап</button>
     <button type="button" class="subnav-btn" data-target="sec-gspread">G-спред</button>
     <button type="button" class="subnav-btn" data-target="sec-market" data-activate-ofz="1">Кривая ОФЗ</button>
@@ -2478,6 +2508,75 @@
         <div class="uni-stats" id="ofzStats" style="margin:8px 0"></div>
         <div class="card table-scroll"><table id="ofzTable"></table></div>
         <p class="uni-caveat">Carry = купонный доход за период. Body reeval = переоценка тела облигации по формуле дюрации/выпуклости при заданном сдвиге доходности. Сдвиг применяется ГРАДУИРОВАННО: 40% на горизонте 1 год, 75% на 2 года, 100% на 3 года (доходность не переоценивается мгновенно) — доля от «итогового» сдвига сценария (те же base/stress/bull дельты, что и в AEY-слое вотчлиста, portfolio.get_rate_scenarios). Свой сценарий — исключение: вся дельта применяется на указанную пользователем дату, без градуации. Для ОФЗ-ПК (флоатер) и ОФЗ-ИН (линкер) точная выпуклость не считается (нет полностью известного будущего купона) — используется доходность/дюрация MOEX как прокси, без члена выпуклости. Бумаги с погашением менее чем через 1 год исключены из проекции (см. src/hybond/ofz_pipeline.py).</p>
+      </div>
+    </section>
+
+    <!-- Скрининг sub-tab (Unified filter bar + Эмитенты/Облигации tabs task,
+         2026-08-28): a NEW, additive view -- deliberately does not touch
+         sec-market's own computeFiltered()/#mAeyMin etc, or Вотчлист's
+         watchlistFilters/renderIssuerRows() -- both existing systems keep
+         behaving exactly as before. This is its own filter state
+         (window.screenFilter's new fields) and its own render functions,
+         built inside marketTab() below purely to reuse its already-scoped
+         helpers (ratingTier(), sectorColor(), bucket(), allBucketBonds). -->
+    <section id="sec-screening" class="market-section">
+      <h2>Скрининг — единый фильтр</h2>
+      <p class="section-note">Один набор фильтров для эмитентов вотчлиста и полного универсума облигаций MOEX — переключение между «Эмитенты» и «Облигации» ниже сохраняет все текущие настройки фильтра.</p>
+
+      <div class="scr-preset-row" id="scrPresetRow"></div>
+
+      <div class="scr-tier2">
+        <div class="scr-filter-group">
+          <div class="scr-filter-group-label">Сектор</div>
+          <div class="health-pill-group" id="scrSectorPills"></div>
+        </div>
+        <div class="scr-filter-group">
+          <div class="scr-filter-group-label">Рейтинг</div>
+          <div class="health-pill-group" id="scrRatingPills"></div>
+        </div>
+        <div class="scr-filter-group">
+          <div class="scr-filter-group-label">Здоровье</div>
+          <div class="health-pill-group" id="scrHealthPills"></div>
+        </div>
+        <div class="scr-filter-group">
+          <div class="scr-filter-group-label">AEY (скорр.): <b id="scrAeyRangeLabel"></b></div>
+          <div class="scr-aey-row">
+            <input type="number" id="scrAeyMinInput" class="scr-aey-input" min="20" max="55" step="1">
+            <div class="dual-slider">
+              <div class="dual-slider-track"></div>
+              <div class="dual-slider-fill" id="scrAeyFill"></div>
+              <input type="range" id="scrAeySliderMin" step="1">
+              <input type="range" id="scrAeySliderMax" step="1">
+            </div>
+            <input type="number" id="scrAeyMaxInput" class="scr-aey-input" min="20" max="55" step="1">
+            <span>%</span>
+          </div>
+        </div>
+        <div class="scr-filter-group">
+          <div class="scr-filter-group-label">Дюрация, лет: <b id="scrDurRangeLabel"></b></div>
+          <div class="dual-slider" style="max-width:340px">
+            <div class="dual-slider-track"></div>
+            <div class="dual-slider-fill" id="scrDurFill"></div>
+            <input type="range" id="scrDurSliderMin" min="0" max="3" step="0.1" value="0">
+            <input type="range" id="scrDurSliderMax" min="0" max="3" step="0.1" value="3">
+          </div>
+        </div>
+        <div class="scr-filter-group">
+          <label class="scr-toggle-row"><input type="checkbox" id="scrRefiRiskToggle"> Скрыть &lt;6 мес до погашения/оферты</label>
+        </div>
+      </div>
+
+      <div class="scr-tabs" id="scrTabs">
+        <button type="button" class="scr-tab-btn active" data-scr-tab="issuers">Эмитенты <span id="scrIssuersCount"></span></button>
+        <button type="button" class="scr-tab-btn" data-scr-tab="bonds">Облигации <span id="scrBondsCount"></span></button>
+      </div>
+      <div class="scr-tab-panel active" id="scrPanelIssuers">
+        <div class="scr-count-line" id="scrIssuersCountLine"></div>
+        <div class="card table-scroll"><table id="scrIssuersTable"></table></div>
+      </div>
+      <div class="scr-tab-panel" id="scrPanelBonds">
+        <div class="scr-count-line" id="scrBondsCountLine"></div>
+        <div class="card table-scroll"><table id="scrBondsTable"></table></div>
       </div>
     </section>
 
@@ -3018,6 +3117,26 @@ function sectorColor(s) {
 // the map's own click/shift+click/lasso gestures -- selectedSecid (singular,
 // above) stays as-is for the table-row-click-to-highlight path from the
 // Screener task; drawMap()'s highlight ring checks both.
+// Unified filter bar + Эмитенты/Облигации tabs task (2026-08-28): extends
+// screenFilter with the new Скрининг view's own state. Persistence
+// (SCREENING_FILTER_LS_KEY) is scoped to ONLY these 5 new fields, not the
+// pre-existing sectors/vdoOnly/watchlistOnly/ratings/selectedSecid(s) above
+// -- those already have well-established non-persisted (reset-per-load)
+// behavior that the existing Скринер sub-tab and market-map depend on, and
+// this task was explicitly scoped as "new view, existing tabs untouched".
+// Persisting the pre-existing fields too would silently change what the
+// Скринер tab shows on every subsequent reload, well outside this task.
+const SCREENING_FILTER_LS_KEY = 'hybond-screening-filters';
+function loadScreeningFilterState() {
+  try {
+    const raw = localStorage.getItem(SCREENING_FILTER_LS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (e) { return {}; }
+}
+const SCREENING_FILTER_FIELDS = ['healthFilter', 'aeyRange', 'durRange', 'refiRisk', 'activePreset'];
+
 window.screenFilter = {
   sectors: [],       // [] = "Все" (no sector restriction)
   vdoOnly: true,      // vdo_scope gate -- default matches the spec's 303-bond default view
@@ -3025,12 +3144,27 @@ window.screenFilter = {
   selectedSecid: null,
   selectedSecids: [],
   ratings: [],       // [] = no rating restriction (Map B side panel, allow-list like sectors)
+  // ---- Скрининг view fields (2026-08-28) ----
+  healthFilter: ['green', 'yellow', 'orange', 'red'],
+  aeyRange: [0.25, 0.40],   // decimal, matches aey_base_risk_adj_pct/100 convention used elsewhere
+  durRange: [0.0, 3.0],
+  refiRisk: false,
+  activePreset: null,      // 'conservative'|'balanced'|'aggressive'|'candidates'|null
   listeners: [],
   update(patch) {
     Object.assign(this, patch);
+    this._persistScreening();
     this.listeners.forEach(fn => fn());
   },
+  _persistScreening() {
+    try {
+      const toSave = {};
+      SCREENING_FILTER_FIELDS.forEach(k => { toSave[k] = this[k]; });
+      localStorage.setItem(SCREENING_FILTER_LS_KEY, JSON.stringify(toSave));
+    } catch (e) { /* private-browsing/storage-full -- filters still work in-session */ }
+  },
 };
+Object.assign(window.screenFilter, loadScreeningFilterState());
 
 // Hoisted from the OFZ tab's carry/roll-down projection (mirrors
 // compute/ofz_carry.py's coupon_return_pct()/body_reeval_pct() exactly) so
@@ -8993,6 +9127,391 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
 
   renderTimeNote();
   renderActive();
+
+  // ================= Скрининг: unified filter bar + Эмитенты/Облигации ====
+  // New, additive view (2026-08-28) -- reuses this closure's own ratingTier()/
+  // sectorColor()/bucket()/allBucketBonds rather than duplicating them, but
+  // touches NONE of the existing #mAeyMin/computeFiltered()/renderActive()
+  // machinery above. Scoped explicitly as "new view, existing tabs untouched".
+  (function screeningView() {
+    const th = DATA.promotion_thresholds || {};
+
+    // Health status only exists for tier=1 watchlist issuers (issuer_id ==
+    // emitent_inn) -- a universe bond from a non-watchlist issuer has no
+    // health signal at all. issuerHealthByInn lets both Эмитенты (watchlist
+    // rows already carry health_status directly) and Облигации (looked up
+    // by emitent_inn) share one lookup; bonds with no match simply pass the
+    // health filter unconditionally rather than being silently excluded for
+    // data that was never collected for them.
+    const issuerHealthByInn = new Map((DATA.issuers || []).map(i => [i.issuer_id, i.health_status || 'green']));
+
+    function scrTierRank(tier) {
+      const idx = RATING_ORDER.findIndex(r => ratingTier(r) === tier);
+      return idx === -1 ? RATING_ORDER.length : idx;
+    }
+    function scrTiersPresent() {
+      const tiers = new Set(allBucketBonds.map(b => ratingTier(b.rating)));
+      return [...tiers];
+    }
+    function scrTiersAtOrBetter(floorRating) {
+      const floorRank = scrTierRank(ratingTier(floorRating));
+      return scrTiersPresent().filter(t => scrTierRank(t) <= floorRank);
+    }
+    function scrDefaultAeyRange() {
+      // Mirrors the Скринер AEY slider's own dynamic-bounds decision (kept
+      // deliberately, not hardcoded -- see the AEY Slider Clamping task):
+      // default selection is the narrower, commonly-useful 20-40% window
+      // clamped into whatever the live data's [lo, hi] bounds actually are,
+      // not the full computed range.
+      const lo = parseFloat(aeySliderMin.min), hi = parseFloat(aeySliderMin.max);
+      return [Math.max(lo, 20) / 100, Math.min(hi, 40) / 100];
+    }
+    function scrBondRefiRisk(b) {
+      const today = new Date(new Date().toDateString());
+      const candidates = [b.mat_date, b.offer_date].filter(Boolean)
+        .map(d => (new Date(d + 'T00:00:00') - today) / 86400000);
+      if (!candidates.length) return false;
+      return Math.min(...candidates) < 182; // ~6 months
+    }
+
+    const SCR_PRESETS = {
+      conservative: { ratingFloor: 'ruBBB+', aeyRange: [0.20, 0.30], healthFilter: ['green', 'yellow'] },
+      balanced: { ratingFloor: 'ruBB+', aeyRange: [0.20, 0.35], healthFilter: ['green', 'yellow', 'orange'] },
+      aggressive: { ratingFloor: 'ruB+', aeyRange: [0.20, 0.40], healthFilter: ['green', 'yellow', 'orange', 'red'] },
+    };
+    const SCR_PRESET_LABELS = { all: 'Все', conservative: 'Консервативный', balanced: 'Сбалансированный',
+      aggressive: 'Агрессивный', candidates: 'Топ-кандидаты' };
+
+    function scrApplyPreset(name) {
+      if (name === 'all') {
+        window.screenFilter.update({
+          sectors: [], ratings: [], healthFilter: ['green', 'yellow', 'orange', 'red'],
+          aeyRange: scrDefaultAeyRange(), durRange: [0, 3], refiRisk: false,
+          watchlistOnly: false, activePreset: null,
+        });
+        return;
+      }
+      if (name === 'candidates') {
+        // Existing Топ-кандидаты logic (renderPortfolioRank()'s
+        // #candidateModeToggle) runs its own separate promote.py-mirrored
+        // 4-stage filter (rating floor + liquidity floor + per-issuer cap)
+        // over a private candidatePool closure -- genuinely re-plumbing that
+        // into this shared screenFilter object (a different tab, a
+        // different pool variable, a different render()) is a substantially
+        // larger change than "move the button here" and was explicitly
+        // out of scope for this pass. This preset approximates it using the
+        // same rating-floor threshold (DATA.promotion_thresholds) applied to
+        // THIS view's own pool instead -- not byte-for-byte the same
+        // candidate list `hybond promote`/the Портфельный рейтинг tab would
+        // show, since it doesn't apply the liquidity floor or per-issuer cap.
+        window.screenFilter.update({
+          ratings: scrTiersAtOrBetter(th.rating_floor || 'ruBB+'),
+          healthFilter: ['green', 'yellow', 'orange', 'red'],
+          aeyRange: scrDefaultAeyRange(), durRange: [0, 3], refiRisk: false,
+          activePreset: 'candidates',
+        });
+        return;
+      }
+      const p = SCR_PRESETS[name];
+      window.screenFilter.update({
+        ratings: scrTiersAtOrBetter(p.ratingFloor), healthFilter: p.healthFilter.slice(),
+        aeyRange: p.aeyRange.slice(), durRange: [0, 3], refiRisk: false, activePreset: name,
+      });
+    }
+
+    function renderPresetPills() {
+      const wrap = document.getElementById('scrPresetRow');
+      const active = window.screenFilter.activePreset;
+      wrap.innerHTML = ['all', 'conservative', 'balanced', 'aggressive', 'candidates'].map(name => {
+        const isActive = name === 'all' ? active === null : active === name;
+        return `<button type="button" class="scr-preset-pill${isActive ? ' active' : ''}" data-scr-preset="${name}">${SCR_PRESET_LABELS[name]}</button>`;
+      }).join('');
+      wrap.querySelectorAll('[data-scr-preset]').forEach(btn => {
+        btn.addEventListener('click', () => scrApplyPreset(btn.dataset.scrPreset));
+      });
+    }
+
+    // ---- Tier 2: sector / rating / health pills (same .health-pill visual
+    // pattern as the Скринер tab's own sector pills, independent DOM/state) --
+    function renderScrSectorPills() {
+      const wrap = document.getElementById('scrSectorPills');
+      const sel = window.screenFilter.sectors;
+      const allActive = sel.length === 0;
+      wrap.innerHTML = `<button type="button" class="health-pill${allActive ? ' active' : ''}" data-scr-sector-all="1">ВСЕ</button>`
+        + marketSectors.map(s => {
+          const active = sel.includes(s);
+          const color = sectorColor(s);
+          const style = active ? `border-color:${color};color:${color};background:color-mix(in srgb, ${color} 12%, transparent)` : '';
+          return `<button type="button" class="health-pill${active ? ' active' : ''}" data-scr-sector="${escapeHtml(s)}" style="${style}">${escapeHtml(s).toUpperCase()}</button>`;
+        }).join('');
+      wrap.querySelector('[data-scr-sector-all]').addEventListener('click', () => {
+        window.screenFilter.update({ sectors: [], activePreset: null });
+      });
+      wrap.querySelectorAll('[data-scr-sector]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const s = btn.dataset.scrSector;
+          const cur = window.screenFilter.sectors;
+          const next = cur.includes(s) ? cur.filter(x => x !== s) : cur.concat([s]);
+          window.screenFilter.update({ sectors: next, activePreset: null });
+        });
+      });
+    }
+    function renderScrRatingPills() {
+      const wrap = document.getElementById('scrRatingPills');
+      const sel = window.screenFilter.ratings;
+      const allActive = sel.length === 0;
+      const tiers = scrTiersPresent().sort((a, b) => scrTierRank(a) - scrTierRank(b));
+      wrap.innerHTML = `<button type="button" class="health-pill${allActive ? ' active' : ''}" data-scr-rating-all="1">ВСЕ</button>`
+        + tiers.map(t => {
+          const active = allActive || sel.includes(t);
+          return `<button type="button" class="health-pill${active ? ' active' : ''}" data-scr-rating="${t}">${t === 'none' ? 'БЕЗ РЕЙТИНГА' : 'ru' + t}</button>`;
+        }).join('');
+      wrap.querySelector('[data-scr-rating-all]').addEventListener('click', () => {
+        window.screenFilter.update({ ratings: [], activePreset: null });
+      });
+      wrap.querySelectorAll('[data-scr-rating]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const t = btn.dataset.scrRating;
+          const cur = window.screenFilter.ratings.length ? window.screenFilter.ratings : tiers.slice();
+          const next = cur.includes(t) ? cur.filter(x => x !== t) : cur.concat([t]);
+          window.screenFilter.update({ ratings: next.length === tiers.length ? [] : next, activePreset: null });
+        });
+      });
+    }
+    function renderScrHealthPills() {
+      const wrap = document.getElementById('scrHealthPills');
+      const sel = window.screenFilter.healthFilter;
+      wrap.innerHTML = WATCHLIST_HEALTH_VALUES.map(h => {
+        const active = sel.includes(h);
+        const color = HEALTH_STATUS_COLOR[h];
+        const style = active ? `border-color:${color};color:${color};background:color-mix(in srgb, ${color} 12%, transparent)` : '';
+        return `<button type="button" class="health-pill${active ? ' active' : ''}" data-scr-health="${h}" style="${style}">${HEALTH_STATUS_LABEL[h].toUpperCase()}</button>`;
+      }).join('');
+      wrap.querySelectorAll('[data-scr-health]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const h = btn.dataset.scrHealth;
+          const cur = window.screenFilter.healthFilter;
+          const next = cur.includes(h) ? cur.filter(x => x !== h) : cur.concat([h]);
+          if (!next.length) return; // never allow an empty (=nothing shown) health filter
+          window.screenFilter.update({ healthFilter: next, activePreset: null });
+        });
+      });
+    }
+
+    // ---- AEY dual-slider + typed number inputs (Feature 1) ----
+    // Bounds stay the Скринер tab's OWN dynamic percentile bounds (lo/hi
+    // from aeySliderMin/aeySliderMax above, read-only here) per the explicit
+    // decision to keep that data-driven design rather than hardcode 20-55 --
+    // this adds the typed-input sync/gap-constraint UX on top of it.
+    const scrAeyMin = document.getElementById('scrAeySliderMin');
+    const scrAeyMax = document.getElementById('scrAeySliderMax');
+    const scrAeyMinInput = document.getElementById('scrAeyMinInput');
+    const scrAeyMaxInput = document.getElementById('scrAeyMaxInput');
+    const scrAeyFill = document.getElementById('scrAeyFill');
+    const scrAeyLabel = document.getElementById('scrAeyRangeLabel');
+    const AEY_MIN_GAP_PCT = 3;
+
+    function scrAeyBoundsPct() {
+      // Floor/ceil to whole percents: the Скринер tab's OWN bounds are
+      // fractional (e.g. 14.3), and a <input type=range step="1"> silently
+      // snaps any assigned value to min + n*step -- i.e. 14.3, 15.3, 16.3...
+      // -- not whole numbers, which broke typing "22" into the number input
+      // (found via CDP: it snapped to 22.3). Rounding outward keeps this
+      // slider's usable range a strict superset of the real data bounds.
+      return { lo: Math.floor(parseFloat(aeySliderMin.min)), hi: Math.ceil(parseFloat(aeySliderMin.max)) };
+    }
+    function renderAeyControls() {
+      const { lo, hi } = scrAeyBoundsPct();
+      [scrAeyMin, scrAeyMax].forEach(s => { s.min = lo; s.max = hi; });
+      scrAeyMinInput.min = lo; scrAeyMinInput.max = hi;
+      scrAeyMaxInput.min = lo; scrAeyMaxInput.max = hi;
+      const [rLo, rHi] = window.screenFilter.aeyRange;
+      const loPct = Math.round(rLo * 100), hiPct = Math.round(rHi * 100);
+      scrAeyMin.value = loPct; scrAeyMax.value = hiPct;
+      scrAeyMinInput.value = loPct; scrAeyMaxInput.value = hiPct;
+      scrAeyLabel.textContent = `${loPct}% – ${hiPct}%`;
+      const span = (hi - lo) || 1;
+      scrAeyFill.style.left = ((loPct - lo) / span * 100) + '%';
+      scrAeyFill.style.width = Math.max((hiPct - loPct) / span * 100, 0) + '%';
+    }
+    function scrCommitAeyRange(loPct, hiPct) {
+      const { lo, hi } = scrAeyBoundsPct();
+      loPct = Math.min(Math.max(loPct, lo), hi);
+      hiPct = Math.min(Math.max(hiPct, lo), hi);
+      if (hiPct - loPct < AEY_MIN_GAP_PCT) {
+        // gap-constraint: clamp whichever handle just moved, pushing the
+        // OTHER handle away to maintain the minimum gap.
+        if (loPct + AEY_MIN_GAP_PCT <= hi) hiPct = loPct + AEY_MIN_GAP_PCT;
+        else loPct = hi - AEY_MIN_GAP_PCT;
+      }
+      window.screenFilter.update({ aeyRange: [loPct / 100, hiPct / 100], activePreset: null });
+    }
+    scrAeyMin.addEventListener('input', () => scrCommitAeyRange(+scrAeyMin.value, +scrAeyMax.value));
+    scrAeyMax.addEventListener('input', () => scrCommitAeyRange(+scrAeyMin.value, +scrAeyMax.value));
+    scrAeyMinInput.addEventListener('change', () => scrCommitAeyRange(+scrAeyMinInput.value, +scrAeyMaxInput.value));
+    scrAeyMaxInput.addEventListener('change', () => scrCommitAeyRange(+scrAeyMinInput.value, +scrAeyMaxInput.value));
+
+    // ---- Duration dual-slider (0.0-3.0yr, step 0.1) ----
+    const scrDurMin = document.getElementById('scrDurSliderMin');
+    const scrDurMax = document.getElementById('scrDurSliderMax');
+    const scrDurFill = document.getElementById('scrDurFill');
+    const scrDurLabel = document.getElementById('scrDurRangeLabel');
+    function renderDurControls() {
+      const [lo, hi] = window.screenFilter.durRange;
+      scrDurMin.value = lo; scrDurMax.value = hi;
+      scrDurLabel.textContent = `${lo.toFixed(1)} – ${hi.toFixed(1)}`;
+      scrDurFill.style.left = (lo / 3 * 100) + '%';
+      scrDurFill.style.width = Math.max((hi - lo) / 3 * 100, 0) + '%';
+    }
+    function scrCommitDurRange(lo, hi) {
+      if (lo > hi) hi = lo;
+      window.screenFilter.update({ durRange: [lo, hi], activePreset: null });
+    }
+    scrDurMin.addEventListener('input', () => scrCommitDurRange(+scrDurMin.value, +scrDurMax.value));
+    scrDurMax.addEventListener('input', () => scrCommitDurRange(+scrDurMin.value, +scrDurMax.value));
+
+    // ---- Реф. риск toggle ----
+    const scrRefiToggle = document.getElementById('scrRefiRiskToggle');
+    scrRefiToggle.addEventListener('change', () => {
+      window.screenFilter.update({ refiRisk: scrRefiToggle.checked, activePreset: null });
+    });
+
+    // ---- Эмитенты / Облигации tabs ----
+    let scrActiveTab = 'issuers';
+    document.getElementById('scrTabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-scr-tab]');
+      if (!btn) return;
+      scrActiveTab = btn.dataset.scrTab;
+      document.querySelectorAll('#scrTabs .scr-tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+      document.getElementById('scrPanelIssuers').classList.toggle('active', scrActiveTab === 'issuers');
+      document.getElementById('scrPanelBonds').classList.toggle('active', scrActiveTab === 'bonds');
+    });
+
+    function scrFullMarketIssuers() {
+      const byInn = new Map();
+      allBucketBonds.forEach(b => {
+        if (!b.emitent_inn) return;
+        if (!byInn.has(b.emitent_inn)) {
+          byInn.set(b.emitent_inn, {
+            issuer_id: b.emitent_inn, name: b.emitent_title || b.emitent_inn,
+            sector: b.sector, rating: b.rating,
+            health_status: issuerHealthByInn.get(b.emitent_inn) || null,
+            bonds: [],
+          });
+        }
+        byInn.get(b.emitent_inn).bonds.push(b);
+      });
+      return [...byInn.values()];
+    }
+    function scrIssuerPassesFilters(iss) {
+      const sf = window.screenFilter;
+      if (sf.sectors.length && !sf.sectors.includes(iss.sector)) return false;
+      if (sf.ratings.length && !sf.ratings.includes(ratingTier(iss.rating))) return false;
+      if (iss.health_status && !sf.healthFilter.includes(iss.health_status)) return false;
+      const bonds = iss.bonds || [];
+      if (sf.refiRisk && bonds.some(scrBondRefiRisk)) return false;
+      const aeyVals = bonds.map(b => b.aey_base_risk_adj_pct).filter(v => v != null);
+      if (aeyVals.length) {
+        const avgAey = (aeyVals.reduce((a, b) => a + b, 0) / aeyVals.length) / 100;
+        const [aLo, aHi] = sf.aeyRange;
+        if (avgAey < aLo - 0.0005 || avgAey > aHi + 0.0005) return false;
+      }
+      const durVals = bonds.map(b => b.mod_dur).filter(v => v != null);
+      if (durVals.length) {
+        const [dLo, dHi] = sf.durRange;
+        if (!durVals.some(d => d >= dLo && d <= dHi)) return false;
+      }
+      return true;
+    }
+    function renderScrIssuersTab() {
+      const sf = window.screenFilter;
+      const fullPool = sf.watchlistOnly ? (DATA.issuers || []) : scrFullMarketIssuers();
+      const filtered = fullPool.filter(scrIssuerPassesFilters);
+      document.getElementById('scrIssuersCount').textContent = filtered.length;
+      const scopeLabel = sf.watchlistOnly ? 'эмитентов' : 'эмитентов';
+      document.getElementById('scrIssuersCountLine').textContent =
+        `Показано ${filtered.length} из ${fullPool.length} ${scopeLabel}`;
+      const table = document.getElementById('scrIssuersTable');
+      if (!filtered.length) {
+        table.innerHTML = '<tbody><tr><td class="uni-empty">Нет эмитентов, соответствующих фильтру.</td></tr></tbody>';
+        return;
+      }
+      table.innerHTML = '<thead><tr><th>Эмитент</th><th>Сектор</th><th>Рейтинг</th><th>Здоровье</th><th>Бумаг</th></tr></thead>'
+        + '<tbody>' + filtered.map(iss => `<tr class="bond-row" data-issuer-id="${escapeHtml(iss.issuer_id)}">`
+          + `<td>${escapeHtml(iss.name)}</td><td>${escapeHtml(iss.sector || '—')}</td>`
+          + `<td>${escapeHtml(iss.rating || '—')}</td>`
+          + `<td>${iss.health_status ? `<span style="color:${HEALTH_STATUS_COLOR[iss.health_status]}">●</span> ${iss.health_status}` : '—'}</td>`
+          + `<td>${(iss.bonds || []).length}</td></tr>`).join('') + '</tbody>';
+      table.querySelectorAll('tr[data-issuer-id]').forEach(tr => tr.addEventListener('click', () => {
+        const iss = (DATA.issuers || []).find(i => i.issuer_id === tr.dataset.issuerId);
+        if (iss) openIssuerDrawer(iss);
+      }));
+    }
+    function scrBondPassesFilters(b) {
+      const sf = window.screenFilter;
+      if (sf.watchlistOnly && !b.in_watchlist) return false;
+      if (sf.sectors.length && !sf.sectors.includes(b.sector)) return false;
+      if (sf.ratings.length && !sf.ratings.includes(ratingTier(b.rating))) return false;
+      const health = b.emitent_inn ? issuerHealthByInn.get(b.emitent_inn) : null;
+      if (health && !sf.healthFilter.includes(health)) return false;
+      if (sf.refiRisk && scrBondRefiRisk(b)) return false;
+      if (b.aey_base_risk_adj_pct != null) {
+        const aey = b.aey_base_risk_adj_pct / 100;
+        const [aLo, aHi] = sf.aeyRange;
+        if (aey < aLo - 0.0005 || aey > aHi + 0.0005) return false;
+      }
+      if (b.mod_dur != null) {
+        const [dLo, dHi] = sf.durRange;
+        if (b.mod_dur < dLo || b.mod_dur > dHi) return false;
+      }
+      return true;
+    }
+    function renderScrBondsTab() {
+      const sf = window.screenFilter;
+      const fullPool = sf.watchlistOnly ? allBucketBonds.filter(b => b.in_watchlist) : allBucketBonds;
+      const filtered = fullPool.filter(scrBondPassesFilters);
+      document.getElementById('scrBondsCount').textContent = filtered.length;
+      document.getElementById('scrBondsCountLine').textContent =
+        `Показано ${filtered.length} из ${fullPool.length} облигаций`;
+      const table = document.getElementById('scrBondsTable');
+      if (!filtered.length) {
+        table.innerHTML = '<tbody><tr><td class="uni-empty">Нет облигаций, соответствующих фильтру.</td></tr></tbody>';
+        return;
+      }
+      table.innerHTML = '<thead><tr><th>Эмитент</th><th>SECID</th><th>AEY (скорр.)</th><th>Дюрация</th><th>Рейтинг</th></tr></thead>'
+        + '<tbody>' + filtered.slice(0, 400).map(b => `<tr class="bond-row" data-secid="${escapeHtml(b.secid)}">`
+          + `<td>${escapeHtml(b.emitent_title || '—')}</td><td>${escapeHtml(b.secid)}</td>`
+          + `<td>${b.aey_base_risk_adj_pct != null ? b.aey_base_risk_adj_pct.toFixed(1) + '%' : '—'}</td>`
+          + `<td>${b.mod_dur != null ? b.mod_dur.toFixed(2) : '—'}</td><td>${escapeHtml(b.rating || '—')}</td></tr>`).join('') + '</tbody>';
+      table.querySelectorAll('tr[data-secid]').forEach(tr => tr.addEventListener('click', () => {
+        openBondDrawer(tr.dataset.secid);
+      }));
+    }
+
+    function renderScreeningAll() {
+      renderPresetPills();
+      renderScrSectorPills();
+      renderScrRatingPills();
+      renderScrHealthPills();
+      renderAeyControls();
+      renderDurControls();
+      scrRefiToggle.checked = window.screenFilter.refiRisk;
+      renderScrIssuersTab();
+      renderScrBondsTab();
+    }
+    // aeyRange defaults to a flat [0.25, 0.40] until the Скринер tab's own
+    // dynamic bounds are known (computed just above, earlier in marketTab())
+    // -- clamp once here so a fresh page load (no localStorage yet) starts
+    // inside the real data-driven bounds rather than a value that might sit
+    // outside [lo, hi] for this specific dataset.
+    if (window.screenFilter.activePreset == null) {
+      const { lo, hi } = scrAeyBoundsPct();
+      const [rLo, rHi] = window.screenFilter.aeyRange;
+      if (rLo * 100 < lo || rHi * 100 > hi) window.screenFilter.aeyRange = scrDefaultAeyRange();
+    }
+    window.screenFilter.listeners.push(renderScreeningAll);
+    renderScreeningAll();
+  })();
 })();
 
 document.getElementById('marketInstrumentToggle').addEventListener('click', (e) => {

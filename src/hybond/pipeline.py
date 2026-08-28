@@ -19,7 +19,7 @@ import requests
 
 from .calendar.wall import build_wall, redemptions_by_issuer
 from .compute import bondmath, cashflows, default_probs, expected_return
-from .health import log_health
+from .health import log_health, log_health_once_today
 from .ingest import sources
 from .store import db
 
@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 # distress bond can legitimately show 30-45% YTM; this only rejects values
 # no real bond could ever have (0%, or hundreds of thousands of percent).
 FLOATER_YIELD_SANITY_MAX = 5.0
+FLOATER_YIELD_SANITY_MIN = -0.50  # -50% -- below this is garbage data
 
 
 def load_watchlist(path: Path) -> dict[str, list[str]]:
@@ -186,6 +187,23 @@ def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
                 # yield_source='moex' i.e. this exact branch -- skip writing
                 # the row entirely rather than poisoning spread_snapshot with
                 # a value that then propagates into g_spread_bp/mod_dur too.
+                # Lower-bound check must come BEFORE the ytm<=0 catch-all
+                # below -- that check already swallows every negative value,
+                # so a ytm < FLOATER_YIELD_SANITY_MIN branch placed after it
+                # would be unreachable. Also fixes a real mislabeled-message
+                # bug: the catch-all's "exceeds FLOATER_YIELD_SANITY_MAX"
+                # text was wrong for negative ytm (confirmed live: a real
+                # ytm=-0.83 row was logged with that exact incorrect message).
+                if ytm < FLOATER_YIELD_SANITY_MIN:
+                    logger.warning(
+                        "skipping implausible floater YIELD for %s on %s: "
+                        "raw=%s -> ytm=%.4f (below %.2f)",
+                        secid, snap_date, yld, ytm, FLOATER_YIELD_SANITY_MIN)
+                    log_health_once_today(con, 'moex', 'compute', 'warn',
+                                          'YTM_SANITY_FAIL',
+                                          f'ytm={ytm:.2f} rejected for {secid} — below FLOATER_YIELD_SANITY_MIN',
+                                          issuer_id=issuer_id)
+                    continue
                 if ytm <= 0 or ytm > FLOATER_YIELD_SANITY_MAX:
                     logger.warning(
                         "skipping implausible floater YIELD for %s on %s: "

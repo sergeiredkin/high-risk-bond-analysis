@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import sys
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -26,6 +27,8 @@ sys.path.insert(0, "src")
 from hybond.classify_utils import queue_bucket  # noqa: E402
 from hybond.health import get_unresolved as health_unresolved  # noqa: E402
 from hybond.health import log_health  # noqa: E402
+from hybond.health import log_health_once_today  # noqa: E402
+from hybond.health import resolve_code as health_resolve_code  # noqa: E402
 from hybond.health import summary as health_summary  # noqa: E402
 from hybond.compute.default_probs import (  # noqa: E402
     DEFAULT_PROBS, LGD, RATING_ORDER, RECOVERY_RATE, implied_fair_spread_bp, lookup)
@@ -503,6 +506,27 @@ def _latest_spread_snap_date(con) -> str | None:
     return row["m"] if row else None
 
 
+def cleanup_export_stale_duplicates(con) -> None:
+    """One-time cleanup (2026-08-28): EXPORT_STALE was logged on every
+    30-min rebuild_dashboard.sh cycle before log_health_once_today existed,
+    producing same-day duplicate unresolved rows. Idempotent past the first
+    real run -- once deduped, there's nothing left for this to resolve, so
+    it's safe to leave running on every export rather than needing a
+    separate one-shot flag/migration.
+
+    Unlike log_health()/log_health_once_today(), resolve_code() has no
+    "never raises" contract -- confirmed live: this exact call crashed the
+    whole export under real concurrent-cron lock contention
+    (rebuild_dashboard.sh runs every 30 min against the same DB). A health-
+    log housekeeping step must never be able to take down the real export.
+    """
+    try:
+        health_resolve_code(con, 'EXPORT_STALE',
+                             'Deduplicated — replaced with once-today guard')
+    except sqlite3.Error as e:
+        print(f"pipeline_health cleanup skipped (DB error): {e}", file=sys.stderr)
+
+
 def pipeline_health_export(con, latest_spread: str | None) -> dict:
     """Pipeline Health Dashboard task, Phase 1 (2026-08-28): EXPORT_STALE
     check + summary()/get_unresolved() assembly for DATA.pipeline_health.
@@ -521,8 +545,15 @@ def pipeline_health_export(con, latest_spread: str | None) -> dict:
     today_iso = date.today().isoformat()
     for label, snap in (("spread_snapshot", latest_spread), ("universe_snapshot", latest_universe)):
         if snap and snap < today_iso:
-            log_health(con, 'dashboard', 'export', 'warn', 'EXPORT_STALE',
-                       f'{label} latest date is {snap}, expected {today_iso}')
+            # log_health_once_today (2026-08-28 fix): this export script runs
+            # every 30 min via rebuild_dashboard.sh -- an unresolved stale
+            # snapshot was re-logged on every single cycle, flooding the
+            # health log with same-day duplicates. Dedup by code+day; note
+            # this means if BOTH spread_snapshot and universe_snapshot are
+            # stale the same day, only the first EXPORT_STALE row of the day
+            # logs (dedup key is code alone, not code+label).
+            log_health_once_today(con, 'dashboard', 'export', 'warn', 'EXPORT_STALE',
+                                   f'{label} latest date is {snap}, expected {today_iso}')
 
     result = health_summary(con)
     result["unresolved"] = health_unresolved(con, min_level="warn", limit=20)
@@ -1249,6 +1280,8 @@ def main() -> None:
 
     con = db.connect()
     db.init_db(con)
+    db.init_pipeline_health(con)
+    cleanup_export_stale_duplicates(con)
     db.init_cbr(con)
     scenarios = portfolio.get_rate_scenarios(con)  # single computation, shared below
     universe = universe_for_dashboard(con, scenarios)

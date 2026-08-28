@@ -244,3 +244,70 @@ def test_ytm_sanity_fail_wired_through_real_pipeline_guard(tmp_path, monkeypatch
     assert matches[0]["stage"] == "compute"
     assert matches[0]["issuer_id"] == "1"
     assert "SECID_T1" in matches[0]["detail"]
+
+
+# --- log_health_once_today (2026-08-28 fix: EXPORT_STALE dedup) -----------
+
+def test_log_health_once_today_skips_on_second_call_same_day(tmp_path):
+    con = _con(tmp_path)
+    first_id = health.log_health_once_today(con, 'dashboard', 'export', 'warn',
+                                             'EXPORT_STALE', 'first call')
+    second_id = health.log_health_once_today(con, 'dashboard', 'export', 'warn',
+                                              'EXPORT_STALE', 'second call, same day')
+    assert first_id is not None
+    assert second_id is None
+    rows = con.execute("SELECT * FROM pipeline_health WHERE code='EXPORT_STALE'").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["detail"] == "first call"
+
+
+def test_log_health_once_today_logs_again_once_prior_entry_resolved(tmp_path):
+    con = _con(tmp_path)
+    first_id = health.log_health_once_today(con, 'dashboard', 'export', 'warn',
+                                             'EXPORT_STALE', 'first call')
+    health.resolve(con, first_id)
+    second_id = health.log_health_once_today(con, 'dashboard', 'export', 'warn',
+                                              'EXPORT_STALE', 'second call, after resolve')
+    assert second_id is not None
+    assert second_id != first_id
+
+
+# --- FLOATER_YIELD_SANITY_MIN (2026-08-28 fix: negative YTM lower bound) --
+
+def test_negative_ytm_below_min_rejected_and_logged(tmp_path, monkeypatch):
+    dbpath = tmp_path / "t.sqlite"
+    con = db.connect(dbpath)
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_issuer_bond(con)
+    db.add_issuer_at_tier(con, "1", "Tier1 Co", watchlist_tier=1)
+    db.add_issuer_bond(con, "1", "SECID_T1", source="bond")
+    con.commit()
+    con.close()
+
+    monkeypatch.setattr(db, "DB_PATH", dbpath)
+    monkeypatch.setattr(sources, "fetch_bond_master",
+                         lambda: [_bond_master_row("SECID_T1", "RU_SECID_T1")])
+    # -83% -- a real observed garbage value (see the mislabeled real
+    # ytm=-0.83 entry this fix corrects), well below FLOATER_YIELD_SANITY_MIN
+    monkeypatch.setattr(sources, "fetch_marketdata",
+                         lambda secids=None: [_marketdata_row(s, -83.0) for s in secids or []])
+    monkeypatch.setattr(sources, "fetch_cbr_zcyc", lambda: [(1.0, 0.15), (5.0, 0.15)])
+    monkeypatch.setattr(sources, "fetch_security_qualified", lambda secid: False)
+    monkeypatch.setattr(sources, "fetch_bondization", lambda secid: {
+        "coupons": [{"coupondate": "2030-01-01", "value": None}],
+        "amortizations": [],
+    })
+
+    report = pipeline.run(None, snap_date=SNAP)
+
+    assert {r["secid"] for r in report["spread_screen"]} == set()
+    con = db.connect(dbpath)
+    db.init_pipeline_health(con)
+    unresolved = health.get_unresolved(con, min_level='warn')
+    con.close()
+
+    matches = [r for r in unresolved if r["code"] == "YTM_SANITY_FAIL"]
+    assert len(matches) == 1
+    assert "below FLOATER_YIELD_SANITY_MIN" in matches[0]["detail"]
+    assert "SECID_T1" in matches[0]["detail"]
