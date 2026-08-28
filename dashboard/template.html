@@ -3039,6 +3039,19 @@ function applyFontScale(pct) {
   fontSizeSlider.value = pct;
   fontSizeReadout.textContent = pct + '%';
   localStorage.setItem(FONT_SCALE_KEY, pct);
+  // Map rendering fix (2026-08-28): mmResizeCanvas() only runs inside
+  // drawMap(), and nothing previously called drawMap() when zoom changed --
+  // confirmed live: changing `zoom` here resizes the market-map canvas's
+  // CSS box immediately, but its internal pixel buffer (canvas.width/height)
+  // stays at the OLD size until the next drawMap() call, so the browser
+  // stretches the stale bitmap to fit the new box. That mismatch is what
+  // was reported as a "double-bubble" artifact (every circle resampled/
+  // blurred by the stretch, not a second shape actually being drawn) and,
+  // separately, as a hit-testing offset (mmPlotPoints/rect measurements
+  // going stale relative to what's on screen). __marketMapRedraw() already
+  // no-ops when the map isn't the active view, so this is safe to call
+  // unconditionally on every slider tick.
+  if (window.__marketMapRedraw) window.__marketMapRedraw();
 }
 fontSizeSlider.addEventListener('input', () => applyFontScale(+fontSizeSlider.value));
 applyFontScale(parseInt(localStorage.getItem(FONT_SCALE_KEY), 10) || 120);
@@ -8616,6 +8629,18 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   // coordinate space -- see the mmZoomScale state comment above for why
   // that one division is sufficient (getBoundingClientRect() on the
   // transformed #mmZoomLayer already reflects the translate too).
+  //
+  // Page-zoom fix (2026-08-28): a task once asked for a SECOND division here
+  // by the page's own font-size zoom (document.documentElement.style.zoom),
+  // reasoning that getBoundingClientRect() needed a separate zoom
+  // correction on top of /mmZoomScale. Verified live this is wrong: rect is
+  // already the box's real on-screen (post-zoom) size, exactly like
+  // e.clientX is already a real on-screen coordinate -- both are in the
+  // SAME zoomed CSS-pixel space already, so no extra division is needed,
+  // and adding one double-counts zoom and breaks hit-testing at any zoom
+  // other than 100%. The actual bug behind that report was applyFontScale()
+  // never triggering a map redraw (see its own comment) -- once the canvas
+  // buffer is kept in sync with its CSS box, this function needs no change.
   function mmLocalXY(e) {
     const rect = mmCanvas.getBoundingClientRect();
     return { mx: (e.clientX - rect.left) / mmZoomScale, my: (e.clientY - rect.top) / mmZoomScale };
