@@ -21,12 +21,13 @@ import hashlib
 import logging
 import sqlite3
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import requests
 
 from .classify_utils import queue_bucket
+from .health import log_health
 from .scrape import edisclosure as ed
 from .scrape import smartlab as sl
 from .store import db
@@ -202,6 +203,21 @@ def run_scrape(
             sl_new_total += len(fresh)
         summary["new_total"] += sl_new_total
         summary["smartlab_new"] = sl_new_total
+
+    if summary["new_total"] == 0:
+        # health logging: "3+ consecutive runs" reinterpreted as 3+
+        # consecutive calendar days -- a zero-filing run leaves no row in
+        # `filing` to count against, so there's no per-run history to check
+        # without new schema; the existing fetched_on column already gives
+        # us a reliable 3-CALENDAR-DAY dry-spell signal instead.
+        window_start = (snap_date - timedelta(days=2)).isoformat()
+        recent = con.execute(
+            "SELECT COUNT(*) AS n FROM filing WHERE fetched_on >= ?",
+            (window_start,)).fetchone()["n"]
+        if recent == 0:
+            log_health(con, 'azipi', 'ingest', 'warn', 'AZIPI_FEED_DRY',
+                       f'0 new filings across all issuers, {window_start} to '
+                       f'{snap_date.isoformat()} (3 consecutive days)')
 
     con.commit()
     con.close()

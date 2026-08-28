@@ -44,6 +44,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from .compute import bondmath, default_probs, inflection
+from .health import log_health
 from .ingest import sources
 from . import portfolio
 from .store import db
@@ -270,6 +271,10 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
     liquidity_since = (snap_date - timedelta(days=LIQUIDITY_LOOKBACK_DAYS)).isoformat()
 
     total_pulled = len(master_rows)
+    if total_pulled == 0:
+        # health logging
+        log_health(con, 'moex', 'ingest', 'error', 'MOEX_EMPTY',
+                   f'fetch_bond_master() returned 0 rows for snap_date {sd}')
     screened_rows = []
     for secid, m in master.items():
         q = md.get(secid)
@@ -356,6 +361,15 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
             implied_fair = None
             misprice = None
             n_excluded += 1
+        elif gsp < 0:
+            # health logging: negative G-spread on a bond NOT already
+            # explained by a known exclusion category above (commodity-
+            # linked/thin/zero-yield/near-offer all legitimately produce
+            # negative-looking spreads and are excluded from this check).
+            log_health(con, 'pipeline', 'compute', 'warn', 'GSPREAD_NEGATIVE',
+                       f'g_spread_bp={gsp:.0f} for {secid} ({emitent_title}) — '
+                       f'ytm={ytm * 100:.2f}% below risk-free rate',
+                       issuer_id=emitent_inn)
 
         # AEY (Adjusted Expected Yield): same signal_excluded gate as
         # implied_fair/misprice above -- a bond whose raw ytm is already
@@ -405,6 +419,18 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
         })
 
     zone_counts = _classify_yield_zones(con, sd)
+
+    # health logging: compare today's screened/priced bond count against the
+    # last prior snap_date's -- a >20% drop with no corresponding MOEX_EMPTY
+    # points at a partial feed (some bonds missing), not a total outage.
+    prev_row = con.execute(
+        "SELECT snap_date, COUNT(*) AS n FROM universe_snapshot "
+        "WHERE snap_date < ? AND snap_date = (SELECT MAX(snap_date) FROM "
+        "universe_snapshot WHERE snap_date < ?)", (sd, sd)).fetchone()
+    if prev_row and prev_row["n"] > 0 and n_priced < 0.8 * prev_row["n"]:
+        log_health(con, 'moex', 'ingest', 'error', 'MOEX_COUNT_DROP',
+                   f'{n_priced} bonds priced on {sd} vs {prev_row["n"]} on '
+                   f'{prev_row["snap_date"]} ({(1 - n_priced / prev_row["n"]) * 100:.0f}% drop)')
 
     con.commit()
     n_in_watchlist = sum(1 for r in top_rows if r["in_watchlist"])

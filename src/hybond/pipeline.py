@@ -72,6 +72,11 @@ def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
     master = {r["SECID"]: r for r in sources.fetch_bond_master()}
     db.refresh_delisted_flags(con, set(master.keys()))
     md = {r["SECID"]: r for r in sources.fetch_marketdata(secids)}
+    if secids and not md:
+        # health logging
+        log_health(con, 'moex', 'ingest', 'error', 'MOEX_WATCHLIST_EMPTY',
+                   f'fetch_marketdata() returned 0 rows for {len(secids)} '
+                   f'watchlist secids on {snap_date.isoformat()}')
     curve = sources.fetch_cbr_zcyc()
 
     screen_rows = []
@@ -220,6 +225,13 @@ def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
                 except (ValueError, ZeroDivisionError):
                     continue
                 yield_source = "computed"
+
+            if mdur is None:
+                # health logging (the АПРИ 2Р10 case: MOEX's DURATION field
+                # missing for a floater with no dur_days to fall back on)
+                log_health(con, 'pipeline', 'compute', 'warn', 'MODDUR_NULL',
+                           f'mod_dur is NULL for {secid} (yield_source={yield_source})',
+                           issuer_id=issuer_id)
 
             db.insert_spread_snapshot(
                 con, secid=secid, snap_date=snap_date.isoformat(), ytm=ytm,

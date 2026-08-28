@@ -108,4 +108,20 @@ PYTHONPATH=src python -m hybond diff --factlist-dir data/factlists >> "$LOG" 2>&
 PYTHONPATH=src python scripts/export_dashboard_data.py >> "$LOG" 2>&1
 PYTHONPATH=src python scripts/build_dashboard.py >> "$LOG" 2>&1
 
+# Pipeline health log rotation (Task 2, 2026-08-28): once per day, not once
+# per cron slot -- this script runs 3x/day (08:00/13:00/19:00 MSK), so gate
+# on the first slot. Idempotent either way (rotate_pipeline_health only
+# deletes rows older than `days`), this just avoids redundant DB writes on
+# the 13:00/19:00 runs.
+if [ "$(date +%H)" = "08" ]; then
+    PYTHONPATH=src python -c "
+from hybond.health import rotate_pipeline_health
+from hybond.store import db
+con = db.connect()
+db.init_pipeline_health(con)
+print(rotate_pipeline_health(con, days=7))
+con.close()
+" >> "$LOG" 2>&1
+fi
+
 echo "=== done $(date) ===" >> "$LOG"

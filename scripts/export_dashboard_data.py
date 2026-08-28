@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, "src")
 
 from hybond.classify_utils import queue_bucket  # noqa: E402
+from hybond.health import log_health  # noqa: E402
 from hybond.compute.default_probs import (  # noqa: E402
     DEFAULT_PROBS, LGD, RATING_ORDER, RECOVERY_RATE, implied_fair_spread_bp, lookup)
 from hybond.compute import inflection  # noqa: E402
@@ -1391,7 +1392,16 @@ def main() -> None:
     company_scan_history = company_scan_history_export(con)
     queue_count_val = queue_count(con)
     latest_spread = _latest_spread_snap_date(con)
-    con.close()
+    latest_universe = db.latest_universe_snap_date(con)
+
+    # health logging: staleness is checked on the underlying data (dates
+    # only, day-level granularity) -- "24h" is interpreted as "not today's
+    # snapshot", the finest resolution these snapshots actually carry.
+    today_iso = date.today().isoformat()
+    for label, snap in (("spread_snapshot", latest_spread), ("universe_snapshot", latest_universe)):
+        if snap and snap < today_iso:
+            log_health(con, 'dashboard', 'export', 'warn', 'EXPORT_STALE',
+                       f'{label} latest date is {snap}, expected {today_iso}')
 
     out = {
         "generated_at": report.get("snap_date"),
@@ -1481,7 +1491,13 @@ def main() -> None:
                     if SPRAVKA_MD_PATH.exists() else None),
         "sector_labels": SECTOR_LABELS_RU,
     }
-    OUT_PATH.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    payload = json.dumps(out, ensure_ascii=False, indent=2)
+    if len(payload.encode("utf-8")) < 10_000:
+        # health logging
+        log_health(con, 'dashboard', 'export', 'error', 'EXPORT_EMPTY',
+                   f'dashboard_data.json payload is {len(payload)} bytes, below the 10KB floor')
+    con.close()
+    OUT_PATH.write_text(payload, encoding="utf-8")
     print(f"Wrote {OUT_PATH} ({len(issuers)} issuers)")
 
 

@@ -53,6 +53,7 @@ from typing import Any
 
 import requests
 
+from .health import log_health
 from .store import db
 
 MOEX_STYLE_UA = {"User-Agent": "hybond/0.1 (research)"}
@@ -596,9 +597,23 @@ def check_and_fetch_today() -> dict | None:
     if not action:
         return None
 
+    result = fetch_meeting(target_date, meeting["anchor"])
+
     con = db.connect()
     db.init_db(con)
     store_meeting(con, result)
+    # health logging: today is a scheduled meeting/résюме/comment date (that's
+    # the only way `action` gets set above), so a missing document at this
+    # point means the fetch chain stalled, not that it's merely too early.
+    if action == "meeting" and "press_release_text" not in result:
+        log_health(con, 'cbr', 'ingest', 'warn', 'CBR_FETCH_FAIL',
+                   f'press release not found for scheduled meeting {target_date}')
+    elif action == "resume" and "resume_text" not in result:
+        log_health(con, 'cbr', 'ingest', 'warn', 'CBR_STALE',
+                   f'резюме обсуждения not yet published for meeting {target_date}')
+    elif action == "comment" and "comment_text" not in result:
+        log_health(con, 'cbr', 'ingest', 'warn', 'CBR_STALE',
+                   f'комментарий к прогнозу not yet published for meeting {target_date}')
     con.close()
     return {"action": action, "meeting_date": target_date, "result": result}
 
