@@ -553,27 +553,15 @@
   .verdict-l3 { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); font-size: 12px; color: var(--text-secondary); }
   .verdict-l3 code { font-size: 12px; }
 
-  /* ---- Bond Detail Drawer: shared modal, four entry points. Hidden by
-     default via display:none (not just opacity), so it never intercepts
-     clicks/scroll on the underlying page when closed. ---- */
-  .bond-drawer-overlay {
-    display: none; position: fixed; inset: 0; z-index: 200;
-    background: rgba(0,0,0,0.6); align-items: flex-start; justify-content: center;
-    padding: 40px 16px; overflow-y: auto;
-  }
-  .bond-drawer-overlay.open { display: flex; }
-  .bond-drawer-modal {
-    background: var(--bg-surface); border: 0.5px solid var(--bg-border); border-radius: var(--radius-card);
-    box-shadow: var(--shadow-card); max-width: 640px; width: 100%; padding: 24px; /* was 24px 22px 22px */
-    position: relative;
-  }
-  .bond-drawer-close {
-    position: absolute; top: 14px; right: 14px; border: 1px solid var(--bg-border);
-    background: var(--bg-elevated); color: var(--text-secondary); width: 28px; height: 28px;
-    border-radius: 999px; cursor: pointer; font-size: 12px; line-height: 1; display: flex;
-    align-items: center; justify-content: center;
-  }
-  .bond-drawer-close:hover { color: var(--text-primary); border-color: var(--gold-primary); }
+  /* ---- Unified bond/issuer drawer (2026-08-28): consolidates the old
+     center-modal .bond-drawer-* and the right-slide-in .iw-drawer-* into one
+     component (see the HTML near the tooltip div). Old class names are kept
+     as literal aliases in these selector lists -- openBondDrawer()/
+     openIssuerDrawer() are the only two call sites that ever referenced the
+     underlying element ids, and both were rewritten to point at the new
+     unified ids, but the classes themselves stay resolvable in case anything
+     else ever selects by them. .iw-drawer-* below (further down this sheet)
+     is folded into the SAME selector lists rather than duplicated. ---- */
   .bond-reduced-cta {
     border: 1px dashed var(--gold-primary); border-radius: var(--radius-btn);
     padding: var(--space-4); background: var(--gold-muted); /* was var(--space-3) = 12px */
@@ -1418,6 +1406,8 @@
      only changes behavior for the passive-monitoring list's flat rows. */
   .iw-aey { color: #C9A227; font-size: 22px; font-weight: 500; flex-shrink: 0; width: auto; text-align: right; }
   .iw-status { color: var(--text-secondary); font-size: 12px; flex-shrink: 0; width: 140px; text-align: right; }
+  .iw-market-link { color: var(--gold-primary); font-size: 12px; flex-shrink: 0; text-decoration: none; }
+  .iw-market-link:hover { text-decoration: underline; }
   .iw-arrow { flex-shrink: 0; width: 1.2em; text-align: center; color: var(--text-muted); }
   .iw-health-reason { font-size: 11.5px; color: var(--verdict-orange); padding: 0 16px 8px 20px; }
   /* Single-line compact layout (Card display fixes, 2026-08-25): was label
@@ -1499,32 +1489,72 @@
      already moves it fully outside the viewport when closed, so it never
      intercepts clicks (same "never intercept when closed" principle as the
      .bond-drawer-overlay above, just via transform instead of display). ---- */
-  .iw-drawer-overlay { position: fixed; inset: 0; z-index: 195; background: rgba(0,0,0,0.5);
-    opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }
-  .iw-drawer-overlay.open { opacity: 1; pointer-events: auto; }
-  .iw-drawer { position: fixed; top: 0; right: 0; height: 100%; width: 420px; max-width: 100vw;
+  .unified-drawer-overlay, .bond-drawer-overlay, .iw-drawer-overlay {
+    position: fixed; inset: 0; z-index: 195; background: rgba(0,0,0,0.5);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+  }
+  .unified-drawer-overlay.open, .bond-drawer-overlay.open, .iw-drawer-overlay.open { opacity: 1; pointer-events: auto; }
+  .unified-drawer, .bond-drawer-modal, .iw-drawer {
+    position: fixed; top: 0; right: 0; height: 100%; width: 420px; max-width: 100vw;
     background: var(--bg-surface); border-left: 0.5px solid var(--border); z-index: 196;
     box-shadow: -4px 0 16px rgba(0,0,0,0.35); transform: translateX(100%);
-    transition: transform 0.25s ease; overflow-y: auto; padding: 44px 18px 20px; }
-  .iw-drawer.open { transform: translateX(0); }
-  .iw-drawer-close { position: absolute; top: 10px; right: 14px; border: 1px solid var(--bg-border);
-    background: var(--bg-elevated); color: var(--text-secondary); width: 28px; height: 28px;
-    border-radius: 999px; cursor: pointer; font-size: 16px; line-height: 1; display: flex;
-    align-items: center; justify-content: center; }
-  .iw-drawer-close:hover { color: var(--text-primary); border-color: var(--gold-primary); }
-  .iw-drawer-title { font-size: 16px; font-weight: 600; margin: 0 28px 12px 0; }
+    transition: transform 0.25s ease; overflow-y: auto; display: flex; flex-direction: column;
+  }
+  .unified-drawer.open, .bond-drawer-modal.open, .iw-drawer.open { transform: translateX(0); }
+  .unified-drawer-close, .bond-drawer-close, .iw-drawer-close {
+    border: 1px solid var(--bg-border); background: var(--bg-elevated); color: var(--text-secondary);
+    width: 28px; height: 28px; border-radius: 999px; cursor: pointer; font-size: 16px; line-height: 1;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .unified-drawer-close:hover, .bond-drawer-close:hover, .iw-drawer-close:hover { color: var(--text-primary); border-color: var(--gold-primary); }
+  .iw-drawer-title { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  .unified-drawer-header { display: flex; align-items: flex-start; gap: 8px; padding: 14px 14px 10px 18px;
+    border-bottom: 0.5px solid var(--border); position: sticky; top: 0; background: var(--bg-surface); z-index: 1; }
+  .unified-drawer-back { background: none; border: none; color: var(--text-secondary); font-size: 13px;
+    cursor: pointer; padding: 4px 0; flex-shrink: 0; white-space: nowrap; }
+  .unified-drawer-back:hover { color: var(--text-primary); }
+  .unified-drawer-headline { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px;
+    flex-wrap: wrap; padding-top: 4px; }
+  .unified-drawer-headline .name { font-weight: 600; font-size: 15px; }
+  .unified-drawer-headline .ticker { color: var(--text-secondary); font-size: 12px; }
+  .unified-drawer-breadcrumb { font-size: 12px; color: var(--text-muted); padding: 8px 18px 0; }
+  .unified-drawer-breadcrumb .crumb { cursor: pointer; }
+  .unified-drawer-breadcrumb .crumb:hover { text-decoration: underline; }
+  .unified-drawer-breadcrumb .crumb.active { color: var(--text-primary); font-weight: 500; cursor: default; text-decoration: none; }
+  .unified-drawer-breadcrumb .sep { margin: 0 4px; }
+  #unifiedDrawerContent { padding: 12px 18px 20px; }
   /* Mobile: full-width bottom sheet instead of a right-side panel -- same
      .open class/JS, just a different closed transform (translateY instead
      of translateX) and edge (bottom instead of right). */
   @media (max-width: 640px) {
-    .iw-drawer {
-      top: auto; right: 0; bottom: 0; left: 0; width: 100%; height: 85vh;
+    .unified-drawer, .bond-drawer-modal, .iw-drawer {
+      top: auto; right: 0; bottom: 0; left: 0; width: 100%; height: 90vh;
       border-left: none; border-top: 0.5px solid var(--border);
       border-radius: 14px 14px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,0.35);
       transform: translateY(100%);
     }
-    .iw-drawer.open { transform: translateY(0); }
+    .unified-drawer.open, .bond-drawer-modal.open, .iw-drawer.open { transform: translateY(0); }
   }
+  /* Feature 1/2 new sub-sections (unified drawer, 2026-08-28). */
+  .ud-metrics-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+  .ud-metric-cell { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .ud-metric-cell .label { font-size: 11px; color: var(--text-secondary); }
+  .ud-metric-cell .value { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-top: 2px; }
+  .ud-credit-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 14px 0; font-size: 13px; }
+  .ud-credit-panel .row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; color: var(--text-secondary); }
+  .ud-credit-panel .row b { color: var(--text-primary); font-weight: 500; }
+  .ud-pathway { display: flex; align-items: center; gap: 4px; margin: 14px 0; flex-wrap: wrap; }
+  .ud-pathway-node { font-size: 11px; padding: 5px 8px; border-radius: 999px; border: 0.5px solid var(--border);
+    color: var(--text-secondary); background: var(--surface-1); }
+  .ud-pathway-node.confirmed { background: color-mix(in srgb, teal 18%, transparent); border-color: teal; color: var(--text-primary); }
+  .ud-pathway-arrow { color: var(--text-muted); font-size: 12px; }
+  .ud-triggers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+  .ud-triggers .col-title { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .ud-triggers .pos .col-title { color: var(--verdict-green); }
+  .ud-triggers .neg .col-title { color: var(--verdict-red); }
+  .ud-triggers ul { margin: 0; padding-left: 16px; }
+  .ud-triggers li { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 3px; }
+  .ud-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
   /* ---- Settings panel (⚙️ sidebar item, 2026-08-26): replaces the old
      "scroll to header controls" behavior -- same iw-drawer right-side-panel
      pattern, own width (320px per spec) and z-index one layer above the
@@ -1729,10 +1759,24 @@
      panel, populated by openIssuerDrawer() -- see script block near
      renderIssuerRows(). Static markup, lives outside .wrap so the fixed
      positioning isn't affected by any ancestor's transform/overflow. -->
-<div class="iw-drawer-overlay" id="iwDrawerOverlay"></div>
-<aside class="iw-drawer" id="iwDrawer" aria-hidden="true">
-  <button type="button" class="iw-drawer-close" id="iwDrawerClose" aria-label="Закрыть">×</button>
-  <div id="iwDrawerContent"></div>
+<!-- Unified bond/issuer drawer (2026-08-28): replaces the separate bond-drawer
+     (modal) and iw-drawer (issuer slide-in) markup that used to live here and
+     further down near the tooltip div -- openBondDrawer()/openIssuerDrawer()
+     both render into this one element now. See the CSS aliases (.bond-drawer-*,
+     .iw-drawer-*) further up for why old class names still resolve. -->
+<div class="unified-drawer-overlay bond-drawer-overlay iw-drawer-overlay" id="unifiedDrawerOverlay"></div>
+<aside class="unified-drawer bond-drawer-modal iw-drawer" id="unifiedDrawer" aria-hidden="true">
+  <div class="unified-drawer-header">
+    <button type="button" class="unified-drawer-back" id="unifiedDrawerBack">← Назад</button>
+    <div class="unified-drawer-headline">
+      <span class="name" id="unifiedDrawerName"></span>
+      <span class="ticker" id="unifiedDrawerTicker"></span>
+      <span id="unifiedDrawerStar"></span>
+    </div>
+    <button type="button" class="unified-drawer-close bond-drawer-close iw-drawer-close" id="unifiedDrawerClose" aria-label="Закрыть">✕</button>
+  </div>
+  <div class="unified-drawer-breadcrumb" id="unifiedDrawerBreadcrumb"></div>
+  <div id="unifiedDrawerContent"></div>
 </aside>
 <!-- Settings panel (⚙️ sidebar item, 2026-08-26): same right-side drawer
      pattern as the issuer drawer above, 320px wide per spec. Controls
@@ -2474,6 +2518,7 @@
         <div class="cbr-sim-dates" id="cbrSimDates"></div>
         <div class="cbr-sim-badge">◇ Свой сценарий — задано вами, не прогноз ЦБ</div>
         <div class="cbr-sim-result" id="cbrSimResult"></div>
+        <button type="button" class="uni-btn" id="cbrRecalcAeyBtn" style="margin-top:10px">Пересчитать AEY портфеля →</button>
       </div>
 
       <h2 style="margin-top:26px;">Последние изменения</h2>
@@ -2764,18 +2809,6 @@
      to the shared .tooltip class, which showTip()/hideTip() drive from
      dozens of call sites outside the map. -->
 <div class="mm-tooltip" id="mmTooltip"></div>
-
-<!-- Bond Detail Drawer: single shared component, four entry points
-     (Портфельный рейтинг table, Рынок table, Рынок scatter dots, candidate
-     chips) -- see openBondDrawer() in the script below. Fixed-position
-     modal instead of the old inline-expand-row pattern, since a canvas
-     scatter dot has no DOM row to expand into. -->
-<div class="bond-drawer-overlay" id="bondDrawerOverlay">
-  <div class="bond-drawer-modal">
-    <button type="button" class="bond-drawer-close" id="bondDrawerClose" aria-label="Закрыть">✕</button>
-    <div id="bondDrawerContent"></div>
-  </div>
-</div>
 
 <!-- Sortable.js (draggable home-screen tiles, 2026-08-26): the first external
      script dependency in this otherwise self-contained dashboard -- pinned
@@ -4458,49 +4491,247 @@ async function generateNarrative(secid) {
   }
 }
 
-// ---- openBondDrawer: the single entry point every click handler in the
-// dashboard calls. extraNoteHtml (optional) is prepended above the verdict
-// card -- used by the candidate-chip entry point to note "showing the
-// best-ranked bond, N others exist for this issuer" without needing a
-// second render path. ----
-function openBondDrawer(secid, extraNoteHtml) {
-  const content = document.getElementById('bondDrawerContent');
-  const overlay = document.getElementById('bondDrawerOverlay');
-  if (bondLookup.has(secid)) {
-    content.innerHTML = renderBondDetail(secid);
-  } else if (universeBondLookup.has(secid)) {
-    content.innerHTML = renderReducedBondDetail(universeBondLookup.get(secid));
-  } else {
-    content.innerHTML = `<p class="bond-not-watchlist">Бумага не найдена в текущих данных дашборда.</p>`;
-  }
-  if (extraNoteHtml) content.innerHTML = extraNoteHtml + content.innerHTML;
-  overlay.classList.add('open');
+// ---- Unified bond/issuer drawer (2026-08-28). openBondDrawer/openIssuerDrawer
+// stay as the two public entry points every existing call site already
+// calls (Рынок table, Портфель bond list, map dblclick, candidate chips,
+// Вотчлист card) -- both now render into the ONE unified overlay/panel (see
+// the HTML near the tooltip div, and the .unified-drawer-*/.bond-drawer-*/
+// .iw-drawer-* CSS aliases) instead of two separate drawer components. ----
+let unifiedDrawerOrigin = null; // {triggerEl, tab, secid} set on every open, read by closeUnifiedDrawer()'s focus-return and the action buttons
+
+function unifiedDrawerBreadcrumbHtml(crumbs) {
+  return crumbs.map((c, i) => {
+    const sep = i > 0 ? '<span class="sep">›</span>' : '';
+    return sep + (i === crumbs.length - 1
+      ? `<span class="crumb active">${escapeHtml(c.label)}</span>`
+      : `<span class="crumb" data-crumb-i="${i}">${escapeHtml(c.label)}</span>`);
+  }).join('');
+}
+function openUnifiedDrawerShell({ name, ticker, star, crumbs, contentHtml, tab, secid }) {
+  document.getElementById('unifiedDrawerName').textContent = name || '';
+  document.getElementById('unifiedDrawerTicker').textContent = ticker || '';
+  document.getElementById('unifiedDrawerStar').textContent = star || '';
+  const crumbEl = document.getElementById('unifiedDrawerBreadcrumb');
+  crumbEl.innerHTML = unifiedDrawerBreadcrumbHtml(crumbs);
+  crumbEl.querySelectorAll('[data-crumb-i]').forEach(el => {
+    // Feature 2: each crumb navigates and closes the drawer, preserving
+    // whatever filter state its own onClick already captured (gotoTab()
+    // itself doesn't reset window.screenFilter).
+    el.addEventListener('click', () => { const c = crumbs[+el.dataset.crumbI]; closeUnifiedDrawer(); if (c.onClick) c.onClick(); });
+  });
+  document.getElementById('unifiedDrawerContent').innerHTML = contentHtml;
+  const drawer = document.getElementById('unifiedDrawer');
+  drawer.classList.add('open'); drawer.setAttribute('aria-hidden', 'false');
+  document.getElementById('unifiedDrawerOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  overlay.scrollTop = 0;
+  drawer.scrollTop = 0;
+  unifiedDrawerOrigin = { triggerEl: document.activeElement, tab, secid };
 }
-function closeBondDrawer() {
-  document.getElementById('bondDrawerOverlay').classList.remove('open');
+function closeUnifiedDrawer() {
+  const drawer = document.getElementById('unifiedDrawer');
+  drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true');
+  document.getElementById('unifiedDrawerOverlay').classList.remove('open');
   document.body.style.overflow = '';
+  // "<- Назад... returns focus to the originating list item" -- isConnected
+  // guards against a trigger element that's since been removed by a
+  // re-render (e.g. a filter change while the drawer was open).
+  if (unifiedDrawerOrigin && unifiedDrawerOrigin.triggerEl && unifiedDrawerOrigin.triggerEl.isConnected
+      && typeof unifiedDrawerOrigin.triggerEl.focus === 'function') {
+    unifiedDrawerOrigin.triggerEl.focus({ preventScroll: true });
+  }
 }
-document.getElementById('bondDrawerClose').addEventListener('click', closeBondDrawer);
-document.getElementById('bondDrawerOverlay').addEventListener('click', (e) => {
-  if (e.target.id === 'bondDrawerOverlay') closeBondDrawer(); // backdrop click, not the modal itself
+// Kept as aliases -- every existing call site calls these two names.
+function closeBondDrawer() { closeUnifiedDrawer(); }
+function closeIssuerDrawer() { closeUnifiedDrawer(); }
+
+// [data-tab] in the selector matters: #sidebarHomeBtn also carries .active
+// (set once by showHomeScreen() at load, never cleared by gotoTab() since
+// its own toggle loop only touches [data-tab] elements) -- without that
+// qualifier, querySelector('.sidebar-item.active') can match the stale Home
+// button instead of the real current tab (confirmed live: after
+// gotoTab('watchlist'), both buttons carry .active simultaneously, and
+// Home's undefined dataset.tab was silently falling back to 'market').
+function udActiveTab() { return document.querySelector('.sidebar-item.active[data-tab]')?.dataset.tab || 'market'; }
+
+// Feature 1 -- metrics strip (6 cells). PD 1y: the task's own fallback
+// clause applies here -- pd_table_history doesn't exist anywhere in this
+// export (verified), so this always uses DATA.pd_by_rating, the same
+// default_probs-derived lookup renderVerdictHtml() already reads for its
+// own PD line.
+function udMetricsStripHtml(b, iss) {
+  const pd1y = DATA.pd_by_rating ? DATA.pd_by_rating[iss && iss.rating] : null;
+  const expLoss = pd1y != null ? pd1y * 0.934 : null;
+  const cells = [
+    ['YTM', b.ytm_pct != null ? b.ytm_pct.toFixed(1) + '%' : '—'],
+    ['G-спред', b.g_spread_bp != null ? Math.round(b.g_spread_bp) + 'бп' : '—'],
+    ['Цена', b.last_pct != null ? b.last_pct.toFixed(2) : '—'],
+    ['Дюрация', b.mod_dur != null ? b.mod_dur.toFixed(2) + 'л' : '—'],
+    ['PD 1г', pd1y != null ? pd1y.toFixed(2) + '%' : '—'],
+    ['Ожид. потери', expLoss != null ? expLoss.toFixed(2) + '%' : '—'],
+  ];
+  return `<div class="ud-metrics-strip">${cells.map(([l, v]) =>
+    `<div class="ud-metric-cell"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('')}</div>`;
+}
+// Feature 1 -- credit risk panel. "покрытие %"/"долг/EBITDA" in the spec
+// implies raw coverage ratios, but this export only ever computes
+// normalized 0-100 pillar SCORES (compute_pillars(), see six_pillars) --
+// no raw ratio exists to show, so these are honestly labeled as scores
+// rather than fabricated ratio numbers.
+function udCreditPanelHtml(b, iss) {
+  const rd = iss && iss.rating_detail;
+  const health = issuerHealthStatus(iss || {});
+  const sp = (iss && iss.six_pillars) || {};
+  const scoreCell = v => v != null ? v + '/100' : '—';
+  return `<div class="ud-credit-panel">
+    <div>
+      <div class="row"><span>Рейтинг</span><b>${(iss && iss.rating) || '—'}</b></div>
+      <div class="row"><span>Рейтинговое действие</span><b>${rd ? `${rd.action || '—'} ${rd.rated_on || ''}` : '—'}</b></div>
+      <div class="row"><span>Покрытие (балл)</span><b>${scoreCell(sp.score_liquidity)}</b></div>
+      <div class="row"><span>Долг/EBITDA (балл)</span><b>${scoreCell(sp.score_leverage)}</b></div>
+      <div class="row"><span>Риск рефинанс. (балл)</span><b>${scoreCell(sp.score_refinancing)}</b></div>
+    </div>
+    <div>
+      <div class="row"><span>Здоровье</span><b style="color:${HEALTH_STATUS_COLOR[health]}">${HEALTH_STATUS_LABEL[health]}</b></div>
+      <div class="row"><span>G-спред Δ30д</span><b>${b.g_spread_delta_bp != null ? (b.g_spread_delta_bp > 0 ? '+' : '') + Math.round(b.g_spread_delta_bp) + 'бп' : '—'}</b></div>
+      <div class="row"><span>Объём торгов</span><b>${b.volume != null ? Math.round(b.volume).toLocaleString('ru-RU') : '—'}</b></div>
+      <div class="row"><span>Сделок</span><b>${b.num_trades ?? '—'}</b></div>
+    </div>
+  </div>`;
+}
+// Feature 1 -- default pathway. "Confirmed" nodes are grounded in real
+// six_pillars scores/health/event data (a low score/red health IS the
+// evidence), not a separate "confirmed events" field this export doesn't
+// have -- shown only for RED/ORANGE health or a real critical/high event.
+function udPathwayHtml(iss) {
+  if (!iss) return '';
+  const health = issuerHealthStatus(iss);
+  const evt = lastCriticalHigh(iss);
+  if (health !== 'red' && health !== 'orange' && !evt) return '';
+  const sp = iss.six_pillars || {};
+  const nodes = [
+    { label: 'Операционное давление', confirmed: sp.score_operations != null && sp.score_operations < 40 },
+    { label: 'Денежный поток', confirmed: sp.score_liquidity != null && sp.score_liquidity < 40 },
+    { label: 'Рефинансирование', confirmed: sp.score_refinancing != null && sp.score_refinancing < 40 },
+    { label: 'Ликвидность', confirmed: health === 'red' },
+    { label: 'Дефолт', confirmed: !!(evt && /default|дефолт/i.test(evt.category || '')) },
+  ];
+  return `<div class="ud-pathway">` + nodes.map((n, i) =>
+    (i > 0 ? '<span class="ud-pathway-arrow">→</span>' : '') +
+    `<span class="ud-pathway-node${n.confirmed ? ' confirmed' : ''}">${n.label}</span>`
+  ).join('') + `</div>`;
+}
+// Feature 1 -- "Что изменит картину?" triggers. health_reason is free-form
+// prose (see renderIssuerDetail's .iw-health-reason usage), not structured
+// data -- regex-splitting it into "2 positive + 2 negative" would misfire
+// on real text, so this always uses the spec's own tier-appropriate-defaults
+// fallback rather than a brittle parse.
+const UD_TRIGGER_DEFAULTS = {
+  yellow: { pos: ['Стабилизация G-спреда за 30 дней', 'Подтверждение рейтинга агентством'],
+            neg: ['Рост G-спреда сверх 300бп', 'Просрочка публикации отчётности'] },
+  orange: { pos: ['Успешное размещение нового выпуска', 'Улучшение ND/EBITDA по новой отчётности'],
+            neg: ['Понижение рейтинга', 'Срыв графика купонных выплат'] },
+  red:    { pos: ['Реструктуризация долга с кредиторами', 'Государственная поддержка/санация'],
+            neg: ['Технический дефолт по купону', 'Начало процедуры банкротства'] },
+};
+function udTriggersHtml(iss) {
+  if (!iss) return '';
+  const health = issuerHealthStatus(iss);
+  if (!UD_TRIGGER_DEFAULTS[health]) return '';
+  const { pos, neg } = UD_TRIGGER_DEFAULTS[health];
+  return `<div class="ud-triggers">
+    <div class="pos"><div class="col-title">↑ Позитивные триггеры</div><ul>${pos.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul></div>
+    <div class="neg"><div class="col-title">↓ Негативные триггеры</div><ul>${neg.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul></div>
+  </div>`;
+}
+// Feature 1 -- context-aware action buttons. "Открыть в вотчлисте" only
+// when opened from Рынок (per spec) AND the issuer is actually on the
+// watchlist (a universe-only issuer has no watchlist card to jump to).
+function udActionsHtml({ secid, iss }) {
+  const tab = udActiveTab();
+  const btns = [];
+  if (secid) btns.push(`<button type="button" class="uni-btn narrative-btn" data-secid="${secid}">Сгенерировать анализ</button>`);
+  if (secid) btns.push(`<button type="button" class="uni-btn" data-ud-action="portfolio" data-secid="${secid}">+ В портфель</button>`);
+  if (secid) btns.push(`<button type="button" class="uni-btn" data-ud-action="map" data-secid="${secid}">Показать на карте</button>`);
+  if (tab === 'market' && iss && iss.issuer_id && bondLookup.has(secid)) {
+    btns.push(`<button type="button" class="uni-btn" data-ud-action="watchlist" data-issuer="${iss.issuer_id}">Открыть в вотчлисте</button>`);
+  }
+  return btns.length ? `<div class="ud-actions">${btns.join('')}</div>` : '';
+}
+// Feature 2 -- breadcrumb. Sector segment comes from the active
+// window.screenFilter.sectors pick when exactly one sector is selected
+// (an empty or multi-sector selection has no single sector to name), else
+// falls back to the bond's own sector.
+function udBondBreadcrumb(tab, b, iss) {
+  const issuerName = (iss && iss.name) || (b && b.emitent_title) || '';
+  const bondLabel = `${issuerName} — ${(b && b.secid) || ''}`;
+  if (tab === 'watchlist') return [{ label: 'Вотчлист', onClick: () => gotoTab('watchlist') }, { label: issuerName || bondLabel }];
+  if (tab === 'portfolio') {
+    // No middle "preset name" crumb when nothing named is actually loaded
+    // (e.g. the Портфельный рейтинг table, which isn't scoped to a saved
+    // preset at all) -- otherwise it duplicates the tab crumb's own label.
+    const presetName = document.getElementById('pfMonitorName')?.textContent
+      || document.getElementById('pfPortfolioNameInput')?.value || '';
+    const crumbs = [{ label: 'Портфель', onClick: () => gotoTab('portfolio') }];
+    if (presetName) crumbs.push({ label: presetName });
+    crumbs.push({ label: issuerName || bondLabel });
+    return crumbs;
+  }
+  const sf = window.screenFilter;
+  const sectorKey = (sf && sf.sectors && sf.sectors.length === 1) ? sf.sectors[0] : (b && b.sector);
+  const crumbs = [{ label: 'Рынок', onClick: () => gotoTab('market') }];
+  if (sectorKey) crumbs.push({ label: sectorLabel(sectorKey) });
+  crumbs.push({ label: bondLabel });
+  return crumbs;
+}
+
+function openBondDrawer(secid, extraNoteHtml) {
+  const isWatchlist = bondLookup.has(secid);
+  const b = isWatchlist ? bondLookup.get(secid).bond : universeBondLookup.get(secid);
+  const iss = isWatchlist ? bondLookup.get(secid).issuer : (b ? syntheticIssuerFromUniverseBond(b) : null);
+  let contentHtml;
+  if (isWatchlist) contentHtml = renderBondDetail(secid);
+  else if (b) contentHtml = renderReducedBondDetail(b);
+  else contentHtml = `<p class="bond-not-watchlist">Бумага не найдена в текущих данных дашборда.</p>`;
+  if (extraNoteHtml) contentHtml = extraNoteHtml + contentHtml;
+  if (b) {
+    contentHtml = udMetricsStripHtml(b, iss) + contentHtml + udCreditPanelHtml(b, iss) + udPathwayHtml(iss) + udTriggersHtml(iss);
+  }
+  contentHtml += udActionsHtml({ secid, iss });
+
+  const tab = udActiveTab();
+  openUnifiedDrawerShell({
+    name: (iss && iss.name) || (b && b.emitent_title) || secid,
+    ticker: b ? (b.short_name || secid) : '',
+    star: b && b.in_watchlist ? '★' : '●',
+    crumbs: udBondBreadcrumb(tab, b, iss),
+    contentHtml, tab, secid,
+  });
+}
+document.getElementById('unifiedDrawerClose').addEventListener('click', closeUnifiedDrawer);
+document.getElementById('unifiedDrawerBack').addEventListener('click', closeUnifiedDrawer);
+document.getElementById('unifiedDrawerOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'unifiedDrawerOverlay') closeUnifiedDrawer(); // backdrop click, not the panel itself
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && document.getElementById('bondDrawerOverlay').classList.contains('open')) closeBondDrawer();
+  if (e.key === 'Escape' && document.getElementById('unifiedDrawer').classList.contains('open')) closeUnifiedDrawer();
 });
 // Buttons inside drawer content (narrative generation, events-history
-// toggle) -- delegated on the overlay (persists across every openBondDrawer
-// call, regardless of which entry point opened it) rather than re-attached
-// per render. stopPropagation keeps a click from also bubbling to the
-// backdrop-click-closes-modal handler above.
-document.getElementById('bondDrawerOverlay').addEventListener('click', (e) => {
+// toggle, and the new Feature 1 action buttons) -- delegated on the PANEL
+// itself, not the overlay: #unifiedDrawer/#unifiedDrawerOverlay are
+// siblings, not ancestor/descendant (unlike the old .bond-drawer-overlay >
+// .bond-drawer-modal > #bondDrawerContent nesting this replaced), so a
+// listener on the overlay would never see clicks bubbling up from content
+// inside the panel. Persists across every open, regardless of which entry
+// point opened it, rather than re-attached per render. stopPropagation
+// keeps a click from also bubbling to the backdrop-click-closes-panel
+// handler on the overlay.
+document.getElementById('unifiedDrawer').addEventListener('click', (e) => {
   const evtBtn = e.target.closest('.bond-events-toggle');
   if (evtBtn) {
     e.stopPropagation();
     const secid = evtBtn.dataset.secid;
     bondEventsMode.set(secid, (bondEventsMode.get(secid) || 'critical') === 'critical' ? 'all' : 'critical');
-    document.getElementById('bondDrawerContent').innerHTML = renderBondDetail(secid);
+    openBondDrawer(secid); // re-render through the same unified path, not a raw content swap, so the new sections stay in sync
     return;
   }
   const keyBtn = e.target.closest('.narrative-key-btn');
@@ -4509,6 +4740,29 @@ document.getElementById('bondDrawerOverlay').addEventListener('click', (e) => {
   if (ncBtn) { e.stopPropagation(); generateNarrative(ncBtn.dataset.secid); return; }
   const rawBtn = e.target.closest('.nc-raw-toggle');
   if (rawBtn) { e.stopPropagation(); toggleNcRaw(rawBtn.dataset.rawId); return; }
+  // Feature 1 action buttons.
+  const actBtn = e.target.closest('[data-ud-action]');
+  if (actBtn) {
+    e.stopPropagation();
+    const action = actBtn.dataset.udAction, secid = actBtn.dataset.secid;
+    if (action === 'portfolio') {
+      closeUnifiedDrawer();
+      const portfolioBtn = document.querySelector('.sidebar-item[data-tab="portfolio"]');
+      if (portfolioBtn) portfolioBtn.click();
+      if (window.__pfLoadFromMarketSelection) window.__pfLoadFromMarketSelection([secid]);
+    } else if (action === 'map') {
+      closeUnifiedDrawer();
+      gotoTab('market');
+      window.screenFilter.update({ selectedSecids: [secid], selectedSecid: secid });
+    } else if (action === 'watchlist') {
+      const issuerId = actBtn.dataset.issuer;
+      closeUnifiedDrawer();
+      gotoTab('watchlist');
+      requestAnimationFrame(() => {
+        document.querySelector(`[data-issuer="${issuerId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+  }
 });
 
 (function renderSpreadChart() {
@@ -5861,25 +6115,23 @@ function ratingTrendHtml(iss) {
   return `<span class="iw-rating-trend" style="color:${color}" title="${escapeHtml(t.tooltip || '')}">${arrow}</span>`;
 }
 
-// Issuer detail drawer (Вотчлист card redesign, 2026-08-25): replaces the
-// old per-row .iw-detail accordion with one shared right-side panel. Wired
-// once at module scope, not per-row -- openIssuerDrawer()/closeIssuerDrawer()
-// are called from renderIssuerRows()'s per-row click handlers below.
+// Issuer detail drawer (Вотчлист card redesign, 2026-08-25; unified into
+// the single #unifiedDrawer 2026-08-28): openIssuerDrawer()/closeIssuerDrawer()
+// stay the two names renderIssuerRows()'s per-row click handlers call --
+// both now delegate into the same shell openBondDrawer() uses (see above).
 function openIssuerDrawer(iss) {
-  document.getElementById('iwDrawerContent').innerHTML =
-    `<h3 class="iw-drawer-title">${escapeHtml(iss.name)}</h3>${renderIssuerDetail(iss)}`;
-  document.getElementById('iwDrawer').classList.add('open');
-  document.getElementById('iwDrawer').setAttribute('aria-hidden', 'false');
-  document.getElementById('iwDrawerOverlay').classList.add('open');
+  const repBond = (iss.bonds && iss.bonds[0]) || null;
+  let contentHtml = renderIssuerDetail(iss);
+  if (repBond) contentHtml = udMetricsStripHtml(repBond, iss) + contentHtml + udCreditPanelHtml(repBond, iss);
+  contentHtml += udPathwayHtml(iss) + udTriggersHtml(iss) + udActionsHtml({ secid: repBond && repBond.secid, iss });
+
+  openUnifiedDrawerShell({
+    name: iss.name, ticker: '', star: '★',
+    crumbs: [{ label: 'Вотчлист', onClick: () => gotoTab('watchlist') }, { label: iss.name }],
+    contentHtml, tab: 'watchlist', secid: repBond && repBond.secid,
+  });
   localStorage.setItem(WATCHLIST_EXPANDED_KEY, iss.issuer_id);
 }
-function closeIssuerDrawer() {
-  document.getElementById('iwDrawer').classList.remove('open');
-  document.getElementById('iwDrawer').setAttribute('aria-hidden', 'true');
-  document.getElementById('iwDrawerOverlay').classList.remove('open');
-}
-document.getElementById('iwDrawerClose').addEventListener('click', closeIssuerDrawer);
-document.getElementById('iwDrawerOverlay').addEventListener('click', closeIssuerDrawer);
 
 // Pillar mini-bars (issuer card redesign): a compact 4-bar summary distinct
 // from the full pillarPanelHtml() shown inside the drawer -- own thresholds
@@ -5942,6 +6194,7 @@ function renderIssuerRowsPage(pageIssuers) {
           <span class="iw-rating">${iss.rating || '—'}${ratingTrendHtml(iss)}</span>
           <span class="iw-aey" title="${escapeHtml(AEY_RISK_ADJ_TOOLTIP)}" style="cursor:help">${aey}</span>
           <span class="iw-status">${status}</span>
+          <a href="#" class="iw-market-link" data-issuer-market="${iss.issuer_id}" title="Показать бумаги этого эмитента в Рынок">Рынок →</a>
         </div>
       </div>
       ${showReason ? `<div class="iw-health-reason">${escapeHtml(iss.health_reason)}</div>` : ''}
@@ -5955,6 +6208,23 @@ function renderIssuerRowsPage(pageIssuers) {
     const issuerId = wrap.dataset.issuer;
     const iss = DATA.issuers.find(i => i.issuer_id === issuerId);
     wrap.querySelector('.iw-row').addEventListener('click', () => openIssuerDrawer(iss));
+  });
+  // Feature 3 -- Вотчлист -> Рынок deep link. screenFilter has no per-issuer
+  // dimension, so this filters by the issuer's sector (the closest existing
+  // one) AND pre-selects its own bond secids, so "Показать в таблице"-style
+  // follow-up highlighting works immediately on arrival.
+  el.querySelectorAll('.iw-market-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const iss = DATA.issuers.find(i => i.issuer_id === link.dataset.issuerMarket);
+      if (!iss) return;
+      const secids = (iss.bonds || []).map(b => b.secid);
+      window.screenFilter.update({
+        sectors: iss.sector ? [iss.sector] : [],
+        selectedSecids: secids, selectedSecid: secids[0] || null,
+      });
+      gotoTab('market');
+    });
   });
 }
 
@@ -9398,6 +9668,12 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
       simState.rate = parseFloat(slider.value);
       renderSimResult();
     });
+    // Feature 3 (Unified drawer task, 2026-08-28): cross-section link to
+    // Портфель, reusing window.__pfRecomputeAeyAtRate (presetsTab()).
+    document.getElementById('cbrRecalcAeyBtn').addEventListener('click', () => {
+      gotoTab('portfolio');
+      if (window.__pfRecomputeAeyAtRate) window.__pfRecomputeAeyAtRate(simState.rate);
+    });
   }
   initSimulator();
   // Cross-tab live refresh: called by portfolioTab()'s renderStatsOnly()
@@ -11926,6 +12202,42 @@ renderOfzCurveShape();
       return null;
     }
   }
+
+  // Feature 3 (Unified drawer task, 2026-08-28): ЦБ РФ tab's rate simulator
+  // -> "Пересчитать AEY портфеля" cross-link (window.__pfRecomputeAeyAtRate,
+  // called from that tab's own IIFE). Reprices each bond in the currently
+  // ACTIVE saved portfolio at the simulator's target rate using the SAME
+  // bodyReevalPct() graduated-shift formula the OFZ carry simulator already
+  // uses for its own "Свой сценарий" (ungraduated, applied instantly) -- a
+  // real reprice against real bond mod_dur/convexity, not a fabricated
+  // number, just applied to portfolio bonds instead of OFZ ones. Must live
+  // in THIS IIFE (presetsTab()), not the earlier portfolioTab() one --
+  // loadSavedRecord()/renderMonitor()/computeMonitorState() only exist here.
+  window.__pfRecomputeAeyAtRate = function (targetRatePct) {
+    const record = loadSavedRecord();
+    if (!record || record.status !== 'active') {
+      alert('Нет активного портфеля для пересчёта — сначала соберите и сохраните портфель.');
+      return;
+    }
+    const cbrNow = (DATA.cbr && DATA.cbr.current_rate) || null;
+    const deltaY = cbrNow != null ? (targetRatePct - cbrNow) / 100 : 0;
+    const state = computeMonitorState(record);
+    let avgAey = 0;
+    state.rows.forEach(r => {
+      const iss = (DATA.issuers || []).find(i => i.issuer_id === r.issuerId);
+      const bond = iss ? (iss.bonds || []).find(bb => bb.isin === r.isin) : null;
+      const baseAey = r.currentAey != null ? r.currentAey : (r.aey || 0);
+      const shiftPct = bond ? bodyReevalPct(bond.mod_dur, bond.convexity, deltaY) / 100 : 0;
+      avgAey += (r.weight || 0) * (baseAey + shiftPct);
+    });
+    renderMonitor(record);
+    const strip = document.getElementById('pfMonitorSummaryStrip');
+    if (strip) {
+      strip.insertAdjacentHTML('beforeend',
+        `<div>Сценарий ${targetRatePct.toFixed(2)}%: <b>${(avgAey * 100).toFixed(1)}%</b> AEY (реоценка тела, без градуации)</div>`);
+    }
+    document.getElementById('sec-portfolio').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   document.getElementById('pfMonitorRebuildBtn').addEventListener('click', () => {
     const record = loadSavedRecord();
