@@ -13,7 +13,8 @@ from export_dashboard_data import (  # noqa: E402
     spread_history_by_issuer, passive_issuers_export, passive_events_since,
     universe_snapshot_bundle, RATING_TREND_VALUE, rating_trend,
     rating_history_by_issuer, _latest_spread_snap_date, portfolio_data_freshness,
-    pipeline_health_export, cleanup_export_stale_duplicates)
+    pipeline_health_export, cleanup_export_stale_duplicates,
+    export_portfolio_allocation, SECTOR_COLORS)
 from hybond import health  # noqa: E402
 
 ISSUER = "7701234567"
@@ -597,3 +598,174 @@ def test_cleanup_export_stale_duplicates_does_not_raise_on_db_error(tmp_path, ca
     cleanup_export_stale_duplicates(con)  # must not raise
     captured = capsys.readouterr()
     assert "skipped" in captured.err
+
+
+# ---- export_portfolio_allocation (Portfolio donut charts, 2026-08-29) ------
+
+def _pa_con(tmp_path, name="pa.sqlite"):
+    con = db.connect(tmp_path / name)
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_portfolio(con)
+    db.init_issuer_bond(con)
+    return con
+
+
+def _pa_bond(con, secid, sector, health, rating, aey_base, snap_date="2026-08-27",
+             issuer_id=None):
+    issuer_id = issuer_id or secid  # one issuer per bond is fine for these tests
+    db.upsert_issuer(con, issuer_id, f"Issuer {issuer_id}", sector=sector)
+    if health is not None:
+        db.set_issuer_health_status(con, issuer_id, health)
+    db.add_issuer_bond(con, issuer_id, secid, source="manual")
+    if rating is not None or aey_base is not None:
+        db.insert_universe_snapshot(con, **_snapshot_row(
+            secid=secid, snap_date=snap_date, emitent_inn=issuer_id,
+            rating=rating, aey_base=aey_base))
+
+
+def test_export_portfolio_allocation_no_active_portfolio_returns_empty(tmp_path):
+    con = _pa_con(tmp_path)
+    assert export_portfolio_allocation(con) == {}
+
+
+def test_export_portfolio_allocation_active_portfolio_zero_bonds_returns_empty(tmp_path):
+    con = _pa_con(tmp_path)
+    db.create_portfolio(con, "Пустой", "conservative", status="active")
+    con.commit()
+    assert export_portfolio_allocation(con) == {}
+
+
+def test_export_portfolio_allocation_basic_shape(tmp_path):
+    con = _pa_con(tmp_path)
+    _pa_bond(con, "B1", "leasing", "green", "ruBBB+", 0.25)
+    _pa_bond(con, "B2", "leasing", "green", "ruBBB", 0.30)
+    _pa_bond(con, "B3", "energy", "yellow", "ruBB+", 0.35)
+    pid = db.create_portfolio(con, "Тест", "conservative", status="active")
+    for secid in ("B1", "B2", "B3"):
+        db.add_portfolio_bond(con, pid, secid, weight=1 / 3)
+    con.commit()
+
+    result = export_portfolio_allocation(con)
+    assert set(result.keys()) == {"bonds", "sector_allocation", "rating_allocation",
+                                   "health_allocation", "summary"}
+    assert len(result["bonds"]) == 3
+    b1 = next(b for b in result["bonds"] if b["isin"] == "B1")
+    assert b1["sector"] == "leasing"
+    assert b1["rating"] == "ruBBB+"
+    assert abs(b1["weight"] - 1 / 3) < 1e-9
+    assert abs(b1["aey_base"] - 0.25) < 1e-9
+
+    summary = result["summary"]
+    assert summary["total_bonds"] == 3
+    assert summary["n_sectors"] == 2
+    assert summary["n_ratings"] == 3
+    assert summary["preset_type"] == "conservative"
+    assert summary["name"] == "Тест"
+    assert abs(summary["avg_aey"] - (0.25 + 0.30 + 0.35) / 3) < 1e-9
+
+    sectors = result["sector_allocation"]
+    assert abs(sectors["leasing"]["weight"] - 2 / 3) < 1e-9
+    assert sectors["leasing"]["bond_count"] == 2
+    assert abs(sectors["leasing"]["avg_aey"] - (0.25 + 0.30) / 2) < 1e-9
+    assert sectors["leasing"]["color"] == SECTOR_COLORS["leasing"]
+    assert abs(sectors["energy"]["weight"] - 1 / 3) < 1e-9
+
+    ratings = result["rating_allocation"]
+    assert ratings["ruBBB+"]["bond_count"] == 1
+    assert ratings["ruBB+"]["bond_count"] == 1
+
+    health = result["health_allocation"]
+    assert health["green"]["bond_count"] == 2
+    assert health["yellow"]["bond_count"] == 1
+    assert abs(health["green"]["weight"] - 2 / 3) < 1e-9
+
+
+def test_export_portfolio_allocation_missing_rating_excluded_from_n_ratings(tmp_path):
+    con = _pa_con(tmp_path)
+    _pa_bond(con, "B1", "leasing", "green", "ruBBB", 0.25)
+    _pa_bond(con, "B2", "leasing", "green", None, None)  # no universe_snapshot row
+    pid = db.create_portfolio(con, "Тест", "conservative", status="active")
+    db.add_portfolio_bond(con, pid, "B1", weight=0.5)
+    db.add_portfolio_bond(con, pid, "B2", weight=0.5)
+    con.commit()
+
+    result = export_portfolio_allocation(con)
+    assert result["summary"]["n_ratings"] == 1  # "no_rating" isn't a rating
+    assert result["summary"]["total_bonds"] == 2
+    ratings = result["rating_allocation"]
+    assert "no_rating" in ratings
+    assert ratings["no_rating"]["bond_count"] == 1
+    assert ratings["no_rating"]["avg_aey"] is None
+    # The missing-AEY bond doesn't silently pull the overall/bucket average
+    # toward 0 -- it's simply excluded from the weighted-avg denominator.
+    assert abs(result["summary"]["avg_aey"] - 0.25) < 1e-9
+    assert abs(result["sector_allocation"]["leasing"]["avg_aey"] - 0.25) < 1e-9
+
+
+def test_export_portfolio_allocation_unmapped_sector_falls_back_to_other_color(tmp_path):
+    con = _pa_con(tmp_path)
+    _pa_bond(con, "B1", "technology", "green", "ruBBB", 0.25)
+    pid = db.create_portfolio(con, "Тест", "conservative", status="active")
+    db.add_portfolio_bond(con, pid, "B1", weight=1.0)
+    con.commit()
+
+    result = export_portfolio_allocation(con)
+    assert result["sector_allocation"]["technology"]["color"] == SECTOR_COLORS["other"]
+
+
+def test_export_portfolio_allocation_only_latest_snap_date_used(tmp_path):
+    con = _pa_con(tmp_path)
+    db.upsert_issuer(con, "I1", "Issuer 1", sector="leasing")
+    db.set_issuer_health_status(con, "I1", "green")
+    db.add_issuer_bond(con, "I1", "B1", source="manual")
+    db.insert_universe_snapshot(con, **_snapshot_row(
+        secid="B1", snap_date="2026-08-01", emitent_inn="I1",
+        rating="ruB", aey_base=0.50))  # stale, wrong rating/aey
+    db.insert_universe_snapshot(con, **_snapshot_row(
+        secid="B1", snap_date="2026-08-27", emitent_inn="I1",
+        rating="ruBBB+", aey_base=0.25))  # latest, correct
+    pid = db.create_portfolio(con, "Тест", "conservative", status="active")
+    db.add_portfolio_bond(con, pid, "B1", weight=1.0)
+    con.commit()
+
+    result = export_portfolio_allocation(con)
+    assert result["summary"]["total_bonds"] == 1  # no fan-out across snap_dates
+    assert "ruBBB+" in result["rating_allocation"]
+    assert "ruB" not in result["rating_allocation"]
+    assert abs(result["summary"]["avg_aey"] - 0.25) < 1e-9
+
+
+def test_export_portfolio_allocation_weight_normalized_to_one(tmp_path):
+    con = _pa_con(tmp_path)
+    _pa_bond(con, "B1", "leasing", "green", "ruBBB", 0.25)
+    _pa_bond(con, "B2", "energy", "green", "ruBBB", 0.25)
+    pid = db.create_portfolio(con, "Тест", "conservative", status="active")
+    # Raw weights that DON'T sum to 1 -- allocation must still normalize to
+    # fractions of the actual total, not assume equal-weight bookkeeping.
+    db.add_portfolio_bond(con, pid, "B1", weight=1.0)
+    db.add_portfolio_bond(con, pid, "B2", weight=3.0)
+    con.commit()
+
+    result = export_portfolio_allocation(con)
+    assert abs(result["sector_allocation"]["leasing"]["weight"] - 0.25) < 1e-9
+    assert abs(result["sector_allocation"]["energy"]["weight"] - 0.75) < 1e-9
+
+
+def test_export_portfolio_allocation_picks_most_recently_created_active(tmp_path):
+    con = _pa_con(tmp_path)
+    _pa_bond(con, "B1", "leasing", "green", "ruBBB", 0.25)
+    _pa_bond(con, "B2", "energy", "green", "ruBBB", 0.30)
+    p_old = db.create_portfolio(con, "Старый", "conservative", status="active")
+    db.add_portfolio_bond(con, p_old, "B1", weight=1.0)
+    con.commit()
+    con.execute("UPDATE portfolio SET created_at='2020-01-01' WHERE id=?", (p_old,))
+    p_new = db.create_portfolio(con, "Новый", "aggressive", status="active")
+    db.add_portfolio_bond(con, p_new, "B2", weight=1.0)
+    con.commit()
+
+    result = export_portfolio_allocation(con)
+    assert result["summary"]["name"] == "Новый"
+    assert result["summary"]["preset_type"] == "aggressive"
+    assert "energy" in result["sector_allocation"]
+    assert "leasing" not in result["sector_allocation"]

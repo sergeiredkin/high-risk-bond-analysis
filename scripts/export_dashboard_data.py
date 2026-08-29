@@ -54,6 +54,29 @@ FAIR_VALUE_TIERS = ["ruAA", "ruA", "ruBBB", "ruBB"]
 # a guessed taxonomy -- see the task's own audit note for the discrepancy
 # with an earlier proposed key set. sectorLabel() in the dashboard JS falls
 # back to the raw string for any value not covered here.
+# Portfolio donut charts (Portfolio donut charts task, 2026-08-29): a fixed
+# name->color dict rather than the dashboard's existing sectorColor() (a
+# hash of the sector string into SECTOR_PALETTE) -- confirmed live that hash
+# actually COLLIDES for sectors this exact feature needs to tell apart
+# (mobility_tech/debt_collection/energy all hash to the same
+# SECTOR_PALETTE entry, '#2a78d6'), which would make two differently-colored
+# donut legend entries indistinguishable on the chart itself. This dict is
+# deliberately its own source of truth, shared between this export and the
+# donut-drawing JS, rather than "matching" a hash function that can't
+# guarantee distinct colors for an arbitrary sector set.
+SECTOR_COLORS = {
+    'real_estate': '#E87040',
+    'leasing': '#4A90D9',
+    'mobility_tech': '#7B68EE',
+    'debt_collection': '#20B2AA',
+    'energy': '#FFD700',
+    'construction': '#8B7355',
+    'retail': '#FF69B4',
+    'agriculture': '#6DBE6D',
+    'mfo': '#FF8C00',
+    'other': '#888888',
+}
+
 SECTOR_LABELS_RU = {
     "agriculture": "Агросектор",
     "commercial_real_estate": "Коммерческая недвижимость",
@@ -143,6 +166,132 @@ def portfolio_data_freshness(con) -> dict[str, str | None]:
     return {
         "universe_snapshot_date": db.latest_universe_snap_date(con),
         "spread_snapshot_date": _latest_spread_snap_date(con),
+    }
+
+
+def export_portfolio_allocation(con) -> dict:
+    """Sector/rating/health allocation for the active (status='active',
+    most recently created) saved portfolio -- the one `hybond
+    portfolio-build --save` writes, distinct from the client-side Presets
+    Builder preview (which never touches the DB). Returns {} if no active
+    portfolio exists, or if it has zero bonds -- the dashboard shows an
+    empty state in either case rather than an empty/misleading chart.
+
+    Joins portfolio_bond.isin -> issuer_bond.secid -> issuer (sector,
+    health_status) for sector/health, and universe_snapshot (latest
+    snap_date only -- it's one row per (secid, snap_date), so joining
+    without that filter would fan out across every historical snapshot)
+    for rating/aey_base. isin and secid are the same string for every bond
+    in this DB (confirmed: 0 mismatches across the `bond` table) -- Russian
+    corporate bonds use ISIN as their MOEX SECID, so no extra join through
+    `bond` is needed.
+
+    avg_aey (per bucket and overall) is weighted by each bond's own
+    portfolio weight, computed only over bonds with a known aey_base
+    (renormalized by their weight sum) -- a bond missing a current rating/
+    AEY (e.g. not yet re-confirmed by the latest `hybond universe` run)
+    still counts toward bond_count/weight in its bucket, it just doesn't
+    silently pull the average toward 0.
+    """
+    db.init_portfolio(con)
+    db.init_issuer_bond(con)
+    db.init_universe(con)
+
+    row = con.execute(
+        "SELECT id, name, preset_type FROM portfolio WHERE status='active' "
+        "ORDER BY created_at DESC LIMIT 1").fetchone()
+    if row is None:
+        return {}
+    portfolio_id, name, preset_type = row["id"], row["name"], row["preset_type"]
+
+    latest_snap = db.latest_universe_snap_date(con)
+    bond_rows = con.execute(
+        "SELECT pb.isin, pb.weight, i.sector, i.health_status, i.name AS issuer_name, "
+        "us.rating, us.aey_base, us.short_name "
+        "FROM portfolio_bond pb "
+        "JOIN issuer_bond ib ON ib.secid = pb.isin "
+        "JOIN issuer i ON i.issuer_id = ib.issuer_id "
+        "LEFT JOIN universe_snapshot us ON us.secid = pb.isin AND us.snap_date = ? "
+        "WHERE pb.portfolio_id = ?",
+        (latest_snap, portfolio_id)).fetchall()
+    if not bond_rows:
+        return {}
+
+    total_weight = sum(b["weight"] or 0.0 for b in bond_rows) or 1.0
+
+    def _new_bucket() -> dict:
+        return {"weight": 0.0, "bond_count": 0, "_aey_wsum": 0.0, "_aey_wtot": 0.0}
+
+    sector_alloc: dict[str, dict] = {}
+    rating_alloc: dict[str, dict] = {}
+    health_alloc: dict[str, dict] = {}
+    overall_aey_wsum = overall_aey_wtot = 0.0
+
+    for b in bond_rows:
+        weight = (b["weight"] or 0.0) / total_weight
+        aey = b["aey_base"]
+        sector = b["sector"] or "other"
+        rating = b["rating"] or "no_rating"
+        health = b["health_status"] or "green"
+
+        for store, key in ((sector_alloc, sector), (rating_alloc, rating)):
+            bucket = store.setdefault(key, _new_bucket())
+            bucket["weight"] += weight
+            bucket["bond_count"] += 1
+            if aey is not None:
+                bucket["_aey_wsum"] += weight * aey
+                bucket["_aey_wtot"] += weight
+
+        h = health_alloc.setdefault(health, {"weight": 0.0, "bond_count": 0})
+        h["weight"] += weight
+        h["bond_count"] += 1
+
+        if aey is not None:
+            overall_aey_wsum += weight * aey
+            overall_aey_wtot += weight
+
+    for store in (sector_alloc, rating_alloc):
+        for bucket in store.values():
+            bucket["avg_aey"] = (bucket["_aey_wsum"] / bucket["_aey_wtot"]
+                                  if bucket["_aey_wtot"] > 0 else None)
+            del bucket["_aey_wsum"], bucket["_aey_wtot"]
+
+    for key, bucket in sector_alloc.items():
+        bucket["color"] = SECTOR_COLORS.get(key, SECTOR_COLORS["other"])
+
+    # Per-bond rows, not just aggregates -- the dashboard's sector-donut
+    # click-to-filter (Portfolio donut charts task, Phase 2) needs an actual
+    # bond list to filter, and the saved active portfolio has no other
+    # dashboard-visible bond list to reuse (this DB portfolio is entirely
+    # separate from the Обзор tab's own client-side position-picker
+    # preview, which never touches these tables -- see save_portfolio()'s
+    # docstring in portfolio.py).
+    bonds = [{
+        "isin": b["isin"],
+        "short_name": b["short_name"] or b["issuer_name"] or b["isin"],
+        "sector": b["sector"] or "other",
+        "rating": b["rating"],
+        "health_status": b["health_status"] or "green",
+        "weight": (b["weight"] or 0.0) / total_weight,
+        "aey_base": b["aey_base"],
+    } for b in bond_rows]
+
+    return {
+        "bonds": bonds,
+        "sector_allocation": sector_alloc,
+        "rating_allocation": rating_alloc,
+        "health_allocation": health_alloc,
+        "summary": {
+            "total_bonds": len(bond_rows),
+            "n_sectors": len(sector_alloc),
+            # "no_rating" isn't a rating -- excluded from the count, though
+            # its bucket stays in rating_allocation so the donut's slices
+            # still sum to 100% of the portfolio.
+            "n_ratings": len([k for k in rating_alloc if k != "no_rating"]),
+            "avg_aey": (overall_aey_wsum / overall_aey_wtot) if overall_aey_wtot > 0 else None,
+            "preset_type": preset_type,
+            "name": name,
+        },
     }
 
 
@@ -1332,6 +1481,7 @@ def main() -> None:
     placements = primary_placements(con, date.today().isoformat())
     expected_returns = expected_returns_by_secid(con)
     portfolio_freshness = portfolio_data_freshness(con)
+    portfolio_allocation = export_portfolio_allocation(con)
     pd_table_date_iso = db.latest_pd_table_date(con)
     pd_table_date = (pd_import.format_report_date(pd_table_date_iso)
                       if pd_table_date_iso else None)
@@ -1537,6 +1687,7 @@ def main() -> None:
         "spread_history": spread_history,
         "spread_history_labels": spread_history_labels,
         "portfolio_data_freshness": portfolio_freshness,
+        "portfolio_allocation": portfolio_allocation,
         "pd_table_date": pd_table_date,
         "market_wide_notes": market_wide,
         "primary_placements": placements,

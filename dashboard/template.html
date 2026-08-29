@@ -443,6 +443,21 @@
     border: 1px solid var(--bg-border); border-radius: var(--radius-badge); padding: 1px 7px; margin-left: 8px; vertical-align: middle; }
   .pf-event-warn { color: var(--verdict-red); cursor: help; margin-left: 4px; }
 
+  /* ---- Portfolio donut charts (active-portfolio allocation) ------------- */
+  .pf-alloc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 600px) { .pf-alloc-grid { grid-template-columns: 1fr; } }
+  .pf-donut-wrap { position: relative; width: 180px; height: 180px; margin: 10px auto 0; }
+  .pf-donut-wrap canvas { display: block; width: 180px; height: 180px; cursor: pointer; }
+  .pf-donut-center { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+  .pf-donut-center b { font-size: 15px; color: var(--text-primary); line-height: 1.2; }
+  .pf-donut-center span { font-size: 11px; color: var(--text-secondary); }
+  .pf-health-bar-block { margin-top: 18px; }
+  .pf-health-bar-label { font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+  .pf-health-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden;
+    background: var(--border); }
+  .pf-health-bar-seg { height: 100%; }
+
   .pf-weight-sum { font-size: 12px; color: var(--text-secondary); }
   .pf-weight-sum b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
   .pf-weight-sum.pf-warn b { color: var(--warning); }
@@ -2652,6 +2667,50 @@
           <button type="button" class="pf-preset-btn pf-preset-reset" id="pfPresetReset">Сбросить</button>
         </div>
         <div class="pf-preset-note" id="pfPresetNote" style="display:none"></div>
+
+        <!-- Portfolio donut charts task (2026-08-29): the SAVED active
+             portfolio (status='active' in the portfolio/portfolio_bond
+             tables, written by `hybond portfolio-build --save`) has no
+             other dashboard-visible representation anywhere -- everything
+             else in this Обзор subtab (health tiles above, "1. Выбор бумаг"
+             below) is the client-side position-picker preview, which never
+             touches those tables (see save_portfolio()'s docstring in
+             portfolio.py). This section is deliberately its own block, not
+             merged into "3. Графики портфеля" below (which already has a
+             sector treemap + rating histogram for the PICKER's live
+             selection) -- conflating the two would silently mix a
+             committed portfolio's real numbers with an in-progress draft. -->
+        <h3 style="margin-top:18px">Аллокация активного портфеля</h3>
+        <div id="pfAllocationEmpty" style="display:none"></div>
+        <div id="pfAllocationContent" style="display:none">
+          <p class="section-note" id="pfAllocationSubtitle"></p>
+          <div class="pf-alloc-grid">
+            <div class="card">
+              <b>Сектор</b>
+              <div class="pf-donut-wrap">
+                <canvas id="pfSectorDonut"></canvas>
+                <div class="pf-donut-center" id="pfSectorDonutCenter"></div>
+              </div>
+              <div class="mm-legend-row" id="pfSectorLegend"></div>
+            </div>
+            <div class="card">
+              <b>Рейтинг</b>
+              <div class="pf-donut-wrap">
+                <canvas id="pfRatingDonut"></canvas>
+                <div class="pf-donut-center" id="pfRatingDonutCenter"></div>
+              </div>
+              <div class="mm-legend-row" id="pfRatingLegend"></div>
+            </div>
+          </div>
+          <div class="pf-health-bar-block">
+            <div class="pf-health-bar-label">Здоровье портфеля:</div>
+            <div class="pf-health-bar" id="pfHealthBar"></div>
+            <div class="mm-legend-row" id="pfHealthBarLegend"></div>
+          </div>
+          <div class="card table-scroll" style="margin-top:14px">
+            <table id="pfAllocBondTable"></table>
+          </div>
+        </div>
 
         <h3 style="margin-top:18px">1. Выбор бумаг</h3>
         <!-- Pool source banner (Task 6): shows whether the pickable table below
@@ -12521,6 +12580,252 @@ renderOfzCurveShape();
       navigator.clipboard.writeText(cmd).catch(() => {});
     }
   });
+
+  // ---- Active-portfolio allocation donuts (Portfolio donut charts task,
+  // 2026-08-29) -- see the HTML comment above #pfAllocationEmpty for why
+  // this reads DATA.portfolio_allocation (the SAVED DB portfolio) rather
+  // than this file's own `selected`/`pool` picker state. Canvas 2D, same
+  // hi-DPI pattern as the market map's mmResizeCanvas() (backing buffer
+  // scaled by devicePixelRatio, drawing coordinates stay in one fixed
+  // logical size) -- no new libraries, per the task's explicit constraint.
+  const RATING_DONUT_COLORS = {
+    'ruBBB+': '#1D9E75', 'ruBBB': '#5DCAA5', 'ruBBB-': '#9FE1CB',
+    'ruBB+': '#EF9F27', 'ruBB': '#E87040', 'ruB': '#E24B4A',
+    // The task's given palette only names 6 tiers -- the real portfolio
+    // (and any future one) can carry ratings outside that list (e.g.
+    // ruA-, better than ruBBB+; ruB-/ruCCC, worse than ruB). Extended here
+    // on the SAME green(best)->red(worst) spectrum rather than leaving
+    // them an arbitrary color the legend can't explain.
+    'ruA-': '#0D7A57', 'ruB-': '#C23B3A', 'ruCCC': '#A82E2E',
+  };
+  const NO_RATING_COLOR = '#9a9890';
+  function ratingDonutColor(rating) {
+    return rating === 'no_rating' ? NO_RATING_COLOR : (RATING_DONUT_COLORS[rating] || NO_RATING_COLOR);
+  }
+  const HEALTH_BAR_COLOR_VAR = {
+    green: '--verdict-green', yellow: '--verdict-yellow',
+    orange: '--verdict-orange', red: '--verdict-red',
+  };
+  const HEALTH_ORDER = ['green', 'yellow', 'orange', 'red'];
+
+  let pfAllocSectorFilter = null; // sector key, or null = show every bond
+  let pfAllocBondsCache = []; // current active portfolio's bond list, set by renderPfAllocation()
+
+  /** Annulus-sector path (outer arc + inner arc walked backwards), so a
+   * donut slice is one closed path -- no separate "punch the hole"
+   * step, and a pulled-out selected slice (translated cx/cy) stays a
+   * clean ring segment instead of leaving a gap at a static center.
+   * @returns {void} */
+  function donutWedgePath(ctx, cx, cy, innerR, outerR, a0, a1) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, a0, a1, false);
+    ctx.arc(cx, cy, innerR, a1, a0, true);
+    ctx.closePath();
+  }
+
+  /** Wraps one <canvas> as a donut chart: owns its own segment geometry,
+   * hover/click hit-testing, and redraw -- render() is called fresh with
+   * a new bucket list every time the underlying allocation data or the
+   * sector filter changes.
+   * @returns {{render: function, key: function}} */
+  function makeDonutChart(canvas) {
+    const SIZE = 180;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = SIZE * dpr;
+    canvas.height = SIZE * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const cx = SIZE / 2, cy = SIZE / 2;
+    const outerR = SIZE / 2 - 6, innerR = outerR * 0.55;
+    let segments = [];
+    let hoverKey = null, selectedKey = null, onSelect = null;
+
+    function draw() {
+      ctx.clearRect(0, 0, SIZE, SIZE);
+      segments.forEach(seg => {
+        const isHover = seg.key === hoverKey;
+        const isSelected = seg.key === selectedKey;
+        const r = outerR + (isHover ? 4 : 0);
+        let ox = cx, oy = cy;
+        if (isSelected) {
+          const mid = (seg.start + seg.end) / 2;
+          ox += Math.cos(mid) * 6; oy += Math.sin(mid) * 6;
+        }
+        donutWedgePath(ctx, ox, oy, innerR, r, seg.start, seg.end);
+        ctx.globalAlpha = (selectedKey && !isSelected) ? 0.45 : 1;
+        ctx.fillStyle = seg.color;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+    }
+
+    // e.offsetX/offsetY are reported in the canvas's actual on-screen CSS
+    // pixel box -- which, at this dashboard's default 120% font-size zoom
+    // (document.documentElement.style.zoom, see applyFontScale()), is NOT
+    // the same as the fixed 180x180 logical space every drawing coordinate
+    // above is authored in. getBoundingClientRect().width DOES reflect the
+    // zoom (confirmed live: 216px at 120%, 324px at 180%) and is what the
+    // market map's own mmLocalXY() already relies on for this exact reason
+    // -- canvas.clientWidth does NOT track zoom the same way (confirmed
+    // live: stays 180 regardless of zoom level) and silently breaks hit-
+    // testing anywhere but 100%, which this dashboard never defaults to.
+    function toLogical(mx, my) {
+      const scale = canvas.getBoundingClientRect().width / SIZE || 1;
+      return { x: mx / scale, y: my / scale };
+    }
+
+    function hitTest(mx, my) {
+      const dx = mx - cx, dy = my - cy;
+      const dist = Math.hypot(dx, dy);
+      if (dist < innerR || dist > outerR + 4) return null;
+      let ang = Math.atan2(dy, dx);
+      const base = -Math.PI / 2;
+      while (ang < base) ang += Math.PI * 2;
+      return segments.find(seg => ang >= seg.start && ang < seg.end) || null;
+    }
+
+    canvas.addEventListener('mousemove', (e) => {
+      const { x, y } = toLogical(e.offsetX, e.offsetY);
+      const best = hitTest(x, y);
+      const key = best ? best.key : null;
+      if (key !== hoverKey) { hoverKey = key; draw(); }
+      canvas.style.cursor = key ? 'pointer' : 'default';
+      if (best) {
+        showTip(e, `<b>${escapeHtml(best.label)}</b><br>${(best.value * 100).toFixed(1)}%`);
+      } else {
+        hideTip();
+      }
+    });
+    canvas.addEventListener('mouseleave', () => {
+      if (hoverKey) { hoverKey = null; draw(); }
+      hideTip();
+    });
+    canvas.addEventListener('click', (e) => {
+      const { x, y } = toLogical(e.offsetX, e.offsetY);
+      const best = hitTest(x, y);
+      const key = best ? best.key : null;
+      selectedKey = (selectedKey === key) ? null : key;
+      draw();
+      if (onSelect) onSelect(selectedKey);
+    });
+
+    return {
+      render(buckets, selectFn) {
+        onSelect = selectFn;
+        let angle = -Math.PI / 2;
+        segments = buckets.map(b => {
+          const sweep = b.value * Math.PI * 2;
+          const seg = Object.assign({}, b, { start: angle, end: angle + sweep });
+          angle += sweep;
+          return seg;
+        });
+        draw();
+      },
+    };
+  }
+
+  const pfSectorDonut = makeDonutChart(document.getElementById('pfSectorDonut'));
+  const pfRatingDonut = makeDonutChart(document.getElementById('pfRatingDonut'));
+
+  function renderAllocLegend(elId, buckets, labelFn) {
+    const el = document.getElementById(elId);
+    // "max 8 rows" (task spec): the donut itself still draws every real
+    // segment (see render() above) -- only the text legend list is capped,
+    // so a >8-bucket portfolio never loses chart data, just legend rows.
+    el.innerHTML = buckets.slice(0, 8).map(b =>
+      `<div class="mm-legend-item"><span class="mm-swatch" style="background:${b.color}"></span>${escapeHtml(labelFn(b))}: ${(b.value * 100).toFixed(1)}%</div>`
+    ).join('');
+  }
+
+  function renderPfAllocBondTable(bonds) {
+    const el = document.getElementById('pfAllocBondTable');
+    const rows = pfAllocSectorFilter ? bonds.filter(b => b.sector === pfAllocSectorFilter) : bonds;
+    const filterNote = pfAllocSectorFilter
+      ? `<caption style="text-align:left;padding:4px 0;font-size:12px;color:var(--text-secondary)">Фильтр: ${escapeHtml(sectorLabel(pfAllocSectorFilter))} (${rows.length} из ${bonds.length}) <a href="#" id="pfAllocClearFilter">✕ сбросить</a></caption>`
+      : '';
+    el.innerHTML = filterNote +
+      '<thead><tr><th>Бумага</th><th>Сектор</th><th>Рейтинг</th><th>Здоровье</th><th>Вес</th><th>AEY база</th></tr></thead><tbody>' +
+      rows.map(b => `<tr>
+        <td>${escapeHtml(b.short_name)}</td>
+        <td>${escapeHtml(sectorLabel(b.sector))}</td>
+        <td>${b.rating ? escapeHtml(b.rating) : 'нет'}</td>
+        <td>${escapeHtml(b.health_status)}</td>
+        <td>${(b.weight * 100).toFixed(1)}%</td>
+        <td>${b.aey_base != null ? (b.aey_base * 100).toFixed(1) + '%' : '—'}</td>
+      </tr>`).join('') +
+      '</tbody>';
+    const clearBtn = document.getElementById('pfAllocClearFilter');
+    if (clearBtn) clearBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      pfAllocSectorFilter = null;
+      pfSectorDonut.render(sectorBucketsCache, onSectorSelect);
+      renderPfAllocBondTable(pfAllocBondsCache);
+    });
+  }
+
+  let sectorBucketsCache = [];
+  function onSectorSelect(key) {
+    pfAllocSectorFilter = key;
+    renderPfAllocBondTable(pfAllocBondsCache);
+  }
+
+  function renderPfAllocation() {
+    const pfAlloc = DATA.portfolio_allocation || {};
+    const emptyEl = document.getElementById('pfAllocationEmpty');
+    const contentEl = document.getElementById('pfAllocationContent');
+    if (!pfAlloc.summary) {
+      emptyEl.style.display = '';
+      contentEl.style.display = 'none';
+      emptyEl.innerHTML = emptyStateHtml({
+        icon: 'chart', title: 'Постройте портфель чтобы увидеть аллокацию',
+        subtitle: 'hybond portfolio-build --save сохраняет портфель, после чего его секторальная/рейтинговая структура появится здесь.',
+      });
+      return;
+    }
+    emptyEl.style.display = 'none';
+    contentEl.style.display = '';
+
+    const summary = pfAlloc.summary;
+    document.getElementById('pfAllocationSubtitle').textContent =
+      `${summary.name} (${summary.total_bonds} облигаций, ${summary.n_sectors} секторов, ${summary.n_ratings} рейтингов)`;
+
+    const sectorEntries = Object.entries(pfAlloc.sector_allocation || {})
+      .sort((a, b) => b[1].weight - a[1].weight);
+    sectorBucketsCache = sectorEntries.map(([key, v]) => ({ key, label: sectorLabel(key), value: v.weight, color: v.color }));
+    pfSectorDonut.render(sectorBucketsCache, onSectorSelect);
+    renderAllocLegend('pfSectorLegend', sectorBucketsCache, b => b.label);
+    document.getElementById('pfSectorDonutCenter').innerHTML =
+      `<b>${summary.total_bonds}</b><span>облигаций</span>`;
+
+    const ratingEntries = Object.entries(pfAlloc.rating_allocation || {})
+      .sort((a, b) => b[1].weight - a[1].weight);
+    const ratingBuckets = ratingEntries.map(([key, v]) => ({
+      key, label: key === 'no_rating' ? 'Без рейтинга' : key,
+      value: v.weight, color: ratingDonutColor(key),
+    }));
+    pfRatingDonut.render(ratingBuckets, null); // rating donut doesn't drive the bond-list filter
+    renderAllocLegend('pfRatingLegend', ratingBuckets, b => b.label);
+    document.getElementById('pfRatingDonutCenter').innerHTML =
+      summary.avg_aey != null
+        ? `<b>${(summary.avg_aey * 100).toFixed(1)}% AEY</b><span>средневзвеш.</span>`
+        : '<b>—</b><span>AEY недоступен</span>';
+
+    const healthEntries = HEALTH_ORDER
+      .map(k => [k, pfAlloc.health_allocation && pfAlloc.health_allocation[k]])
+      .filter(([, v]) => v && v.weight > 0);
+    const barEl = document.getElementById('pfHealthBar');
+    barEl.innerHTML = healthEntries.map(([k, v]) =>
+      `<div class="pf-health-bar-seg" style="width:${(v.weight * 100).toFixed(2)}%;background:var(${HEALTH_BAR_COLOR_VAR[k]})"></div>`
+    ).join('');
+    document.getElementById('pfHealthBarLegend').innerHTML = healthEntries.map(([k, v]) =>
+      `<div class="mm-legend-item"><span class="mm-swatch" style="background:var(${HEALTH_BAR_COLOR_VAR[k]})"></span>${k.toUpperCase()} ${(v.weight * 100).toFixed(0)}%</div>`
+    ).join('');
+
+    pfAllocSectorFilter = null;
+    pfAllocBondsCache = pfAlloc.bonds || [];
+    renderPfAllocBondTable(pfAllocBondsCache);
+  }
+  renderPfAllocation();
 
   renderPresetCards();
   syncPresetDefaults();
