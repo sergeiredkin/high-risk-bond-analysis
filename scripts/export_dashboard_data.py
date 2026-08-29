@@ -816,6 +816,14 @@ def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str]) ->
             # distinct from False).
             "yield_zone": r["yield_zone"],
             "ev_positive": bool(r["ev_positive"]) if r["ev_positive"] is not None else None,
+            # Universe Health Scan (2026-08-29, `hybond scan-universe-health`):
+            # health_source distinguishes a real full-signal computation
+            # ('full', tier=1 issuers only) from YTM/G-spread-only
+            # ('quantitative', everything else) -- see watchlist_health.
+            # compute_universe_bond_health(). Both null until that command
+            # has run at least once against this snap_date.
+            "health_status": r["health_status"],
+            "health_source": r["health_source"],
         })
     return bonds
 

@@ -36,6 +36,15 @@ PYTHONPATH=src python -m hybond run >> "$LOG" 2>&1
 echo "=== Portfolio monitoring ===" >> "$LOG"
 PYTHONPATH=src python -m hybond portfolio-monitor >> "$LOG" 2>&1
 
+# Rating backfill (NKR history) -- only agency supported today. Read-heavy
+# per-issuer scrape over tier=1/2 issuers, no dependency on today's universe
+# snapshot, so it can run anywhere before `hybond universe`; placed here so
+# any newly-backfilled rating is available to today's universe/promote/
+# health-scan steps below rather than only from tomorrow's run.
+echo "=== Rating backfill ===" >> "$LOG"
+PYTHONPATH=src python -m hybond backfill-ratings --agency nkr >> "$LOG" 2>&1
+echo "Rating backfill exit: $?" >> "$LOG"
+
 # Universe snapshot: full MOEX corporate-bond screen + G-spread + mispricing.
 # The SECID->ИНН emitent map is cached (emitent_map table) and only
 # re-paginated weekly -- force that refresh on Sundays (same cron slot as
@@ -54,6 +63,16 @@ PYTHONPATH=src python -m hybond universe $UNIVERSE_FLAGS >> "$LOG" 2>&1
 # all (only universe_pipeline.py's `hybond universe` does); running it right
 # after `hybond run` would check YTM against yesterday's snapshot.
 PYTHONPATH=src python -m hybond scan-watchlist-health >> "$LOG" 2>&1
+
+# Universe health scan (2026-08-29): assigns health_status to every
+# vdo_scope=1 bond, not just the 34 tier=1 issuers scan-watchlist-health
+# covers. Placed after scan-watchlist-health, not immediately after
+# `hybond universe` -- tier=1 bonds' health_source='full' is copied from
+# issuer.health_status, which the step just above this one just computed;
+# running it before scan-watchlist-health would copy yesterday's value.
+echo "=== Universe health scan ===" >> "$LOG"
+PYTHONPATH=src python -m hybond scan-universe-health >> "$LOG" 2>&1
+echo "Universe health exit: $?" >> "$LOG"
 
 # Phase 2 promotion screen: rank vdo_scope over rating floor -> liquidity
 # floor -> AEY-risk-adj -> issuer concentration cap, into a deep-monitoring

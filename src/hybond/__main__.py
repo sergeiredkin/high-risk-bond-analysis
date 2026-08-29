@@ -1009,6 +1009,71 @@ def cmd_scan_watchlist_health(args) -> int:
     return 0
 
 
+def cmd_scan_universe_health(args) -> int:
+    """Universe Health Scan (2026-08-29): assigns health_status to every
+    vdo_scope=1 bond in the latest universe_snapshot, not just the 34
+    tier=1 issuers scan-watchlist-health covers.
+
+    Two-tier: bonds whose issuer is watchlist_tier=1 get health_source=
+    'full', copied from issuer.health_status (a real full-signal
+    computation -- YTM + G-spread trajectory + filing events -- that
+    scan-watchlist-health just ran). Every other vdo_scope=1 bond
+    (universe-only, or tier=2 in_watchlist) gets health_source=
+    'quantitative', computed from YTM/G-spread level alone via
+    watchlist_health.compute_universe_bond_health() -- tier=2 issuers'
+    issuer.health_status is never actually computed by anything (only
+    scan_watchlist() scans tier=1), so copying it would stamp an
+    uncomputed schema-default 'green' as if it were a real signal."""
+    from . import watchlist_health
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    db.init_universe(con)
+
+    snap_date = db.latest_universe_snap_date(con)
+    if snap_date is None:
+        print("No universe_snapshot data found.", file=sys.stderr)
+        con.close()
+        return 1
+
+    tier1_inns = {r["issuer_id"] for r in db.list_issuers_by_tier(con, 1)}
+    issuer_health = {r["issuer_id"]: (r["health_status"], r["health_reason"])
+                      for r in con.execute("SELECT issuer_id, health_status, health_reason FROM issuer")}
+
+    rows = con.execute(
+        "SELECT secid, emitent_inn, ytm, g_spread_bp, rating "
+        "FROM universe_snapshot WHERE snap_date = ? AND vdo_scope = 1",
+        (snap_date,)).fetchall()
+
+    counts = {"green": 0, "yellow": 0, "orange": 0, "red": 0, "skipped": 0}
+    for row in rows:
+        secid, emitent_inn = row["secid"], row["emitent_inn"]
+        if emitent_inn in tier1_inns and emitent_inn in issuer_health:
+            status, _reason = issuer_health[emitent_inn]
+            source = "full"
+        else:
+            if row["ytm"] is None and row["g_spread_bp"] is None:
+                counts["skipped"] += 1
+                continue
+            status, _reason = watchlist_health.compute_universe_bond_health(
+                row["ytm"], row["g_spread_bp"], row["rating"])
+            source = "quantitative"
+        con.execute(
+            "UPDATE universe_snapshot SET health_status = ?, health_source = ? "
+            "WHERE secid = ? AND snap_date = ?",
+            (status, source, secid, snap_date))
+        counts[status] += 1
+    con.commit()
+    con.close()
+
+    print(f"Universe health scan ({snap_date}): {len(rows)} vdo_scope=1 bonds -- "
+          f"{counts['green']} green, {counts['yellow']} yellow, "
+          f"{counts['orange']} orange, {counts['red']} red, "
+          f"{counts['skipped']} skipped (null YTM and G-spread).")
+    return 0
+
+
 def cmd_discover(args) -> int:
     from . import discover
     report = discover.run_gap_check(Path(args.watchlist))
@@ -1617,6 +1682,13 @@ def main(argv=None) -> int:
                                 "signals (unattended -- meant to run daily after "
                                 "`hybond run`, no confirmation prompts)")
     pswh.set_defaults(func=cmd_scan_watchlist_health)
+    psuh = sub.add_parser("scan-universe-health",
+                           help="Assign health_status to every vdo_scope=1 universe bond "
+                                "(not just tier=1 issuers) -- 'full' copied from "
+                                "issuer.health_status for tier=1, 'quantitative' from "
+                                "YTM/G-spread thresholds for everything else. Run after "
+                                "`hybond universe` and `scan-watchlist-health`")
+    psuh.set_defaults(func=cmd_scan_universe_health)
     pdis = sub.add_parser("discover",
                           help="On-demand audit: MOEX-discovered bonds vs. watchlist.json "
                                "coverage, per issuer (manual tool, not part of daily_run.sh)")

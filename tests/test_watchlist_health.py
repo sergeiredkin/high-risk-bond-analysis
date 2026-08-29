@@ -453,3 +453,267 @@ def test_daily_run_sh_contains_scan_watchlist_health():
     # must run AFTER `hybond universe` (that's what actually populates
     # universe_snapshot -- see the ordering comment in daily_run.sh itself)
     assert text.index("hybond universe") < text.index("hybond scan-watchlist-health")
+
+
+def test_daily_run_sh_contains_backfill_ratings():
+    text = (Path(__file__).resolve().parents[1] / "scripts" / "daily_run.sh").read_text()
+    assert "hybond backfill-ratings --agency nkr" in text
+    assert (text.index("python -m hybond run >>")
+            < text.index("python -m hybond backfill-ratings")
+            < text.index("python -m hybond universe"))
+
+
+def test_daily_run_sh_contains_scan_universe_health():
+    text = (Path(__file__).resolve().parents[1] / "scripts" / "daily_run.sh").read_text()
+    assert "hybond scan-universe-health" in text
+    # must run after scan-watchlist-health, since 'full' bonds copy
+    # issuer.health_status -- that command just computed it above.
+    assert text.index("hybond scan-watchlist-health") < text.index("hybond scan-universe-health")
+
+
+# ---- Universe Health Scan: compute_universe_bond_health() --------------------
+
+def test_universe_health_green_when_nothing_elevated():
+    status, reason = watchlist_health.compute_universe_bond_health(0.15, 300.0, "ruBB")
+    assert status == "green"
+
+
+def test_universe_health_red_on_ytm_over_150():
+    status, reason = watchlist_health.compute_universe_bond_health(1.51, 300.0, "ruBB")
+    assert status == "red"
+    assert "YTM" in reason
+
+
+def test_universe_health_ytm_exactly_at_red_threshold_is_not_red():
+    # strict > comparison: 150.0% exactly must NOT trigger RED
+    status, _ = watchlist_health.compute_universe_bond_health(1.50, 300.0, "ruBB")
+    assert status != "red"
+
+
+def test_universe_health_red_on_gspread_over_3000bp():
+    status, reason = watchlist_health.compute_universe_bond_health(0.20, 3001.0, "ruBB")
+    assert status == "red"
+    assert "G-спред" in reason or "G-spread" in reason
+
+
+def test_universe_health_orange_on_ytm_60_150():
+    status, reason = watchlist_health.compute_universe_bond_health(0.61, 300.0, "ruBB")
+    assert status == "orange"
+
+
+def test_universe_health_orange_on_gspread_2000_3000bp():
+    status, _ = watchlist_health.compute_universe_bond_health(0.20, 2001.0, "ruBB")
+    assert status == "orange"
+
+
+def test_universe_health_yellow_on_ytm_30_60():
+    status, reason = watchlist_health.compute_universe_bond_health(0.31, 300.0, "ruBB")
+    assert status == "yellow"
+
+
+def test_universe_health_yellow_on_gspread_1000_2000bp():
+    status, _ = watchlist_health.compute_universe_bond_health(0.20, 1001.0, "ruBB")
+    assert status == "yellow"
+
+
+def test_universe_health_yellow_threshold_boundary_not_triggered():
+    # exactly at the yellow floor (30.0%, 1000bp) must NOT trigger yellow
+    status, _ = watchlist_health.compute_universe_bond_health(0.30, 1000.0, "ruBB")
+    assert status == "green"
+
+
+def test_universe_health_null_ytm_and_gspread_is_green():
+    status, reason = watchlist_health.compute_universe_bond_health(None, None, None)
+    assert status == "green"
+
+
+def test_universe_health_null_ytm_falls_back_to_gspread_only():
+    status, _ = watchlist_health.compute_universe_bond_health(None, 3500.0, "ruBB")
+    assert status == "red"
+
+
+def test_universe_health_null_gspread_falls_back_to_ytm_only():
+    status, _ = watchlist_health.compute_universe_bond_health(2.0, None, "ruBB")
+    assert status == "red"
+
+
+def test_universe_health_worst_of_ytm_and_gspread_wins():
+    # YTM says yellow, G-spread says red -- red must win (checked first)
+    status, _ = watchlist_health.compute_universe_bond_health(0.35, 3500.0, "ruBB")
+    assert status == "red"
+
+
+# ---- universe_snapshot health_status/health_source column migration ----------
+
+def test_migrate_universe_health_columns_idempotent(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_universe(con)  # second call must not raise (duplicate ALTER TABLE)
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(universe_snapshot)")}
+    assert "health_status" in cols
+    assert "health_source" in cols
+    con.close()
+
+
+# ---- CLI: cmd_scan_universe_health --------------------------------------------
+
+def test_cmd_scan_universe_health_no_data_returns_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.sqlite")
+    con = db.connect()
+    db.init_db(con)
+    db.init_universe(con)
+    con.close()
+    rc = cli.cmd_scan_universe_health(None)
+    assert rc == 1
+
+
+def test_cmd_scan_universe_health_tier1_bond_copies_full_from_issuer(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.sqlite")
+    con = _con(tmp_path)  # ISSUER added at tier=1
+    secid = _bond(con)
+    _universe_row(con, secid, TODAY, ytm=0.20)
+    con.execute("UPDATE universe_snapshot SET vdo_scope=1 WHERE secid=?", (secid,))
+    db.set_issuer_health_status(con, ISSUER, "orange", reason="manual test signal")
+    con.commit()
+    con.close()
+
+    rc = cli.cmd_scan_universe_health(None)
+    assert rc == 0
+
+    con = db.connect()
+    row = con.execute(
+        "SELECT health_status, health_source FROM universe_snapshot WHERE secid=?",
+        (secid,)).fetchone()
+    con.close()
+    assert row["health_status"] == "orange"
+    assert row["health_source"] == "full"
+
+
+def test_cmd_scan_universe_health_tier2_bond_is_quantitative_not_full(tmp_path, monkeypatch):
+    # A tier=2 issuer's issuer.health_status is never computed by anything
+    # (scan_watchlist only scans tier=1) -- it's the schema default 'green'.
+    # Copying it as health_source='full' would misrepresent an uncomputed
+    # default as a real signal, so tier=2 bonds must get 'quantitative'
+    # like universe-only bonds, even if in_watchlist=1.
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.sqlite")
+    con = _con(tmp_path)
+    db.set_watchlist_tier(con, ISSUER, 2, reason="test setup")
+    secid = _bond(con)
+    _universe_row(con, secid, TODAY, ytm=1.55)  # would be RED quantitatively
+    con.execute("UPDATE universe_snapshot SET vdo_scope=1 WHERE secid=?", (secid,))
+    con.commit()
+    con.close()
+
+    rc = cli.cmd_scan_universe_health(None)
+    assert rc == 0
+
+    con = db.connect()
+    row = con.execute(
+        "SELECT health_status, health_source FROM universe_snapshot WHERE secid=?",
+        (secid,)).fetchone()
+    con.close()
+    assert row["health_source"] == "quantitative"
+    assert row["health_status"] == "red"
+
+
+def test_cmd_scan_universe_health_universe_only_bond_is_quantitative(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.sqlite")
+    con = db.connect()
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_pillars(con)
+    db.init_market_note(con)
+    db.init_issuer_bond(con)
+    db.init_rating(con)
+    db.insert_universe_snapshot(
+        con, secid="U1", snap_date=TODAY, short_name="U1", emitent_inn="999999999",
+        emitent_title="Unowned Co", mat_date="2028-01-01", offer_date=None,
+        coupon_pct=15.0, list_level=3, qualified=1, last_pct=100.0, yield_moex=20.0,
+        yield_to_offer=None, accrued_int=0.0, volume=1000.0, num_trades=10,
+        duration_moex=365.0, ytm=0.20, tenor_yrs=1.5, rf_rate=0.14, g_spread_bp=300.0,
+        yield_source="moex", rating="ruBB", implied_fair_spread_bp=None,
+        mispricing_bp=None, in_watchlist=0, signal_excluded=0, mod_dur=1.0,
+        aey_base=0.20, aey_stress=0.20, aey_bull=0.20, aey_base_risk_adj=0.20,
+        vdo_scope=1)
+    con.commit()
+    con.close()
+
+    rc = cli.cmd_scan_universe_health(None)
+    assert rc == 0
+
+    con = db.connect()
+    row = con.execute(
+        "SELECT health_status, health_source FROM universe_snapshot WHERE secid='U1'",
+    ).fetchone()
+    con.close()
+    assert row["health_source"] == "quantitative"
+    assert row["health_status"] == "green"
+
+
+def test_cmd_scan_universe_health_skips_bonds_with_no_data(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.sqlite")
+    con = db.connect()
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_pillars(con)
+    db.init_market_note(con)
+    db.init_issuer_bond(con)
+    db.init_rating(con)
+    db.insert_universe_snapshot(
+        con, secid="U2", snap_date=TODAY, short_name="U2", emitent_inn="999999999",
+        emitent_title="Unowned Co", mat_date="2028-01-01", offer_date=None,
+        coupon_pct=15.0, list_level=3, qualified=1, last_pct=100.0, yield_moex=None,
+        yield_to_offer=None, accrued_int=0.0, volume=1000.0, num_trades=10,
+        duration_moex=365.0, ytm=None, tenor_yrs=1.5, rf_rate=0.14, g_spread_bp=None,
+        yield_source="moex", rating=None, implied_fair_spread_bp=None,
+        mispricing_bp=None, in_watchlist=0, signal_excluded=0, mod_dur=None,
+        aey_base=None, aey_stress=None, aey_bull=None, aey_base_risk_adj=None,
+        vdo_scope=1)
+    con.commit()
+    con.close()
+
+    rc = cli.cmd_scan_universe_health(None)
+    assert rc == 0
+
+    con = db.connect()
+    row = con.execute(
+        "SELECT health_status, health_source FROM universe_snapshot WHERE secid='U2'",
+    ).fetchone()
+    con.close()
+    assert row["health_status"] is None
+    assert row["health_source"] is None
+
+
+def test_cmd_scan_universe_health_ignores_non_vdo_scope_bonds(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.sqlite")
+    con = db.connect()
+    db.init_db(con)
+    db.init_universe(con)
+    db.init_pillars(con)
+    db.init_market_note(con)
+    db.init_issuer_bond(con)
+    db.init_rating(con)
+    db.insert_universe_snapshot(
+        con, secid="U3", snap_date=TODAY, short_name="U3", emitent_inn="999999999",
+        emitent_title="Unowned Co", mat_date="2028-01-01", offer_date=None,
+        coupon_pct=15.0, list_level=3, qualified=1, last_pct=100.0, yield_moex=20.0,
+        yield_to_offer=None, accrued_int=0.0, volume=1000.0, num_trades=10,
+        duration_moex=365.0, ytm=0.20, tenor_yrs=1.5, rf_rate=0.14, g_spread_bp=300.0,
+        yield_source="moex", rating="ruBB", implied_fair_spread_bp=None,
+        mispricing_bp=None, in_watchlist=0, signal_excluded=0, mod_dur=1.0,
+        aey_base=0.20, aey_stress=0.20, aey_bull=0.20, aey_base_risk_adj=0.20,
+        vdo_scope=0)
+    con.commit()
+    con.close()
+
+    rc = cli.cmd_scan_universe_health(None)
+    assert rc == 0
+
+    con = db.connect()
+    row = con.execute(
+        "SELECT health_status, health_source FROM universe_snapshot WHERE secid='U3'",
+    ).fetchone()
+    con.close()
+    assert row["health_status"] is None
+    assert row["health_source"] is None

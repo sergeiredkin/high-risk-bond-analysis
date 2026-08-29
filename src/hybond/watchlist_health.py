@@ -65,6 +65,63 @@ YELLOW_MEDIUM_EVENT_LOOKBACK_DAYS = 7
 
 RATING_LOOKBACK_DAYS = 90
 
+# --- Universe Health Scan (2026-08-29): quantitative-only thresholds ------
+# For bonds outside the RED/ORANGE/YELLOW machinery above: universe-only
+# bonds (no issuer row scanned by scan_watchlist at all) and tier=2
+# in_watchlist bonds (issuer.health_status is never computed for them --
+# scan_watchlist only covers watchlist_tier=1 -- so copying it would stamp
+# an uncomputed schema-default 'green' as if it were a real signal). No
+# filing events, no FNS flags, no G-spread trajectory (spread_snapshot
+# history is only populated for watchlist bonds) -- YTM/G-spread level only,
+# so thresholds are more lenient than the full-signal ones above.
+UNIVERSE_RED_YTM_PCT = 150.0
+UNIVERSE_RED_GSPREAD_BP = 3000.0
+UNIVERSE_ORANGE_YTM_PCT = 60.0
+UNIVERSE_ORANGE_GSPREAD_BP = 2000.0
+UNIVERSE_YELLOW_YTM_PCT = 30.0
+UNIVERSE_YELLOW_GSPREAD_BP = 1000.0
+
+
+def compute_universe_bond_health(
+    ytm: float | None,
+    g_spread_bp: float | None,
+    rating: str | None,
+) -> tuple[str, str]:
+    """Health status for a universe bond from quantitative signals only
+    (YTM level + G-spread level -- no filing events, no G-spread
+    trajectory, no rating-change lookback). `rating` is accepted for
+    signature symmetry with the full scan but not currently used: rating
+    alone (without a lookback window to detect a *drop*) isn't a
+    distress signal, unlike YTM/G-spread level which are.
+
+    Returns (health_status, reason); health_status is one of
+    'red'/'orange'/'yellow'/'green'. Caller stores this with
+    health_source='quantitative'.
+    """
+    ytm_pct = (ytm * 100) if ytm is not None else None
+    reasons = []
+
+    if ytm_pct is not None and ytm_pct > UNIVERSE_RED_YTM_PCT:
+        return 'red', f'YTM {ytm_pct:.1f}% exceeds {UNIVERSE_RED_YTM_PCT:.0f}%'
+    if g_spread_bp is not None and g_spread_bp > UNIVERSE_RED_GSPREAD_BP:
+        return 'red', f'G-spread {g_spread_bp:.0f}bp exceeds {UNIVERSE_RED_GSPREAD_BP:.0f}bp'
+
+    if ytm_pct is not None and ytm_pct > UNIVERSE_ORANGE_YTM_PCT:
+        reasons.append(f'YTM {ytm_pct:.1f}% in [{UNIVERSE_ORANGE_YTM_PCT:.0f}%, {UNIVERSE_RED_YTM_PCT:.0f}%)')
+    if g_spread_bp is not None and g_spread_bp > UNIVERSE_ORANGE_GSPREAD_BP:
+        reasons.append(f'G-spread {g_spread_bp:.0f}bp in [{UNIVERSE_ORANGE_GSPREAD_BP:.0f}, {UNIVERSE_RED_GSPREAD_BP:.0f}bp)')
+    if reasons:
+        return 'orange', '; '.join(reasons)
+
+    if ytm_pct is not None and ytm_pct > UNIVERSE_YELLOW_YTM_PCT:
+        reasons.append(f'YTM {ytm_pct:.1f}% in [{UNIVERSE_YELLOW_YTM_PCT:.0f}%, {UNIVERSE_ORANGE_YTM_PCT:.0f}%)')
+    if g_spread_bp is not None and g_spread_bp > UNIVERSE_YELLOW_GSPREAD_BP:
+        reasons.append(f'G-spread {g_spread_bp:.0f}bp in [{UNIVERSE_YELLOW_GSPREAD_BP:.0f}, {UNIVERSE_ORANGE_GSPREAD_BP:.0f}bp)')
+    if reasons:
+        return 'yellow', '; '.join(reasons)
+
+    return 'green', 'YTM and G-spread within normal range'
+
 # Best-effort keyword match for a tax-authority (ФНС) account block -- there
 # is no dedicated event category for this, so this is a text heuristic, not
 # a verified detector. Requires "фнс" AND one of the block/freeze words in

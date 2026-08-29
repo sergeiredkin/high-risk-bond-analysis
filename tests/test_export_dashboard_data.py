@@ -292,6 +292,42 @@ def test_earliest_snap_date_none_when_no_universe_history(tmp_path):
     assert bundle["earliest_snap_date"] is None
 
 
+# ---- Universe Health Scan (2026-08-29): health_status/health_source exported -
+
+def test_bond_export_carries_health_status_and_source(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    db.insert_universe_snapshot(con, **_snapshot_row())
+    con.execute(
+        "UPDATE universe_snapshot SET health_status='orange', health_source='quantitative' "
+        "WHERE secid='X' AND snap_date='2026-07-30'")
+    con.commit()
+
+    bundle = universe_snapshot_bundle(con)
+    con.close()
+
+    bonds = bundle["universe_now"]["bonds"]
+    assert len(bonds) == 1
+    assert bonds[0]["health_status"] == "orange"
+    assert bonds[0]["health_source"] == "quantitative"
+
+
+def test_bond_export_health_fields_null_before_scan_has_run(tmp_path):
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_db(con)
+    db.init_universe(con)
+    db.insert_universe_snapshot(con, **_snapshot_row())
+    con.commit()
+
+    bundle = universe_snapshot_bundle(con)
+    con.close()
+
+    bonds = bundle["universe_now"]["bonds"]
+    assert bonds[0]["health_status"] is None
+    assert bonds[0]["health_source"] is None
+
+
 # ---- day2_snap_date fix (2026-08-26): main() previously read
 # issuers[0]["snap_date"] -- whichever issuer happened to be first in the
 # per-issuer export loop -- as the dashboard's "how fresh is our data"

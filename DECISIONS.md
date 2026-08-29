@@ -172,3 +172,53 @@ scrape_pipeline.py. Every connection there already goes through
 db.connect(), which sets busy_timeout=5000 centrally (store/db.py) --
 adding a second, shorter value locally would silently override that
 in one file instead of adjusting the one shared setting.
+
+## 2026-08-29 — Universe health scan architecture
+
+Universe-only bonds (190 of 303 vdo_scope=1 ВДО bonds) had no
+health_status because scan-watchlist-health only computes it for
+watchlist_tier=1 issuers (34 issuers).
+
+Investigated during implementation: universe_snapshot.in_watchlist=1
+is NOT the same set as "has a real computed health_status" -- it's
+set from watchlist_tier IN (1, 2), but issuer.health_status is only
+ever written by scan-watchlist-health, which scans tier=1 only. Of
+the 113 in_watchlist=1 vdo_scope bonds, 68 belong to tier=2 issuers
+whose issuer.health_status has never been computed by anything --
+it's just the schema default 'green'. Copying that as health_source=
+'full' would stamp an uncomputed default as if it were a real signal.
+
+Fix: two-tier health computation keyed on watchlist_tier, not
+in_watchlist:
+- Tier=1 issuers' bonds: health_source='full', copied from
+  issuer.health_status (real full-signal computation -- YTM +
+  G-spread trajectory + filing events, just run by
+  scan-watchlist-health immediately before this step)
+- Everything else (universe-only AND tier=2 in_watchlist bonds):
+  health_source='quantitative', computed from YTM + G-spread
+  thresholds only (watchlist_health.compute_universe_bond_health())
+
+Thresholds for quantitative (more lenient than full -- no event
+confirmation, no trajectory, level only):
+RED: YTM>150% or G-spread>3000bp
+ORANGE: YTM in (60%, 150%] or G-spread in (2000, 3000bp]
+YELLOW: YTM in (30%, 60%] or G-spread in (1000, 2000bp]
+GREEN: otherwise
+
+Also: hourly `hybond backfill-ratings` has no bare form -- requires
+--agency, only 'nkr' supported today. Wired as
+`backfill-ratings --agency nkr` into daily_run.sh, between `hybond run`
+and `hybond universe`. `scan-universe-health` itself is wired AFTER
+scan-watchlist-health (not immediately after `hybond universe`), since
+tier=1 bonds' health_source='full' depends on that step's freshly
+computed issuer.health_status.
+
+Verified against the live DB (2026-08-29): 303/303 vdo_scope=1 bonds
+got a health_status, 0 skipped (null YTM/G-spread) -- 87 green, 141
+yellow, 35 orange, 40 red. 45 bonds got health_source='full' (exactly
+the tier=1-owned in_watchlist bonds), matching issuer.health_status
+exactly for all 45. The other 258 (190 universe-only + 68 tier=2)
+got 'quantitative'.
+
+This unlocks: preset portfolios from full universe, screener health
+filter/column on all 303 ВДО bonds, map color-by-health full coverage.

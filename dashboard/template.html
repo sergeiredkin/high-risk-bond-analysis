@@ -7775,7 +7775,8 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     ['g_spread_bp', 'G-спред' + spravkaLink(5)], ['implied_fair_spread_bp', 'Справ.спред'],
     ['mispricing_bp', 'Мисценка'], ['aey_base_risk_adj_pct', 'AEY (скорр.)' + spravkaLink(42)], ['duration_yrs', 'Дюрация' + spravkaLink(7)],
     ['mat_date', 'Погашение'], ['offer_date', 'Оферта'], ['volume', 'Объём(млн₽)'],
-    ['num_trades', 'Сделок'], ['rating', 'Рейтинг'], ['list_level', 'Уровень'], ['star', '★'],
+    ['num_trades', 'Сделок'], ['rating', 'Рейтинг'], ['health_status', 'Здоровье'],
+    ['list_level', 'Уровень'], ['star', '★'],
   ];
 
   function sortRows(rows) {
@@ -7840,6 +7841,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
         <td>${volM}</td>
         <td>${b.num_trades??'—'}</td>
         <td>${b.rating||'—'}</td>
+        <td>${b.health_status ? `<span class="health-dot" style="background:${HEALTH_STATUS_COLOR[b.health_status]}" title="${b.health_source==='full'?'Полный сигнал (список наблюдения)':'Только YTM/G-спред'}"></span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
         <td>${b.list_level??'—'}</td>
         <td>${showStar && b.in_watchlist ? '<span class="uni-star">★</span>' : ''}</td>
       </tr>`;
