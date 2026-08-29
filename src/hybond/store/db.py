@@ -2045,3 +2045,51 @@ CREATE INDEX IF NOT EXISTS idx_ph_source
 
 def init_pipeline_health(con) -> None:
     con.executescript(PIPELINE_HEALTH_SCHEMA)
+
+
+# PD (probability of default) table history, imported from Эксперт РА's
+# published empirical default-frequency disclosures (raexpert_combined.xlsx,
+# see hybond/pd_import.py). report_date is stored as ISO (YYYY-MM-DD), NOT
+# the source file's DD.MM.YYYY display format -- SQLite's MAX()/ORDER BY on
+# a TEXT column is a plain string comparison, and DD.MM.YYYY does not sort
+# chronologically (e.g. '01.07.2021' > '01.01.2026' lexicographically, which
+# is backwards). pd_import.py converts to/from the display format at its
+# own boundary (CLI output, dashboard export); every other reader of this
+# table gets a query-sortable date for free.
+PD_TABLE_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS pd_table_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_date TEXT NOT NULL,
+    rating TEXT NOT NULL,
+    rating_format TEXT NOT NULL CHECK(rating_format IN ('detailed','category')),
+    mapped_category TEXT,
+    freq_1y REAL,
+    freq_2y REAL,
+    freq_3y REAL,
+    obj_type TEXT DEFAULT 'all_except_structured',
+    source TEXT DEFAULT 'raexpert',
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(report_date, rating, obj_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pdth_rating
+    ON pd_table_history(rating, obj_type, report_date);
+CREATE INDEX IF NOT EXISTS idx_pdth_category
+    ON pd_table_history(mapped_category, obj_type, report_date);
+"""
+
+
+def init_pd_table_history(con) -> None:
+    con.executescript(PD_TABLE_HISTORY_SCHEMA)
+
+
+def latest_pd_table_date(con) -> str | None:
+    """Latest imported report_date (ISO, see PD_TABLE_HISTORY_SCHEMA note),
+    or None if the table doesn't exist yet or is empty."""
+    try:
+        row = con.execute(
+            "SELECT report_date FROM pd_table_history ORDER BY report_date DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return row["report_date"] if row else None

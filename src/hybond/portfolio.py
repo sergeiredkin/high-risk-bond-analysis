@@ -20,6 +20,7 @@ from datetime import date, timedelta
 
 from .cbr_tracker import _midpoint
 from .compute import default_probs
+from . import pd_import
 from .store import db
 
 logger = logging.getLogger(__name__)
@@ -118,12 +119,19 @@ def bond_aey(ytm: float | None, mod_dur_yrs: float | None, delta_rate: float) ->
     return ytm - mod_dur_yrs * delta_rate
 
 
-def pd_adjusted_aey(aey: float | None, rating: str | None, horizon_yr: int = 1) -> float | None:
-    """Expected-return version of AEY: (1 - PD) * aey - PD * LGD,
-    using the same Эксперт РА default-probability table and LGD/recovery
-    assumption as the mispricing signal (default_probs.py). None when there's
-    no aey or no rating to look up a PD for -- an unrated bond stays
-    unranked here rather than being silently treated as riskless.
+def pd_adjusted_aey(aey: float | None, rating: str | None, horizon_yr: int = 1,
+                     con=None) -> float | None:
+    """Expected-return version of AEY: (1 - PD) * aey - PD * LGD.
+
+    PD comes from pd_table_history (via pd_import.get_pd()) when `con` is
+    given and has data for this rating, falling back to the hardcoded
+    Эксперт РА table (default_probs.py) otherwise -- same LGD/recovery
+    assumption either way. None when there's no aey or no rating to look up
+    a PD for -- an unrated bond stays unranked here rather than being
+    silently treated as riskless. The default_probs.lookup() gate below (not
+    get_pd() itself, which always returns a number) is what preserves that
+    None-for-unrecognised-rating behavior -- get_pd() is only reached once a
+    rating is confirmed known.
 
     This turns a raw distress YTM into what it actually represents: a
     probability-weighted mix of "full yield" and "near-total loss on
@@ -138,16 +146,14 @@ def pd_adjusted_aey(aey: float | None, rating: str | None, horizon_yr: int = 1) 
     """
     if aey is None or not rating:
         return None
-    probs = default_probs.lookup(rating)
-    if probs is None:
+    if default_probs.lookup(rating) is None:
         return None
-    key = default_probs._HORIZON_KEYS.get(horizon_yr, "yr1")
-    pd = probs[key]
+    pd = pd_import.get_pd(rating, horizon_yr, con=con)
     return (1 - pd) * aey - pd * default_probs.LGD
 
 
 def aey_risk_decomposition(aey: float | None, rating: str | None,
-                            horizon_yr: int = 1) -> dict | None:
+                            horizon_yr: int = 1, con=None) -> dict | None:
     """Same PD/recovery-rate lookup as pd_adjusted_aey(), but returns the two
     scenarios it blends instead of only the blended expected value -- so a
     caller (or a future UI) can show "survive at full yield" vs "default at
@@ -158,11 +164,9 @@ def aey_risk_decomposition(aey: float | None, rating: str | None,
     check). None under the same conditions pd_adjusted_aey() returns None."""
     if aey is None or not rating:
         return None
-    probs = default_probs.lookup(rating)
-    if probs is None:
+    if default_probs.lookup(rating) is None:
         return None
-    key = default_probs._HORIZON_KEYS.get(horizon_yr, "yr1")
-    pd = probs[key]
+    pd = pd_import.get_pd(rating, horizon_yr, con=con)
     p_survive = 1 - pd
     return_if_survive = aey
     return_if_default = -default_probs.LGD
@@ -639,7 +643,7 @@ def _gather_candidates(con) -> list[BondCandidate]:
                 _g_spread_delta_30d(con, secid, spread_row["snap_date"], g_spread_bp)
                 if spread_row else None)
             aey_base = bond_aey(ytm, mod_dur, delta_rate)
-            aey = pd_adjusted_aey(aey_base, rating)
+            aey = pd_adjusted_aey(aey_base, rating, con=con)
             candidates.append(BondCandidate(
                 isin=bond_row["isin"], secid=secid, issuer_id=issuer_id,
                 issuer_name=issuer_row.get("name", issuer_id) if issuer_row else issuer_id,
@@ -981,7 +985,7 @@ def monitor_portfolios(con: sqlite3.Connection) -> dict[int, list[dict]]:
             aey = None
             if spread_row is not None:
                 aey_base = bond_aey(spread_row["ytm"], spread_row["mod_dur"], delta_rate)
-                aey = pd_adjusted_aey(aey_base, rating)
+                aey = pd_adjusted_aey(aey_base, rating, con=con)
             if aey is not None:
                 total_aey += weight * aey
             probs = default_probs.lookup(rating) if rating else None

@@ -382,7 +382,7 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
             aey_base = portfolio.bond_aey(ytm, mdur_yrs, scenarios["base"])
             aey_stress = portfolio.bond_aey(ytm, mdur_yrs, scenarios["stress"])
             aey_bull = portfolio.bond_aey(ytm, mdur_yrs, scenarios["bull"])
-            aey_base_risk_adj = portfolio.pd_adjusted_aey(aey_base, rating)
+            aey_base_risk_adj = portfolio.pd_adjusted_aey(aey_base, rating, con=con)
 
         in_wl = 1 if emitent_inn in watchlist_inns else 0
         volume = q.get("VALTODAY")

@@ -35,6 +35,7 @@ from hybond.compute.default_probs import (  # noqa: E402
 from hybond.compute import inflection  # noqa: E402
 from hybond.scrape.smartlab_news import NEWS_ALIASES  # noqa: E402
 from hybond.store import db  # noqa: E402
+from hybond import pd_import  # noqa: E402
 from hybond import portfolio  # noqa: E402
 from hybond import promote  # noqa: E402
 from hybond import spravka_parser  # noqa: E402
@@ -1331,6 +1332,9 @@ def main() -> None:
     placements = primary_placements(con, date.today().isoformat())
     expected_returns = expected_returns_by_secid(con)
     portfolio_freshness = portfolio_data_freshness(con)
+    pd_table_date_iso = db.latest_pd_table_date(con)
+    pd_table_date = (pd_import.format_report_date(pd_table_date_iso)
+                      if pd_table_date_iso else None)
 
     issuers = []
     for issuer_row in tier1_rows:
@@ -1533,6 +1537,7 @@ def main() -> None:
         "spread_history": spread_history,
         "spread_history_labels": spread_history_labels,
         "portfolio_data_freshness": portfolio_freshness,
+        "pd_table_date": pd_table_date,
         "market_wide_notes": market_wide,
         "primary_placements": placements,
         # Справка tab (2026-08-17): parsed once at build time from

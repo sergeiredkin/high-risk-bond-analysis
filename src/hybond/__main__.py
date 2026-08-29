@@ -1396,6 +1396,29 @@ def _print_diff(d: dict) -> None:
     print(f"  Note: {d.get('diff_note_ru')}")
 
 
+def cmd_update_pd_table(args) -> int:
+    from . import pd_import
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    print(f"Importing PD table from {args.file}...")
+    try:
+        result = pd_import.import_pd_table(args.file, con)
+    except (FileNotFoundError, ValueError) as e:
+        con.close()
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    con.close()
+
+    dates = result["report_dates_found"]
+    print(f"Report dates found: {', '.join(dates) if dates else '(none)'}")
+    print(f"Rows imported: {result['rows_imported']}")
+    print(f"Rows skipped (already exist): {result['rows_skipped']}")
+    print(f"Done. Latest report date: {dates[-1] if dates else 'н/д'}")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="hybond")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1688,6 +1711,13 @@ def main(argv=None) -> int:
     ph.add_argument("--summary", action="store_true",
                      help="print JSON summary (for scripting)")
     ph.set_defaults(func=cmd_health)
+
+    ppd = sub.add_parser("update-pd-table",
+                          help="Import Эксперт РА's empirical PD disclosure "
+                               "(raexpert_combined.xlsx) into pd_table_history")
+    ppd.add_argument("--file", required=True,
+                      help="path to raexpert_combined.xlsx")
+    ppd.set_defaults(func=cmd_update_pd_table)
 
     args = p.parse_args(argv)
     return args.func(args)

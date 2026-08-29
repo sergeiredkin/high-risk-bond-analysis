@@ -12110,10 +12110,18 @@ renderOfzCurveShape();
     if (!el) return;
     const fresh = (DATA.portfolio_data_freshness) || {};
     const d1 = fresh.universe_snapshot_date, d2 = fresh.spread_snapshot_date;
+    // PD table history (Эксперт РА, hybond update-pd-table) updates on its
+    // own semi-annual publication schedule, entirely independent of the
+    // daily universe/spread snapshots above -- shown alongside them here
+    // (the one place both those dates already appear together) rather than
+    // folded into the same ok/warn/neutral staleness verdict, since a
+    // 5-month-old PD table isn't stale by the same clock a 5-day-old price
+    // snapshot would be.
+    const pdSuffix = DATA.pd_table_date ? ` · PD таблица: ${DATA.pd_table_date}` : '';
     el.className = 'pf-preset-freshness';
     if (!d1 || !d2) {
       el.classList.add('pf-fresh-neutral');
-      el.textContent = 'ℹ️ Даты снимков данных недоступны.';
+      el.textContent = 'ℹ️ Даты снимков данных недоступны.' + pdSuffix;
       return;
     }
     const today = new Date();
@@ -12122,13 +12130,13 @@ renderOfzCurveShape();
     const diffDays = Math.abs(age1 - age2);
     if (diffDays > 7) {
       el.classList.add('pf-fresh-warn');
-      el.textContent = `⚠️ Расхождение данных (universe: ${d1} · spread: ${d2}) — запустите hybond universe`;
+      el.textContent = `⚠️ Расхождение данных (universe: ${d1} · spread: ${d2}) — запустите hybond universe` + pdSuffix;
     } else if (age1 <= 7 && age2 <= 7 && diffDays === 0) {
       el.classList.add('pf-fresh-ok');
-      el.textContent = `✓ Данные актуальны · ${d1}`;
+      el.textContent = `✓ Данные актуальны · ${d1}` + pdSuffix;
     } else {
       el.classList.add('pf-fresh-neutral');
-      el.textContent = `Данные (universe: ${d1} · spread: ${d2})`;
+      el.textContent = `Данные (universe: ${d1} · spread: ${d2})` + pdSuffix;
     }
   }
 
