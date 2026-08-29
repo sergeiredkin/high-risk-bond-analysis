@@ -140,3 +140,35 @@ concurrent cron writers active. Correct pattern for test isolation:
 sqlite3 data/db/hybond.sqlite ".backup /tmp/hybond_test.sqlite"
 Uses SQLite online backup API — safe with concurrent writers.
 Or accept small real writes (health log rows) directly to live DB.
+
+## 2026-08-29 — AZIPI scraper hanging on body fetch
+
+hourly_filings.sh ran `hybond scrape --smartlab` without `--no-bodies`,
+so the scraper fetched full filing body HTML for every new filing on
+every issuer every hour. Body fetch requests are not covered by the
+same per-request timeout guard as the feed/listing requests, so a
+hanging body URL could exhaust the 300s total-runtime budget
+(scrape_pipeline.py MAX_RUNTIME_S) before all issuers were processed.
+
+Fix: added --no-bodies to hourly cron. Bodies are not needed for
+dedup or classification (title+url sufficient); on-demand body fetch
+for the UI can be added later if needed.
+
+Also added AZIPI_TIMEOUT health logging (log_health_once_today) when
+the AZIPI homepage feed fetch itself hits a Timeout/ConnectionError,
+so a down/unreachable AZIPI is visible in pipeline_health instead of
+only in the per-run log file.
+
+Verified (2026-08-29): `hybond scrape --smartlab --no-bodies` against
+the live DB completed in 1m43s, 0 errors, timed_out=false, 0 new
+filings this run. Confirms the 300s-timeout/0-issuers-processed
+failure mode is fixed, though the run did not complete in <60s as
+originally targeted -- with --no-bodies removed as a variable, the
+remaining runtime is dominated by per-issuer secondary (ИНН search)
+requests for issuers with nothing in today's homepage feed.
+
+Considered and skipped: a bespoke `PRAGMA busy_timeout=2000` inside
+scrape_pipeline.py. Every connection there already goes through
+db.connect(), which sets busy_timeout=5000 centrally (store/db.py) --
+adding a second, shorter value locally would silently override that
+in one file instead of adjusting the one shared setting.

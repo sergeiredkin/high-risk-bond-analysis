@@ -27,7 +27,7 @@ from pathlib import Path
 import requests
 
 from .classify_utils import queue_bucket
-from .health import log_health
+from .health import log_health, log_health_once_today
 from .scrape import edisclosure as ed
 from .scrape import smartlab as sl
 from .store import db
@@ -84,6 +84,9 @@ def run_scrape(
         logger.warning("network error fetching AZIPI homepage feed: %s", e)
         home_html = ""
         summary["errors"]["_homepage"] = str(e)
+        log_health_once_today(con, 'azipi', 'ingest', 'error',
+                               'AZIPI_TIMEOUT',
+                               f'AZIPI connection error: {str(e)[:120]}')
     except Exception as e:  # noqa: BLE001
         home_html = ""
         summary["errors"]["_homepage"] = str(e)

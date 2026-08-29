@@ -30,7 +30,10 @@ echo "=== filings run $(date) ===" >> "$LOG"
 # pipeline_lock.py's module docstring for why this is wait-and-retry, not
 # a hard mutex/skip). The edisclosure scrape step above is read-heavy and
 # was never part of this collision, so it is intentionally left unguarded.
-PYTHONPATH=src python -m hybond scrape --smartlab >> "$LOG" 2>&1
+# --no-bodies: body fetch hangs on some issuer URLs, exhausting the 300s
+# runtime budget before any issuers are processed. Title+URL is sufficient
+# for dedup and classification. Bodies can be fetched on-demand in the UI.
+PYTHONPATH=src python -m hybond scrape --smartlab --no-bodies >> "$LOG" 2>&1
 PYTHONPATH=src python -m hybond market-notes >> "$LOG" 2>&1
 # Google News RSS per tier=1 issuer (2026-08-24): one HTTP request per
 # issuer with a 2s sleep between them (see scrape/google_news.py), so this
