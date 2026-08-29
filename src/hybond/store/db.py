@@ -2104,3 +2104,31 @@ def latest_pd_table_date(con) -> str | None:
     except sqlite3.OperationalError:
         return None
     return row["report_date"] if row else None
+
+
+# MOEX defaults registry import (2026-08-29): raw emidocs-default disclosure
+# rows, keyed by (isin, obligation_type, planned_date) so a re-import of a
+# refreshed source file is idempotent without needing a diff -- the same
+# obligation event never has two different rows in MOEX's own registry.
+MOEX_DEFAULT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS moex_default (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issuer_name TEXT NOT NULL,
+    inn TEXT,
+    isin TEXT,
+    obligation_type TEXT,
+    status TEXT,
+    planned_date TEXT,
+    imported_on TEXT DEFAULT (date('now')),
+    UNIQUE(isin, obligation_type, planned_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_moex_default_inn
+    ON moex_default(inn);
+CREATE INDEX IF NOT EXISTS idx_moex_default_isin
+    ON moex_default(isin);
+"""
+
+
+def init_moex_default(con) -> None:
+    con.executescript(MOEX_DEFAULT_SCHEMA)

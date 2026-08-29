@@ -137,6 +137,20 @@ def pillar_summary(con, issuer_id: str, today: str | None = None) -> dict:
     }
 
 
+def moex_confirmed_default(con, issuer_id: str) -> list[dict]:
+    """moex_default rows for this issuer with status='Дефолт' (confirmed --
+    not 'Технический дефолт', a missed-then-cured or still-open short
+    delay, which is a warning-grade signal at most, not an automatic
+    block). Empty list (never raises) if the moex_default table doesn't
+    exist yet -- this task's import is optional infrastructure, not a
+    dependency every audit caller is guaranteed to have run."""
+    from . import moex_defaults
+    from .store import db
+    db.init_moex_default(con)
+    rows = moex_defaults.get_defaults_for_issuer(con, issuer_id)
+    return [r for r in rows if r["status"] == "Дефолт"]
+
+
 def run_audit(con, issuer_id: str, today: str | None = None) -> dict:
     today = today or date.today().isoformat()
     trend = gspread_trend(con, issuer_id, today)
@@ -145,6 +159,7 @@ def run_audit(con, issuer_id: str, today: str | None = None) -> dict:
     flags = detector_flags(con, issuer_id, today)
     notes = critical_market_notes(con, issuer_id, today)
     pillars = pillar_summary(con, issuer_id, today)
+    moex_defaults_confirmed = moex_confirmed_default(con, issuer_id)
 
     ytm_pct = universe["ytm_pct"] if universe else None
     max_delta = trend["max_abs_delta_bp"]
@@ -153,6 +168,8 @@ def run_audit(con, issuer_id: str, today: str | None = None) -> dict:
     blocking: list[str] = []
     warnings: list[str] = []
 
+    if moex_defaults_confirmed:
+        blocking.append("Подтверждённый дефолт в реестре MOEX")
     if events["blocking"]:
         cats = sorted({r["category"] for r in events["blocking"]})
         blocking.append(
@@ -196,6 +213,7 @@ def run_audit(con, issuer_id: str, today: str | None = None) -> dict:
         "issuer_id": issuer_id, "as_of": today,
         "gspread_trend": trend, "universe": universe, "events": events,
         "flags": flags, "market_notes": notes, "pillars": pillars,
+        "moex_defaults_confirmed": moex_defaults_confirmed,
         "blocking": blocking, "warnings": warnings, "status": status,
     }
 
@@ -265,6 +283,14 @@ def format_report(audit: dict, issuer_name: str | None = None) -> str:
         staleness = f"УСТАРЕЛИ ({p['days_old']}д)" if p["stale"] else f"свежие ({p['days_old']}д)"
         lines.append(f"   computed_on={p['computed_on']} period={p['period']}  {staleness}")
         lines.append(f"   {p['scores']}")
+
+    lines.append("\n7. MOEX default registry (moex_default)")
+    if not audit["moex_defaults_confirmed"]:
+        lines.append("   нет подтверждённых записей 'Дефолт' в реестре MOEX")
+    else:
+        for r in audit["moex_defaults_confirmed"]:
+            lines.append(f"   {r['planned_date']}  {r['obligation_type']:<10} "
+                         f"{r['status']:<20} {r['isin']}")
 
     lines.append("")
     if audit["blocking"]:

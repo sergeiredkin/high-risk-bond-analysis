@@ -705,6 +705,7 @@
   .flag-chip { display:inline-block; background: color-mix(in srgb, var(--critical) 12%, var(--surface-1));
     color: var(--critical); border-radius: 6px; padding: 2px 7px; font-size: 12px; margin-right:4px; }
   .health-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+  .iw-moex-default-badge { font-size: 11px; line-height: 1; flex-shrink: 0; cursor: help; }
   .table-scroll { overflow-x: auto; }
   /* Full-width layout task (2026-08-25): explicit safety net -- table {
      width:100% } and .card already had no max-width, so this was already
@@ -1600,6 +1601,12 @@
   .ud-triggers .neg .col-title { color: var(--verdict-red); }
   .ud-triggers ul { margin: 0; padding-left: 16px; }
   .ud-triggers li { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 3px; }
+  .ud-moex-defaults { margin: 14px 0; padding: 10px 12px; border-radius: 8px;
+    background: color-mix(in srgb, var(--verdict-orange) 8%, transparent);
+    border: 0.5px solid color-mix(in srgb, var(--verdict-orange) 30%, transparent); }
+  .ud-moex-defaults .col-title { font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--verdict-orange); }
+  .ud-moex-defaults .row { display: flex; gap: 10px; align-items: baseline; font-size: 12.5px;
+    color: var(--text-secondary); padding: 2px 0; flex-wrap: wrap; }
   .ud-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
   /* ---- Settings panel (⚙️ sidebar item, 2026-08-26): replaces the old
      "scroll to header controls" behavior -- same iw-drawer right-side-panel
@@ -4778,6 +4785,21 @@ function udCreditPanelHtml(b, iss) {
       <div class="row"><span>Объём торгов</span><b>${b.volume != null ? Math.round(b.volume).toLocaleString('ru-RU') : '—'}</b></div>
       <div class="row"><span>Сделок</span><b>${b.num_trades ?? '—'}</b></div>
     </div>
+  </div>${udMoexDefaultsHtml(iss)}`;
+}
+// MOEX defaults registry (2026-08-29): confirmed/technical default events
+// disclosed in MOEX's own emidocs-default registry -- a source independent
+// of this dashboard's own event/filing pipeline, so shown as its own block
+// rather than folded into the events list above.
+function udMoexDefaultsHtml(iss) {
+  const rows = iss && iss.moex_defaults;
+  if (!rows || !rows.length) return '';
+  return `<div class="ud-moex-defaults">
+    <div class="col-title">⚠️ История дефолтов MOEX</div>
+    ${rows.map(r => `<div class="row"><span>${escapeHtml(r.obligation_type || '—')}</span>` +
+      `<b style="color:${r.status === 'Дефолт' ? 'var(--verdict-red)' : 'var(--verdict-orange)'}">${escapeHtml(r.status)}</b>` +
+      `<span>${r.planned_date ? r.planned_date.split('-').reverse().join('.') : '—'}</span>` +
+      `<span class="cell-meta">${escapeHtml(r.isin || '—')}</span></div>`).join('')}
   </div>`;
 }
 // Feature 1 -- default pathway. "Confirmed" nodes are grounded in real
@@ -6364,11 +6386,15 @@ function renderIssuerRowsPage(pageIssuers) {
     const aey = bond && bond.aey_base_risk_adj_pct != null ? `${bond.aey_base_risk_adj_pct.toFixed(1)}%` : '—';
     const status = issuerStatusLine(iss);
     const showReason = (health === 'orange' || health === 'red') && iss.health_reason;
+    const moexDefaultCount = (iss.moex_defaults || []).length;
+    const moexBadge = moexDefaultCount
+      ? `<span class="iw-moex-default-badge" title="${moexDefaultCount} событие(й) в реестре дефолтов MOEX">⚠️</span>` : '';
     return `<div class="iw-row-wrap" data-issuer="${iss.issuer_id}" data-health="${health}" style="border-left-color:${healthColor}">
       <div class="iw-row">
         <div class="iw-row-top">
           <span class="iw-dot" style="background:${dotColor}" title="${v ? v.label : 'Недостаточно данных'}"></span>
           <span class="health-dot" style="background:${healthColor}" title="${escapeHtml(healthTitle)}"></span>
+          ${moexBadge}
           <span class="iw-name">${escapeHtml(iss.name)}</span>
           <span class="iw-arrow">▶</span>
         </div>

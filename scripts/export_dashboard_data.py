@@ -36,6 +36,7 @@ from hybond.compute import inflection  # noqa: E402
 from hybond.scrape.smartlab_news import NEWS_ALIASES  # noqa: E402
 from hybond.store import db  # noqa: E402
 from hybond import pd_import  # noqa: E402
+from hybond import moex_defaults  # noqa: E402
 from hybond import portfolio  # noqa: E402
 from hybond import promote  # noqa: E402
 from hybond import spravka_parser  # noqa: E402
@@ -1493,6 +1494,14 @@ def main() -> None:
     pd_table_date_iso = db.latest_pd_table_date(con)
     pd_table_date = (pd_import.format_report_date(pd_table_date_iso)
                       if pd_table_date_iso else None)
+    # MOEX defaults registry (2026-08-29): grouped by inn for the O(1)
+    # per-issuer lookup below, rather than one query per tier=1 issuer.
+    # init_moex_default() first -- this export must not crash on a DB where
+    # `hybond moex-defaults import` has never been run.
+    db.init_moex_default(con)
+    moex_defaults_by_issuer: dict[str, list[dict]] = defaultdict(list)
+    for r in moex_defaults.get_watchlist_defaults(con):
+        moex_defaults_by_issuer[r["inn"]].append(r)
 
     issuers = []
     for issuer_row in tier1_rows:
@@ -1608,6 +1617,7 @@ def main() -> None:
             "verified_on": rating_row["verified_on"] if rating_row else None,
             "rating_history": rating_history_by_issuer_map.get(issuer_id, []),
             "rating_trend": rating_trend(rating_history_by_issuer_map.get(issuer_id, [])),
+            "moex_defaults": moex_defaults_by_issuer.get(issuer_id, []),
         })
     issuers_passive = passive_issuers_export(con, tier2_rows, watchlist, universe.get("snap_date"))
     notes = data_notes(con, watchlist)
@@ -1697,6 +1707,13 @@ def main() -> None:
         "portfolio_data_freshness": portfolio_freshness,
         "portfolio_allocation": portfolio_allocation,
         "pd_table_date": pd_table_date,
+        "moex_defaults": {
+            "watchlist_matches": moex_defaults.get_watchlist_defaults(con),
+            "total_events": con.execute(
+                "SELECT COUNT(*) FROM moex_default").fetchone()[0],
+            "imported_on": con.execute(
+                "SELECT MAX(imported_on) FROM moex_default").fetchone()[0],
+        },
         "market_wide_notes": market_wide,
         "primary_placements": placements,
         # Справка tab (2026-08-17): parsed once at build time from

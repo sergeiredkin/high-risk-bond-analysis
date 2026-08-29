@@ -314,3 +314,53 @@ def test_cli_clean_proceeds_without_any_prompt(tmp_path, monkeypatch):
     row = con.execute("SELECT watchlist_tier FROM issuer WHERE issuer_id=?", (ISSUER,)).fetchone()
     con.close()
     assert row["watchlist_tier"] == 1
+
+
+# ---- MOEX defaults registry block (2026-08-29) ------------------------------
+
+def test_blocked_on_confirmed_moex_default(tmp_path):
+    con = _con(tmp_path)
+    _bond_with_history(con, ytm=0.15, g_spread=200.0)  # otherwise clean
+    db.init_moex_default(con)
+    con.execute(
+        "INSERT INTO moex_default (issuer_name, inn, isin, obligation_type, status, planned_date) "
+        "VALUES ('Test Co', ?, 'RU000TEST01', 'Купон', 'Дефолт', '2026-01-01')",
+        (ISSUER,))
+    con.commit()
+
+    audit = promotion_audit.run_audit(con, ISSUER, today=TODAY)
+    con.close()
+    assert audit["status"] == "BLOCKED"
+    assert "Подтверждённый дефолт в реестре MOEX" in audit["blocking"]
+    assert len(audit["moex_defaults_confirmed"]) == 1
+
+
+def test_not_blocked_on_technical_default_only(tmp_path):
+    con = _con(tmp_path)
+    _bond_with_history(con, ytm=0.15, g_spread=200.0)  # otherwise clean
+    db.init_moex_default(con)
+    con.execute(
+        "INSERT INTO moex_default (issuer_name, inn, isin, obligation_type, status, planned_date) "
+        "VALUES ('Test Co', ?, 'RU000TEST01', 'Купон', 'Технический дефолт', '2026-01-01')",
+        (ISSUER,))
+    con.commit()
+
+    audit = promotion_audit.run_audit(con, ISSUER, today=TODAY)
+    con.close()
+    assert audit["status"] != "BLOCKED"
+    assert audit["moex_defaults_confirmed"] == []
+
+
+def test_no_moex_default_table_does_not_raise(tmp_path):
+    # moex_default is optional infrastructure -- an audit run before anyone
+    # has ever imported the registry must not crash. db.init_moex_default()
+    # inside moex_confirmed_default() creates the table on demand, so this
+    # mainly guards against a future regression removing that call.
+    con = _con(tmp_path)
+    _bond_with_history(con, ytm=0.15, g_spread=200.0)
+    con.commit()
+
+    audit = promotion_audit.run_audit(con, ISSUER, today=TODAY)
+    con.close()
+    assert audit["moex_defaults_confirmed"] == []
+    assert audit["status"] != "BLOCKED"

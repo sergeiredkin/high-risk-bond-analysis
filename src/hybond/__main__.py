@@ -1484,6 +1484,55 @@ def cmd_update_pd_table(args) -> int:
     return 0
 
 
+def cmd_moex_defaults(args) -> int:
+    from . import moex_defaults
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+
+    if args.action == "import":
+        print(f"Importing MOEX defaults from {args.file}...")
+        try:
+            result = moex_defaults.import_moex_defaults(args.file, con)
+        except (FileNotFoundError, ValueError) as e:
+            con.close()
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        con.close()
+        print(f"Rows imported: {result['rows_imported']}")
+        print(f"Rows skipped (already exist): {result['rows_skipped']}")
+        print(f"Watchlist matches: {len(result['watchlist_matches'])}")
+        return 0
+
+    # args.action == "show"
+    if args.inn:
+        rows = moex_defaults.get_defaults_for_issuer(con, args.inn)
+        issuer_name = rows[0]["issuer_name"] if rows else None
+        con.close()
+        if not rows:
+            print(f"No MOEX default history found for ИНН {args.inn}.")
+            return 0
+        print(f"MOEX DEFAULT HISTORY — {issuer_name} ({args.inn})\n")
+        for r in rows:
+            print(f"  {r['planned_date']}  {r['obligation_type']}  {r['status']}  {r['isin']}")
+        return 0
+
+    matches = moex_defaults.get_watchlist_defaults(con)
+    con.close()
+    print("MOEX DEFAULT HISTORY — watchlist issuers\n")
+    by_issuer: dict[str, list[dict]] = {}
+    for r in matches:
+        by_issuer.setdefault(r["inn"], []).append(r)
+    for inn, rows in by_issuer.items():
+        print(f"{rows[0]['issuer_name']} ({inn})")
+        for r in rows:
+            print(f"  {r['planned_date']}  {r['obligation_type']}  {r['status']}  {r['isin']}")
+        print()
+    print(f"Total: {len(by_issuer)} issuer(s) with default history, {len(matches)} event(s)")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="hybond")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1790,6 +1839,17 @@ def main(argv=None) -> int:
     ppd.add_argument("--file", required=True,
                       help="path to raexpert_combined.xlsx")
     ppd.set_defaults(func=cmd_update_pd_table)
+
+    pmd = sub.add_parser("moex-defaults",
+                          help="MOEX emidocs-default registry: import + query "
+                               "default/technical-default events against the "
+                               "watchlist")
+    pmd_sub = pmd.add_subparsers(dest="action", required=True)
+    pmd_import = pmd_sub.add_parser("import", help="import an emidocs-default xlsx")
+    pmd_import.add_argument("--file", required=True, help="path to the xlsx file")
+    pmd_show = pmd_sub.add_parser("show", help="show watchlist matches (or one issuer with --inn)")
+    pmd_show.add_argument("--inn", help="restrict to one issuer's ИНН")
+    pmd.set_defaults(func=cmd_moex_defaults)
 
     args = p.parse_args(argv)
     return args.func(args)
