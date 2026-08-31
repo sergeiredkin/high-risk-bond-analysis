@@ -2924,6 +2924,7 @@
             <input type="text" id="pfPortfolioNameInput" placeholder="напр. Консервативный, август 2026" class="pf-preset-name-input">
           </div>
           <div class="uni-stats" id="pfPresetSummaryStrip"></div>
+          <div class="cell-meta" id="pfPresetSourceBreakdown" style="margin:6px 0 12px"></div>
           <div class="card table-scroll"><table id="pfPresetPreviewTable"></table></div>
           <div class="banner" id="pfPresetWarnings" style="display:none"></div>
           <div class="pf-preset-preview-actions">
@@ -12043,33 +12044,80 @@ renderOfzCurveShape();
     return 'ru' + r.slice(2).toUpperCase();
   }
 
-  // Builds one BondCandidate-shaped object per tier=1 issuer's bond, from
-  // data this dashboard already exports -- aey_base_risk_adj_pct is the
-  // same PD-adjusted AEY portfolio.py's build_preset() computes via
-  // bond_aey()+pd_adjusted_aey(), already computed server-side at export
-  // time, so this reads it directly rather than recomputing it.
+  // Portfolio preset from full universe task (2026-08-29): sources from
+  // DATA.universe_now.bonds (every vdo_scope=1 bond with a computed
+  // health_status, Universe Health Scan task earlier this session), not
+  // just DATA.issuers' tier=1 bonds -- mirrors portfolio.py's
+  // _gather_candidates() rework, which now reads universe_snapshot the
+  // same way. watchlistTier: 1 (DATA.issuers), 2 (DATA.issuers_passive),
+  // else 99 (no issuer row at all, a genuine universe-only bond).
+  const COMMODITY_LINKED_BOND_IDS = new Set(['SELSILV01', 'SELGOLD002', 'SELGOLD003']);
+  const HEALTH_SOURCE_RANK_JS = { full: 0, quantitative: 1 };
+
   function gatherCandidates() {
-    const candidates = [];
+    const tierByIssuer = {}, nameByIssuer = {}, healthByTier1Issuer = {};
     (DATA.issuers || []).forEach(iss => {
-      const health = (iss.health_status || 'green').toLowerCase();
-      const rating = iss.rating || null;
-      (iss.bonds || []).forEach(b => {
-        if (!b.isin) return;
-        const aey = b.aey_base_risk_adj_pct != null ? b.aey_base_risk_adj_pct / 100 : null;
-        const ytm = b.ytm_pct != null ? b.ytm_pct / 100 : null;
-        const hist = (b.spread_history || []).map(h => ({ date: h.snap_date, g_spread_bp: h.g_spread_bp }));
-        let gSpreadDelta30d = null;
-        if (b.g_spread_bp != null && hist.length) {
-          const curDate = new Date((b.spread_history[b.spread_history.length - 1] || {}).snap_date || iss.snap_date);
-          const d30 = new Date(curDate); d30.setDate(d30.getDate() - 30);
-          const prior = findNearestByOffset(hist.slice(0, -1), d30.toISOString().slice(0, 10), 5);
-          if (prior) gSpreadDelta30d = b.g_spread_bp - prior.g_spread_bp;
-        }
-        candidates.push({
-          isin: b.isin, secid: b.secid, issuerId: iss.issuer_id, issuerName: iss.name,
-          sector: iss.sector, rating, health, aey, ytm, gSpreadBp: b.g_spread_bp,
-          gSpreadDelta30d, matDate: b.mat_date, flags: {},
-        });
+      tierByIssuer[iss.issuer_id] = 1; nameByIssuer[iss.issuer_id] = iss.name;
+      healthByTier1Issuer[iss.issuer_id] = (iss.health_status || 'green').toLowerCase();
+    });
+    (DATA.issuers_passive || []).forEach(iss => { tierByIssuer[iss.issuer_id] = 2; nameByIssuer[iss.issuer_id] = iss.name; });
+    // spread_history (for the 30d G-spread delta the RED-eligibility gate
+    // needs) is only exported per-bond for tier=1 watchlist bonds
+    // (DATA.issuers[].bonds[].spread_history) -- universe_now carries no
+    // history array. A tier=2/universe-only RED bond therefore always
+    // gets gSpreadDelta30d=null here (excluded by the delta-missing rule
+    // in redIssuerEligibility()), a minor, disclosed divergence from the
+    // server-side build (which reads spread_snapshot directly) -- in
+    // practice near-irrelevant, since a RED bond must also be
+    // health_source='full' to be admitted at all, and that's only ever
+    // true for tier=1 issuers, which DO have spread_history here.
+    const histBySecid = {};
+    (DATA.issuers || []).forEach(iss => (iss.bonds || []).forEach(b => { histBySecid[b.secid] = b.spread_history || []; }));
+
+    const candidates = [];
+    (((DATA.universe_now || {}).bonds) || []).forEach(b => {
+      const watchlistTier = tierByIssuer[b.emitent_inn] != null ? tierByIssuer[b.emitent_inn] : 99;
+      // vdo_scope=1 gates entry ONLY for bonds not already on the
+      // watchlist -- vdo_scope is the broad ВДО (junk-bond) screen, which
+      // by construction excludes higher-rated bonds (every tier=1 bond
+      // rated ruBBB- or better has vdo_scope=0, confirmed against the live
+      // DB) -- requiring it unconditionally would silently drop every
+      // well-rated watchlist bond. Same fix as portfolio.py's
+      // _gather_candidates(), ported here after the same bug surfaced in
+      // this JS mirror during DoD verification (conservative/balanced
+      // both failed here despite succeeding via the Python CLI, until
+      // this and the health_status fallback below were fixed).
+      const onWatchlist = watchlistTier === 1 || watchlistTier === 2;
+      if (!(onWatchlist || b.vdo_scope) || b.signal_excluded) return;
+      // health_status: scan-universe-health only computes it for
+      // vdo_scope=1 rows, so a well-rated tier=1 bond (vdo_scope=0) never
+      // gets one from universe_now. Fall back to issuer.health_status
+      // (DATA.issuers[].health_status, computed for ALL 34 tier=1 issuers
+      // unconditionally by scan-watchlist-health) -- tier=1 ONLY, same
+      // scoping as the Python side: tier=2's issuer.health_status is never
+      // computed by anything and is just the schema default 'green'.
+      const healthStatus = b.health_status || (watchlistTier === 1 ? healthByTier1Issuer[b.emitent_inn] : null);
+      if (!healthStatus) return;
+      const healthSource = b.health_source || (watchlistTier === 1 ? 'full' : null);
+      if (COMMODITY_LINKED_BOND_IDS.has(b.secid) || COMMODITY_LINKED_BOND_IDS.has(b.short_name)) return;
+      const isin = b.secid; // universe_now carries no separate isin field -- secid IS the isin (see portfolio.py's _gather_candidates())
+      const aey = b.aey_base_risk_adj_pct != null ? b.aey_base_risk_adj_pct / 100 : null;
+      const ytm = b.ytm_pct != null ? b.ytm_pct / 100 : null;
+      const hist = (histBySecid[b.secid] || []).map(h => ({ date: h.snap_date, g_spread_bp: h.g_spread_bp }));
+      let gSpreadDelta30d = null;
+      if (b.g_spread_bp != null && hist.length) {
+        const curDate = new Date(hist[hist.length - 1].date || DATA.day2_snap_date);
+        const d30 = new Date(curDate); d30.setDate(d30.getDate() - 30);
+        const prior = findNearestByOffset(hist.slice(0, -1), d30.toISOString().slice(0, 10), 5);
+        if (prior) gSpreadDelta30d = b.g_spread_bp - prior.g_spread_bp;
+      }
+      candidates.push({
+        isin, secid: b.secid, issuerId: b.emitent_inn,
+        issuerName: nameByIssuer[b.emitent_inn] || b.emitent_title || b.emitent_inn || b.secid,
+        sector: b.sector || 'other', rating: b.rating || null,
+        health: healthStatus.toLowerCase(), healthSource,
+        watchlistTier, aey, ytm, gSpreadBp: b.g_spread_bp,
+        gSpreadDelta30d, matDate: b.mat_date, offerDate: b.offer_date, flags: {},
       });
     });
     return candidates;
@@ -12107,6 +12155,10 @@ renderOfzCurveShape();
       if (preset.max_aey != null && c.aey > preset.max_aey) return;
       if (!healthAllowed.has(c.health)) return;
       if (c.health === 'red') {
+        // Never admit a RED bond whose health_status came from a bare
+        // quantitative threshold check, only a real reviewed signal
+        // (2026-08-29) -- same guard as portfolio.py's build_preset().
+        if (c.healthSource !== 'full') return;
         const red = redIssuerEligibility(c.rating, c.gSpreadDelta30d);
         if (!red.ok) return;
         c.flags.red_included = true;
@@ -12139,7 +12191,18 @@ renderOfzCurveShape();
       throw new Error(`only ${eligible.length} bonds passed ${presetType} filters, need at least ${minCount}`);
     }
 
-    eligible.sort((a, b) => b.aey - a.aey);
+    // Reviewed bonds first (2026-08-29): tier=1 fully-reviewed bonds fill
+    // preset slots ahead of tier=2/universe-only ones; within a tier, a
+    // real full-signal health computation ranks ahead of a bare
+    // quantitative check. AEY descending is the final tiebreaker. Same
+    // 3-key sort as portfolio.py's build_preset().
+    eligible.sort((a, b) => {
+      if (a.watchlistTier !== b.watchlistTier) return a.watchlistTier - b.watchlistTier;
+      const ah = HEALTH_SOURCE_RANK_JS[a.healthSource] != null ? HEALTH_SOURCE_RANK_JS[a.healthSource] : 2;
+      const bh = HEALTH_SOURCE_RANK_JS[b.healthSource] != null ? HEALTH_SOURCE_RANK_JS[b.healthSource] : 2;
+      if (ah !== bh) return ah - bh;
+      return b.aey - a.aey;
+    });
     const targetN = Math.min(maxCount, eligible.length);
     let maxPerIssuerSlots = Math.max(1, Math.floor(preset.max_per_issuer * targetN));
     let maxPerSectorSlots = Math.max(1, Math.floor(preset.sector_cap * targetN));
@@ -12204,12 +12267,15 @@ renderOfzCurveShape();
       const pd1y = DEFAULT_PD_1YR[normaliseRating(c.rating)] || 0;
       expectedLoss += weights[c.isin] * pd1y * LGD;
     });
+    const nWatchlist = selected.filter(c => c.healthSource === 'full').length;
+    const nUniverse = selected.length - nWatchlist;
     return {
       presetType, sizingMode, filters: preset, bonds: selected, weights,
       summary: {
         avgAey, expectedLoss, netReturn: avgAey - expectedLoss, nBonds: selected.length,
         nIssuers, nSectors, nRedIncluded,
       },
+      sourceBreakdown: { watchlist: nWatchlist, universe: nUniverse },
     };
   }
 
@@ -12379,6 +12445,14 @@ renderOfzCurveShape();
       <div>Эмитентов: <b>${s.nIssuers}</b></div>
       <div>Секторов: <b>${s.nSectors}</b></div>
       <div>RED включено: <b>${s.nRedIncluded}</b></div>`;
+
+    // Portfolio preset from full universe task (2026-08-29).
+    const sourceEl = document.getElementById('pfPresetSourceBreakdown');
+    if (sourceEl) {
+      const sb = built.sourceBreakdown;
+      sourceEl.textContent = `Источник: ${sb.watchlist} из вотчлиста (проверены) · `
+        + `${sb.universe} из вселенной (количественная оценка)`;
+    }
 
     const table = document.getElementById('pfPresetPreviewTable');
     const rows = built.bonds.slice().sort((a, b) => built.weights[b.isin] - built.weights[a.isin]);

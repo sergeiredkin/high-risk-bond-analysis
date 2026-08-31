@@ -795,6 +795,7 @@ def cmd_portfolio_build(args) -> int:
     db.init_issuer_bond(con)
     db.init_rating(con)
     db.init_cbr(con)
+    db.init_universe(con)
 
     user_filters = {}
     if args.sector_cap is not None:
@@ -818,15 +819,23 @@ def cmd_portfolio_build(args) -> int:
         "sizing_mode": built["sizing_mode"],
         "filters": built["filters"],
         "summary": built["summary"],
+        "source_breakdown": built["source_breakdown"],
         "bonds": [
             {**dataclasses.asdict(c), "weight": built["weights"][c.isin]}
             for c in built["bonds"]
         ],
     }
+    # Portfolio preset from full universe task (2026-08-29): same wording
+    # the Builder UI preview shows (dashboard/template.html's preset
+    # preview, see rendering near "Источник:").
+    sb = built["source_breakdown"]
+    source_line = (f"Источник: {sb['watchlist']} из вотчлиста (проверены) · "
+                    f"{sb['universe']} из вселенной (количественная оценка)")
 
     if not args.save:
         print(json.dumps(report, ensure_ascii=False, indent=2))
-        print("\n(dry run -- pass --save --name \"...\" to write this to the "
+        print(f"\n{source_line}", file=sys.stderr)
+        print("(dry run -- pass --save --name \"...\" to write this to the "
               "portfolio/portfolio_bond/portfolio_snapshot tables)", file=sys.stderr)
         con.close()
         return 0
@@ -839,7 +848,8 @@ def cmd_portfolio_build(args) -> int:
     con.close()
     print(json.dumps({**report, "portfolio_id": portfolio_id, "status": "active"},
                       ensure_ascii=False, indent=2))
-    print(f"\nSaved portfolio_id={portfolio_id} ({args.name!r}, "
+    print(f"\n{source_line}", file=sys.stderr)
+    print(f"Saved portfolio_id={portfolio_id} ({args.name!r}, "
           f"{built['summary']['n_bonds']} bonds, status=active)", file=sys.stderr)
     return 0
 

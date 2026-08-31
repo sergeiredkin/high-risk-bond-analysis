@@ -222,3 +222,80 @@ got 'quantitative'.
 
 This unlocks: preset portfolios from full universe, screener health
 filter/column on all 303 ВДО bonds, map color-by-health full coverage.
+
+## 2026-08-29 — MOEX defaults: Монополия and ЕвроТранс confirmed defaults
+
+MOEX defaults import revealed:
+- Монополия (транспорт) 7810766685, tier=2, inactive: 41 confirmed
+  Дефолт events Dec 2025-Aug 2026. Health manually set to RED.
+  Promotion permanently blocked by audit dimension 7
+  (promotion_audit.moex_confirmed_default()).
+- ЕвроТранс 5029169023, tier=2, inactive: 2 confirmed Дефолт events
+  Jul 2026. Health manually set to RED.
+
+Both were showing health_status='green' (schema default) despite
+confirmed defaults. NOT because scan-watchlist-health skips inactive
+issuers -- it doesn't check `active` at all. The actual cause: it
+only scans watchlist_tier=1 (db.list_issuers_by_tier(con, 1) in
+scan_watchlist()); both issuers are tier=2, so neither was ever in
+scope regardless of active status -- the same tier=1-only gap the
+Universe Health Scan task (2026-08-29, earlier this session)
+addressed for universe_snapshot.health_status. Manual correction
+applied via direct SQL as a stopgap for these two.
+
+Lesson: any issuer outside tier=1 needs its health status set
+explicitly (at demotion/deactivation time, or via a tier-agnostic
+scan) -- the schema default 'green' is silently wrong for a
+tier=2/inactive issuer with a real, disclosed default on record.
+
+Verified in live DB (2026-08-29):
+  7810766685|Монополия (транспорт)|2|0|red|Подтверждённый дефолт в реестре MOEX — 41 событий (Dec 2025 – Aug 2026)
+  5029169023|ЕвроТранс|2|0|red|Подтверждённый дефолт в реестре MOEX — 2 события (Jul 2026)
+
+## 2026-08-29 — YTP (yield-to-offer) not built — already in MOEX data
+
+MOEX's own YIELD field (stored as universe_snapshot.ytm) is already
+yield-to-offer for bonds where offer_date < mat_date -- confirmed
+empirically for RU000A10E6U4 (Самолёт) and RU000A10FJ65 (Роделен):
+ytm=28.88%/28.57% respectively, both computed to their offer dates
+(2027-08-02 / 2027-12-22), not their later maturities (2029-01-18 /
+2031-05-31). See universe_pipeline.py's existing yield_horizon comment
+(~line 299) for the underlying mechanism.
+
+Correction: universe_snapshot.yield_to_offer itself is NOT populated
+from this -- it is a separate column, hardcoded to NULL at
+universe_pipeline.py:401 ("not derivable without per-bond cashflows"),
+still NULL for all 1,247 rows in the latest snapshot including both
+bonds above. The offer-aware figure lives in `ytm`/`YIELD`, not in the
+`yield_to_offer` column -- the two must not be conflated.
+
+What's missing is yield-to-final-maturity for offer bonds -- a
+different, less commonly needed figure. Building a competing YTP
+estimate (synthetic, flat-coupon, no amortization -- bondmath.py has
+no cashflow builder that works without real per-bond MOEX bondization
+data) would sit next to a YTM that, for near-offer bonds, is already
+the same thing -- likely confusing, not complementary.
+
+Decision: YTP task closed, not built. yield_to_offer column remains
+NULL/unpopulated by design (Tier 2 backlog, if ever revisited: either
+(a) populate yield_to_offer by relabeling/copying the existing
+offer-aware `ytm` value for bonds where yield_horizon uses the offer
+date, so the dashboard can show "YTM (к оферте)" honestly instead of
+leaving the column empty, or (b) compute real yield-to-final-maturity
+using per-bond bondization data, the actually-missing figure).
+
+## 2026-08-31 — Conservative preset gap: real-data limitation
+
+Conservative preset requires 20+ bonds but only 14 issuers pass its
+filters against today's real DB. Two separate issues:
+
+1. Real-data shortfall: watchlist has 34 active tier=1 issuers but
+   only 14 pass conservative's rating/health/AEY criteria today.
+   Fix: watchlist expansion (batch onboarding Tier 2 backlog item).
+
+2. Cap-enforcement convergence bug in build_preset() equal-weight
+   sizing: the trim loop can converge at exactly the minimum bond
+   count with an unsatisfiable per-issuer/sector overage.
+   Fix: redesign cap enforcement loop -- separate backlog item.
+
+Balanced and aggressive presets work correctly end-to-end.

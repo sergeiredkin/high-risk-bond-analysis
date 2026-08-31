@@ -10,10 +10,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from hybond import __main__ as cli  # noqa: E402
+from hybond import portfolio  # noqa: E402
 from hybond.store import db  # noqa: E402
 
 SECTORS = ["finance", "retail", "energy", "industrial", "transport",
            "construction", "telecom", "agriculture", "leasing", "metals"]
+
+PRESET_SNAP_DATE = "2026-08-26"
 
 
 def _args(preset_type="conservative", sizing_mode="equal", sector_cap=None,
@@ -24,6 +27,10 @@ def _args(preset_type="conservative", sizing_mode="equal", sector_cap=None,
 
 
 def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None, ytm=0.20):
+    """Seeds both the legacy tables and universe_snapshot -- _gather_
+    candidates() (Portfolio preset from full universe task, 2026-08-29)
+    reads exclusively from the latter now. Same pattern as
+    test_portfolio.py's own _seed_bond()."""
     sector = sector or SECTORS[idx % len(SECTORS)]
     issuer_id = f"ISS{idx:04d}"
     secid = f"SECID{idx:04d}"
@@ -36,9 +43,28 @@ def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None, ytm=0.20)
     db.upsert_bond(con, secid=secid, isin=isin, issuer_id=issuer_id, short_name=f"B{idx}",
                     mat_date="2028-01-01", face_value=1000.0, face_unit="SUR",
                     coupon_pct=15.0, list_level=3, qualified=1, updated="2026-08-01")
-    db.insert_spread_snapshot(con, secid=secid, snap_date="2026-08-26", ytm=ytm,
+    db.insert_spread_snapshot(con, secid=secid, snap_date=PRESET_SNAP_DATE, ytm=ytm,
                                tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=500.0,
                                mod_dur=1.5, convexity=None)
+    mod_dur = 1.5
+    delta_rate = portfolio.get_rate_scenarios(con)["base"]
+    aey_base = portfolio.bond_aey(ytm, mod_dur, delta_rate)
+    aey_base_risk_adj = portfolio.pd_adjusted_aey(aey_base, rating, con=con)
+    db.insert_universe_snapshot(
+        con, secid=secid, snap_date=PRESET_SNAP_DATE, short_name=f"B{idx}",
+        emitent_inn=issuer_id, emitent_title=f"Issuer {idx}", mat_date="2028-01-01",
+        offer_date=None, coupon_pct=15.0, list_level=3, qualified=1,
+        last_pct=100.0, yield_moex=ytm * 100, yield_to_offer=None, accrued_int=0.0,
+        volume=1000.0, num_trades=10, duration_moex=mod_dur * 365.0, ytm=ytm,
+        tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=500.0, yield_source="moex",
+        rating=rating, implied_fair_spread_bp=None, mispricing_bp=None,
+        in_watchlist=1, signal_excluded=0, mod_dur=mod_dur, aey_base=aey_base,
+        aey_stress=aey_base, aey_bull=aey_base, aey_base_risk_adj=aey_base_risk_adj,
+        vdo_scope=1)
+    con.execute(
+        "UPDATE universe_snapshot SET health_status=?, health_source='full' "
+        "WHERE secid=? AND snap_date=?",
+        (health, secid, PRESET_SNAP_DATE))
     con.commit()
 
 
@@ -53,6 +79,8 @@ def test_portfolio_build_dry_run_does_not_write(tmp_path, monkeypatch, capsys):
     db.init_db(con)
     db.init_issuer_bond(con)
     db.init_rating(con)
+    db.init_universe(con)
+    db.init_cbr(con)
     _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
     con.close()
 
@@ -73,6 +101,8 @@ def test_portfolio_build_save_requires_name(tmp_path, monkeypatch, capsys):
     db.init_db(con)
     db.init_issuer_bond(con)
     db.init_rating(con)
+    db.init_universe(con)
+    db.init_cbr(con)
     _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
     con.close()
 
@@ -90,6 +120,8 @@ def test_portfolio_build_save_writes_active_portfolio(tmp_path, monkeypatch, cap
     db.init_db(con)
     db.init_issuer_bond(con)
     db.init_rating(con)
+    db.init_universe(con)
+    db.init_cbr(con)
     _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
     con.close()
 
@@ -112,6 +144,8 @@ def test_portfolio_build_fewer_than_min_bonds_errors(tmp_path, monkeypatch, caps
     db.init_db(con)
     db.init_issuer_bond(con)
     db.init_rating(con)
+    db.init_universe(con)
+    db.init_cbr(con)
     _seed_watchlist(con, 5, rating="ruBBB+", health="green", ytm=0.20)  # need 20
     con.close()
 
@@ -127,6 +161,8 @@ def test_portfolio_build_user_filter_overrides_applied(tmp_path, monkeypatch, ca
     db.init_db(con)
     db.init_issuer_bond(con)
     db.init_rating(con)
+    db.init_universe(con)
+    db.init_cbr(con)
     # Only 4 sectors across 20 issuers (5 each = 25% equal-weight per
     # sector) -- breaches the 12% default cap, but not the 30% override
     # this test passes; the CLI override must be what makes this buildable.

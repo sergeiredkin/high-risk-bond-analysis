@@ -476,6 +476,9 @@ SECTORS = ["finance", "retail", "energy", "industrial", "transport",
            "construction", "telecom", "agriculture", "leasing", "metals"]
 
 
+PRESET_SNAP_DATE = "2026-08-26"
+
+
 def _preset_con(tmp_path):
     con = db.connect(tmp_path / "presets.sqlite")
     db.init_db(con)
@@ -483,39 +486,86 @@ def _preset_con(tmp_path):
     db.init_rating(con)
     db.init_cbr(con)
     db.init_portfolio(con)
+    db.init_universe(con)
     return con
 
 
 def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None,
                 ytm=0.20, g_spread_bp=500.0, mod_dur=1.5,
                 prior_g_spread_bp=None, mat_date="2028-01-01",
-                secid=None, short_name=None):
-    """One issuer + one tier=1 bond with a current rating and a latest
-    spread_snapshot row (plus an optional ~30d-earlier one, for the
-    G-spread-delta tests). Returns the bond's isin. `secid`/`short_name`
-    default to the usual generated values but can be overridden (e.g. for
-    the commodity-linked-bond exclusion tests)."""
+                secid=None, short_name=None, watchlist_tier=1,
+                health_source="full", offer_date=None, active=1):
+    """One issuer + one bond, seeded into BOTH the legacy tables (issuer/
+    rating/issuer_bond/bond/spread_snapshot -- still read directly by
+    monitor_portfolios()'s own tests elsewhere in this file) AND
+    universe_snapshot (Portfolio preset from full universe task,
+    2026-08-29) -- _gather_candidates() reads exclusively from the latter
+    now. aey_base_risk_adj is computed the same way universe_pipeline.py
+    computes it for real (bond_aey() then pd_adjusted_aey()), so seeded
+    AEY values match what the old on-the-fly computation would have
+    produced. Returns the bond's isin.
+
+    watchlist_tier=1 by default (the common case every pre-existing test
+    here assumes); pass 2 or None (-> no issuer row at all, a genuine
+    universe-only bond) to test tier=2/universe-sourced candidates.
+    health_source='full' by default -- matches a real tier=1 issuer's
+    scan-watchlist-health-computed status; pass 'quantitative' to test the
+    RED-quantitative-exclusion guard."""
     sector = sector or SECTORS[idx % len(SECTORS)]
     issuer_id = f"ISS{idx:04d}"
     secid = secid or f"SECID{idx:04d}"
     short_name = short_name or f"Bond{idx}"
     isin = f"RU{idx:06d}"
-    db.add_issuer_at_tier(con, issuer_id, f"Issuer {idx}", watchlist_tier=1, sector=sector)
-    db.set_issuer_health_status(con, issuer_id, health)
-    db.upsert_rating(con, issuer_id=issuer_id, agency="expert_ra", rating=rating,
-                      outlook=None, action=None, rated_on="2026-01-01")
-    db.add_issuer_bond(con, issuer_id=issuer_id, secid=secid, source="manual")
-    db.upsert_bond(con, secid=secid, isin=isin, issuer_id=issuer_id,
-                    short_name=short_name, mat_date=mat_date, face_value=1000.0,
-                    face_unit="SUR", coupon_pct=15.0, list_level=3, qualified=1,
-                    updated="2026-08-01")
-    if prior_g_spread_bp is not None:
-        db.insert_spread_snapshot(con, secid=secid, snap_date="2026-07-27", ytm=ytm,
-                                   tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=prior_g_spread_bp,
+    # A genuine universe-only bond (watchlist_tier=None) has no issuer row
+    # at all -- confirmed against the live DB, every one of those is also
+    # unrated (rating/issuer_bond both FK to issuer.issuer_id, so a rating
+    # can't exist without an issuer row either; matches reality, not just
+    # a schema accident).
+    if watchlist_tier is not None:
+        db.add_issuer_at_tier(con, issuer_id, f"Issuer {idx}", watchlist_tier=watchlist_tier, sector=sector)
+        db.set_issuer_health_status(con, issuer_id, health)
+        if not active:
+            con.execute("UPDATE issuer SET active=0 WHERE issuer_id=?", (issuer_id,))
+        db.upsert_rating(con, issuer_id=issuer_id, agency="expert_ra", rating=rating,
+                          outlook=None, action=None, rated_on="2026-01-01")
+        db.add_issuer_bond(con, issuer_id=issuer_id, secid=secid, source="manual")
+        # bond/spread_snapshot are populated by `hybond run`'s own
+        # watchlist-only pipeline in reality -- a genuine universe-only
+        # secid never gets a row in either, so this branch is skipped
+        # for watchlist_tier=None rather than inserted with a dangling
+        # issuer_id (bond.issuer_id FKs to issuer.issuer_id).
+        db.upsert_bond(con, secid=secid, isin=isin, issuer_id=issuer_id,
+                        short_name=short_name, mat_date=mat_date, face_value=1000.0,
+                        face_unit="SUR", coupon_pct=15.0, list_level=3, qualified=1,
+                        updated="2026-08-01")
+        if prior_g_spread_bp is not None:
+            db.insert_spread_snapshot(con, secid=secid, snap_date="2026-07-27", ytm=ytm,
+                                       tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=prior_g_spread_bp,
+                                       mod_dur=mod_dur, convexity=None)
+        db.insert_spread_snapshot(con, secid=secid, snap_date=PRESET_SNAP_DATE, ytm=ytm,
+                                   tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=g_spread_bp,
                                    mod_dur=mod_dur, convexity=None)
-    db.insert_spread_snapshot(con, secid=secid, snap_date="2026-08-26", ytm=ytm,
-                               tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=g_spread_bp,
-                               mod_dur=mod_dur, convexity=None)
+    else:
+        rating = None
+
+    delta_rate = portfolio.get_rate_scenarios(con)["base"]
+    aey_base = portfolio.bond_aey(ytm, mod_dur, delta_rate)
+    aey_base_risk_adj = portfolio.pd_adjusted_aey(aey_base, rating, con=con)
+    db.insert_universe_snapshot(
+        con, secid=secid, snap_date=PRESET_SNAP_DATE, short_name=short_name,
+        emitent_inn=issuer_id, emitent_title=f"Issuer {idx}", mat_date=mat_date,
+        offer_date=offer_date, coupon_pct=15.0, list_level=3, qualified=1,
+        last_pct=100.0, yield_moex=ytm * 100, yield_to_offer=None, accrued_int=0.0,
+        volume=1000.0, num_trades=10, duration_moex=mod_dur * 365.0, ytm=ytm,
+        tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=g_spread_bp, yield_source="moex",
+        rating=rating, implied_fair_spread_bp=None, mispricing_bp=None,
+        in_watchlist=1 if watchlist_tier is not None else 0, signal_excluded=0,
+        mod_dur=mod_dur, aey_base=aey_base, aey_stress=aey_base, aey_bull=aey_base,
+        aey_base_risk_adj=aey_base_risk_adj, vdo_scope=1)
+    con.execute(
+        "UPDATE universe_snapshot SET health_status=?, health_source=? "
+        "WHERE secid=? AND snap_date=?",
+        (health, health_source, secid, PRESET_SNAP_DATE))
     con.commit()
     return isin
 
@@ -535,7 +585,8 @@ def _bond(isin, aey):
     return portfolio.BondCandidate(
         isin=isin, secid=isin, issuer_id=isin, issuer_name=isin, sector="x",
         rating="ruBBB+", health="green", aey=aey, ytm=0.2, g_spread_bp=500.0,
-        g_spread_delta_30d_bp=0.0, mat_date=None, offer_date=None)
+        g_spread_delta_30d_bp=0.0, mat_date=None, offer_date=None,
+        watchlist_tier=1, health_source="full")
 
 
 def test_compute_weights_equal_sums_to_one():
@@ -1160,3 +1211,116 @@ def test_monitor_portfolios_skips_bond_with_missing_isin(tmp_path):
 
     alerts = portfolio.monitor_portfolios(con)
     assert alerts[pid] == []
+
+
+# ============================================================================
+# Portfolio preset from full universe (2026-08-29)
+# ============================================================================
+
+def test_gather_candidates_includes_tier2_and_universe_only_bonds(tmp_path):
+    con = _preset_con(tmp_path)
+    _seed_bond(con, 1, rating="ruBBB+", health="green", watchlist_tier=1)
+    _seed_bond(con, 2, rating="ruBB", health="yellow", watchlist_tier=2,
+               health_source="quantitative")
+    _seed_bond(con, 3, rating="ruBB-", health="green", watchlist_tier=None,
+               health_source="quantitative")
+
+    candidates = portfolio._gather_candidates(con)
+
+    tiers = {c.watchlist_tier for c in candidates}
+    assert tiers == {1, 2, 99}
+
+
+def test_gather_candidates_sorts_tier1_full_before_tier2_quantitative(tmp_path):
+    con = _preset_con(tmp_path)
+    # Higher AEY on the tier=2 bond -- if sorting were AEY-only (the old
+    # behavior), it would come first. Tier/health_source priority must win.
+    _seed_bond(con, 1, rating="ruBBB+", health="green", watchlist_tier=1, ytm=0.15)
+    _seed_bond(con, 2, rating="ruBBB+", health="green", watchlist_tier=2,
+               health_source="quantitative", ytm=0.40)
+
+    candidates = portfolio._gather_candidates(con)
+    candidates.sort(key=lambda c: (
+        c.watchlist_tier, portfolio._HEALTH_SOURCE_RANK.get(c.health_source, 2), -c.aey))
+
+    assert candidates[0].watchlist_tier == 1
+    assert candidates[0].health_source == "full"
+    assert candidates[1].watchlist_tier == 2
+
+
+def test_gather_candidates_excludes_inactive_issuer(tmp_path):
+    con = _preset_con(tmp_path)
+    _seed_bond(con, 1, rating="ruBBB+", health="green", watchlist_tier=1, active=0)
+    candidates = portfolio._gather_candidates(con)
+    assert candidates == []
+
+
+def test_build_preset_excludes_red_quantitative_bonds(tmp_path):
+    """A RED bond with health_source='quantitative' (bare YTM/G-spread
+    threshold check, no human review) must never be admitted to any
+    preset, even aggressive (which otherwise allows RED) and even when it
+    would clear red_issuer_eligibility()'s rating/PD/G-spread gate on its
+    own numbers."""
+    con = _preset_con(tmp_path)
+    _seed_watchlist(con, 40, rating="ruB+", health="orange", ytm=0.35)
+    _seed_bond(con, 900, rating="ruBB+", health="red", ytm=0.38,
+               g_spread_bp=510.0, prior_g_spread_bp=500.0, sector="finance",
+               watchlist_tier=2, health_source="quantitative")
+
+    result = portfolio.build_preset("aggressive", db=con)
+
+    assert all(c.health != "red" for c in result["bonds"])
+    assert result["summary"]["n_red_included"] == 0
+
+
+def test_build_preset_includes_red_full_bond_when_eligible(tmp_path):
+    """Same eligibility numbers as the quantitative case above, but
+    health_source='full' (a real reviewed signal) -- this one must still
+    be admitted, confirming the new guard targets health_source
+    specifically and doesn't just block RED outright."""
+    con = _preset_con(tmp_path)
+    _seed_watchlist(con, 40, rating="ruB+", health="orange", ytm=0.35)
+    _seed_bond(con, 900, rating="ruBB+", health="red", ytm=0.38,
+               g_spread_bp=510.0, prior_g_spread_bp=500.0, sector="finance",
+               watchlist_tier=1, health_source="full")
+
+    result = portfolio.build_preset("aggressive", db=con)
+
+    red_bonds = [c for c in result["bonds"] if c.health == "red"]
+    assert len(red_bonds) == 1
+    assert result["summary"]["n_red_included"] == 1
+
+
+def test_build_preset_conservative_fills_from_tier2_when_tier1_insufficient(tmp_path):
+    """Tier=1 alone is under the 20-bond floor; tier=2 (quantitative
+    health_source, still GREEN so conservative-eligible) makes up the
+    difference. Exercises the actual "full universe" expansion this task
+    delivers -- see _gather_candidates()'s own docstring on why genuinely
+    unrated universe-only bonds can never contribute here."""
+    con = _preset_con(tmp_path)
+    for i in range(10):
+        _seed_bond(con, i, rating="ruBBB+", health="green", ytm=0.20, watchlist_tier=1)
+    for i in range(10, 25):
+        _seed_bond(con, i, rating="ruBBB+", health="green", ytm=0.18,
+                   watchlist_tier=2, health_source="quantitative")
+
+    result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
+
+    n_min, n_max = portfolio.PRESETS["conservative"]["bond_count"]
+    assert n_min <= result["summary"]["n_bonds"] <= n_max
+    assert result["source_breakdown"]["watchlist"] == 10
+    assert result["source_breakdown"]["universe"] >= 1
+    assert result["source_breakdown"]["watchlist"] + result["source_breakdown"]["universe"] \
+        == result["summary"]["n_bonds"]
+    # Every tier=1 bond must be included before any tier=2 bond is needed.
+    included_ids = {c.issuer_id for c in result["bonds"]}
+    tier1_ids = {f"ISS{i:04d}" for i in range(10)}
+    assert tier1_ids.issubset(included_ids)
+
+
+def test_build_preset_source_breakdown_all_watchlist(tmp_path):
+    con = _preset_con(tmp_path)
+    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
+    assert result["source_breakdown"]["watchlist"] == result["summary"]["n_bonds"]
+    assert result["source_breakdown"]["universe"] == 0

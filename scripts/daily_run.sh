@@ -74,6 +74,19 @@ echo "=== Universe health scan ===" >> "$LOG"
 PYTHONPATH=src python -m hybond scan-universe-health >> "$LOG" 2>&1
 echo "Universe health exit: $?" >> "$LOG"
 
+# Portfolio monitoring, second pass (Portfolio preset from full universe
+# task, 2026-08-29): monitor_portfolios() reads issuer/universe_snapshot
+# health for its health-degradation alert (FLAG_TYPE_HEALTH/FLAG_TYPE_RED)
+# -- the earlier portfolio-monitor call above (right after `hybond run`)
+# ran before scan-universe-health had refreshed today's health_status, so
+# it saw yesterday's values for that check specifically. This second call
+# is intentionally redundant with the first for G-spread/refi (those
+# already had fresh data first time) -- writes a second portfolio_snapshot
+# and can duplicate a still-active flag_log alert within the same day, an
+# accepted tradeoff for freshness over a more surgical health-only rerun.
+echo "=== Portfolio monitoring (post-health-scan) ===" >> "$LOG"
+PYTHONPATH=src python -m hybond portfolio-monitor >> "$LOG" 2>&1
+
 # Phase 2 promotion screen: rank vdo_scope over rating floor -> liquidity
 # floor -> AEY-risk-adj -> issuer concentration cap, into a deep-monitoring
 # candidate shortlist. Pure read over today's just-refreshed universe_snapshot

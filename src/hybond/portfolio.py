@@ -424,6 +424,12 @@ PRESETS: dict[str, dict] = {
 # below lowercases both sides rather than silently requiring callers to
 # match a case the rest of hybond never uses.
 
+# Sort priority for _gather_candidates()/build_preset() (2026-08-29):
+# 'full' (real reviewed signal) ranks ahead of 'quantitative' (bare
+# threshold check); an unexpected/missing value sorts last rather than
+# raising, since it's a tiebreaker, not a filter.
+_HEALTH_SOURCE_RANK = {"full": 0, "quantitative": 1}
+
 RED_MIN_RATING = "ruBB-"
 RED_MAX_PD = 0.03            # empirical 1yr PD ceiling, Эксперт РА Table 7
 RED_MAX_GSPREAD_SPIKE_BP = 200.0   # 30d G-spread widening ceiling
@@ -449,6 +455,9 @@ class BondCandidate:
     g_spread_delta_30d_bp: float | None
     mat_date: str | None
     offer_date: str | None
+    # Portfolio preset from full universe task (2026-08-29):
+    watchlist_tier: int        # 1/2 from issuer.watchlist_tier, 99 if no issuer row at all
+    health_source: str | None  # 'full' (tier=1, real signal) | 'quantitative' | None
     flags: dict = field(default_factory=dict)
 
 
@@ -581,84 +590,143 @@ def _g_spread_delta_30d(con, secid: str, latest_date: str,
 
 
 def _gather_candidates(con) -> list[BondCandidate]:
-    """Every currently-listed bond of every tier=1 (active watchlist)
-    issuer, with the fields the preset filters/sizing need already resolved
-    -- rating filtering happens in build_preset(), not here, since an
-    unrated/too-low-rated bond is still a legitimate "candidate" for this
+    """Every vdo_scope=1 bond in the latest universe_snapshot with a
+    health_status already computed (Universe Health Scan, 2026-08-29) --
+    not just tier=1 watchlist bonds, so a preset can draw on tier=2 and
+    universe-only bonds too when the watchlist alone can't fill it. Rating
+    filtering happens in build_preset(), not here, since an unrated/
+    too-low-rated bond is still a legitimate "candidate" for this
     function's purposes (build_preset() decides what to do with it).
 
-    Commodity-linked bonds (see COMMODITY_LINKED_BOND_IDS) are the one
-    exception: excluded here, upstream of every preset's own filters, so
-    build_preset() can never select one under any preset_type -- their
-    coupon/redemption is indexed to a metal price rather than a fixed rate,
-    which breaks the fixed-income YTM/AEY math this whole module assumes
-    (confirmed live, Watchlist Filters UI task duration-distribution check:
-    Селигдар's SELSILV01/SELGOLD002/SELGOLD003 had the three longest
-    durations in the book alongside YTM figures of 2-8% next to ordinary
-    bonds' 25-37%, an artifact of their non-standard structure, not a real
-    yield signal)."""
-    rate_scenarios = get_rate_scenarios(con)
-    delta_rate = rate_scenarios["base"]
+    LEFT JOIN issuer: a universe bond may have no issuer row at all (never
+    added to the watchlist in any tier) -- watchlist_tier is COALESCEd to
+    99 for those, sector to 'other', issuer_name to universe_snapshot's own
+    emitent_title. NULL issuer_id (emitent_inn can itself be NULL for a
+    bond MOEX doesn't map to an emitent) is kept as None rather than
+    coalesced to a placeholder string -- there's no sensible non-null value
+    and downstream issuer-cap logic already treats a shared None key
+    correctly (every such bond just competes for the same "issuer" slot,
+    which is fine since these have no real per-issuer identity to cap).
+
+    aey uses aey_base_risk_adj, NOT aey_base -- aey_base_risk_adj is
+    universe_pipeline.py's own `pd_adjusted_aey(aey_base, rating, con=con)`,
+    the exact same PD-adjustment this function always applied before this
+    task (previously computed on the fly from spread_snapshot; now read
+    pre-computed from universe_snapshot, one source of truth with the
+    dashboard's own AEY columns instead of a second computation). Raw
+    aey_base has no PD adjustment at all -- using it here would silently
+    drop risk-adjustment for every candidate, watchlist bonds included, a
+    real methodology regression the task's own draft query would have
+    introduced. In practice this substitution costs nothing: every one of
+    the ~190 pure universe-only bonds (no issuer row) is unrated (confirmed
+    against the live DB), so they fail every preset's rating-floor filter
+    below regardless of which AEY field they carry -- the actual "full
+    universe" expansion this task delivers is tier=2's ~48 rated issuers,
+    for whom aey_base_risk_adj is populated for the large majority.
+
+    commodity_linked/sector_moex columns named in the task's draft query
+    don't exist anywhere in this schema (confirmed via PRAGMA table_info --
+    same finding COMMODITY_LINKED_BOND_IDS's own docstring already
+    recorded). Commodity-linked exclusion stays the existing Python-side
+    _is_commodity_linked() check (secid/short_name against a literal id
+    list); sector falls back to the literal string 'other', not a
+    nonexistent MOEX-sourced sector column.
+    """
+    db.init_universe(con)
+    rows = con.execute(
+        "SELECT us.secid, us.short_name, us.emitent_inn AS issuer_id, "
+        "       COALESCE(i.name, us.emitent_title) AS issuer_name, "
+        "       COALESCE(i.sector, 'other') AS sector, "
+        # Fallback to issuer.health_status is scoped to tier=1 ONLY -- for
+        # tier=2, issuer.health_status is never computed by anything
+        # (set_issuer_health_status() is only ever called from
+        # scan-watchlist-health, tier=1-only) and is just the schema
+        # default 'green'; falling back to it for tier=2 would silently
+        # stamp that uncomputed default as a real signal, exactly the bug
+        # the Universe Health Scan task (earlier this session) fixed for
+        # universe_snapshot itself.
+        "       COALESCE(us.health_status, "
+        "                CASE WHEN i.watchlist_tier = 1 THEN i.health_status END) AS health_status, "
+        "       COALESCE(us.health_source, "
+        "                CASE WHEN i.watchlist_tier = 1 THEN 'full' END) AS health_source, "
+        "       us.aey_base_risk_adj AS aey, "
+        "       us.ytm, us.g_spread_bp, us.mat_date, us.offer_date, us.rating, "
+        "       COALESCE(i.watchlist_tier, 99) AS watchlist_tier, "
+        "       us.snap_date "
+        "FROM universe_snapshot us "
+        "LEFT JOIN issuer i ON us.emitent_inn = i.issuer_id "
+        "WHERE us.snap_date = (SELECT MAX(snap_date) FROM universe_snapshot) "
+        # vdo_scope=1 gates entry ONLY for bonds not already on the
+        # watchlist. vdo_scope is the broad ВДО (junk-bond) screen -- by
+        # construction it excludes higher-rated bonds (confirmed against
+        # the live DB: literally every tier=1 bond rated ruBBB- or better
+        # has vdo_scope=0), so requiring it unconditionally (the task's own
+        # draft query) would silently drop every well-rated watchlist bond
+        # and make the conservative preset's ruBBB- floor permanently
+        # unsatisfiable -- caught via DoD #11's own live-DB build, not
+        # asserted from the query alone. A tier=1/tier=2 bond is eligible
+        # by watchlist membership regardless of vdo_scope, matching the
+        # pre-2026-08-29 code's own behavior for tier=1.
+        "  AND (i.watchlist_tier IN (1, 2) OR us.vdo_scope = 1) "
+        # health_status: scan-universe-health only computes
+        # universe_snapshot.health_status for vdo_scope=1 rows -- a
+        # well-rated tier=1 bond (vdo_scope=0) never gets one. Falling
+        # back to issuer.health_status covers exactly that gap:
+        # scan-watchlist-health computes it for ALL 34 tier=1 issuers
+        # unconditionally, regardless of any bond's vdo_scope. No such
+        # fallback exists for tier=2/universe-only, where
+        # universe_snapshot.health_status stays authoritative (NULL means
+        # genuinely not yet scanned, not a gap to paper over).
+        "  AND COALESCE(us.health_status, i.health_status) IS NOT NULL "
+        "  AND us.signal_excluded = 0 "
+        "  AND us.secid IS NOT NULL "
+        # Defensive, same as the pre-2026-08-29 code's explicit active check
+        # (its own comment: "an issuer demoted to inactive while still
+        # tagged tier=1 must never be preset-eligible") -- the task's own
+        # draft query omitted this, which would have silently reintroduced
+        # that exact bug. Scoped to tier=1 ONLY: confirmed against the live
+        # DB that `active` in this schema means "active tier=1 member", not
+        # "still a going concern" -- add_issuer_at_tier() sets active=0 for
+        # EVERY tier=2 issuer by construction (all 49 real tier=2 rows are
+        # active=0). Applying this check unscoped would have silently
+        # excluded every tier=2 bond in production, defeating this task's
+        # entire purpose -- caught by this function's own test fixtures,
+        # not by the task's draft query.
+        "  AND (i.issuer_id IS NULL OR i.watchlist_tier != 1 OR i.active = 1)",
+        ).fetchall()
+
     candidates: list[BondCandidate] = []
-    for issuer in db.list_issuers_by_tier(con, 1):
-        issuer_id = issuer["issuer_id"]
-        issuer_row = db.get_issuer(con, issuer_id)
-        # list_issuers_by_tier() only filters on watchlist_tier, not active
-        # -- a defensive check, scoped to this function rather than that
-        # shared helper (other callers may legitimately want inactive
-        # tier=1 rows too). No-op against the real DB today (all 34 tier=1
-        # issuers have active=1), but an issuer demoted to inactive while
-        # still tagged tier=1 must never be preset-eligible.
-        if issuer_row is not None and not issuer_row.get("active", 1):
+    for r in rows:
+        # universe_snapshot has no separate isin column at all -- secid IS
+        # the isin for every Russian corporate bond in this DB (confirmed,
+        # 0 mismatches, MOEX defaults import task earlier this session).
+        # The task's own draft query assumed an `isin` column existed here;
+        # it doesn't.
+        isin = r["secid"]
+        if _is_commodity_linked(r["secid"], r["short_name"]):
+            logger.info(
+                "build_preset: excluding commodity-linked bond %s (%s), issuer=%s",
+                r["secid"], r["short_name"], r["issuer_id"])
             continue
-        health = (issuer_row.get("health_status") if issuer_row else None) or "green"
-        rating = db.current_rating(con, issuer_id)
-        for secid in db.list_bonds_for_issuer(con, issuer_id):
-            bond_row = con.execute(
-                "SELECT isin, mat_date, short_name FROM bond WHERE secid=?", (secid,)).fetchone()
-            if bond_row is None or not bond_row["isin"]:
-                continue
-            if _is_commodity_linked(secid, bond_row["short_name"]):
-                logger.info(
-                    "build_preset: excluding commodity-linked bond %s (%s), issuer=%s",
-                    secid, bond_row["short_name"], issuer_id)
-                continue
-            # universe_snapshot (offer/put date) is a nice-to-have, not a
-            # hard dependency of this function -- a caller who never ran
-            # `hybond universe` (so init_universe() was never called) still
-            # gets a working build_preset(), just without offer-date
-            # refinancing-risk detection (mat_date alone still works).
-            try:
-                offer_row = con.execute(
-                    "SELECT offer_date FROM universe_snapshot WHERE secid=? "
-                    "ORDER BY snap_date DESC LIMIT 1", (secid,)).fetchone()
-                offer_date = offer_row["offer_date"] if offer_row else None
-            except sqlite3.OperationalError:
-                offer_date = None
-            spread_row = _latest_spread_row(con, secid)
-            ytm = spread_row["ytm"] if spread_row else None
-            mod_dur = spread_row["mod_dur"] if spread_row else None
-            g_spread_bp = spread_row["g_spread_bp"] if spread_row else None
-            g_spread_delta = (
-                _g_spread_delta_30d(con, secid, spread_row["snap_date"], g_spread_bp)
-                if spread_row else None)
-            aey_base = bond_aey(ytm, mod_dur, delta_rate)
-            aey = pd_adjusted_aey(aey_base, rating, con=con)
-            candidates.append(BondCandidate(
-                isin=bond_row["isin"], secid=secid, issuer_id=issuer_id,
-                issuer_name=issuer_row.get("name", issuer_id) if issuer_row else issuer_id,
-                sector=issuer_row.get("sector") if issuer_row else None,
-                rating=rating, health=str(health).lower(), aey=aey, ytm=ytm,
-                g_spread_bp=g_spread_bp, g_spread_delta_30d_bp=g_spread_delta,
-                mat_date=bond_row["mat_date"], offer_date=offer_date,
-            ))
+        g_spread_delta = _g_spread_delta_30d(con, r["secid"], r["snap_date"], r["g_spread_bp"])
+        candidates.append(BondCandidate(
+            isin=isin, secid=r["secid"], issuer_id=r["issuer_id"],
+            issuer_name=r["issuer_name"] or r["issuer_id"] or r["secid"],
+            sector=r["sector"], rating=r["rating"], health=str(r["health_status"]).lower(),
+            aey=r["aey"], ytm=r["ytm"], g_spread_bp=r["g_spread_bp"],
+            g_spread_delta_30d_bp=g_spread_delta, mat_date=r["mat_date"], offer_date=r["offer_date"],
+            watchlist_tier=r["watchlist_tier"], health_source=r["health_source"],
+        ))
     return candidates
 
 
 def build_preset(preset_type: str, sizing_mode: str = "equal",
                   user_filters: dict | None = None, db=None,
                   dry_run: bool = False) -> dict:
-    """Build a portfolio preset from tier=1 watchlist bonds.
+    """Build a portfolio preset from the full vdo_scope universe (Portfolio
+    preset from full universe task, 2026-08-29) -- tier=1 watchlist bonds
+    first, then tier=2/universe-only bonds only as needed to reach the
+    preset's bond_count floor (see _gather_candidates()'s sort).
 
     Args:
         preset_type: 'conservative' | 'balanced' | 'aggressive'
@@ -685,7 +753,8 @@ def build_preset(preset_type: str, sizing_mode: str = "equal",
         dict with bonds, weights, flags, summary metrics:
         {"preset_type", "sizing_mode", "filters", "bonds": [BondCandidate,...],
          "weights": {isin: weight}, "summary": {avg_aey, expected_loss,
-         net_return, n_issuers, n_sectors, n_red_included}}
+         net_return, n_issuers, n_sectors, n_red_included},
+         "source_breakdown": {"watchlist": N, "universe": N}}
         (or the dry_run shape above, if dry_run=True)
 
     Raises:
@@ -732,6 +801,18 @@ def build_preset(preset_type: str, sizing_mode: str = "equal",
         if c.health not in health_allowed:
             continue
         if c.health == "red":
+            # Extra guard on top of health_allowed (2026-08-29): a RED
+            # bond's health_status came from either a real reviewed signal
+            # ('full', watchlist_health.py -- YTM + G-spread trajectory +
+            # filing events) or a bare YTM/G-spread threshold check with no
+            # human review ('quantitative', watchlist_health.
+            # compute_universe_bond_health()). Never admit the latter --
+            # confirmed against the live DB, quantitative RED bonds carry
+            # AEY figures over 200%, an artifact of thin/distressed pricing
+            # rather than a real yield signal, not something any preset
+            # should treat as a legitimate high-yield pick.
+            if c.health_source != "full":
+                continue
             red_ok, reason = red_issuer_eligibility(c.rating, c.g_spread_delta_30d_bp)
             if not red_ok:
                 continue
@@ -748,7 +829,18 @@ def build_preset(preset_type: str, sizing_mode: str = "equal",
             f"only {len(eligible)} bonds passed {preset_type} filters, "
             f"need at least {min_count}")
 
-    eligible.sort(key=lambda c: c.aey, reverse=True)
+    # Reviewed bonds first (2026-08-29): tier=1 fully-reviewed bonds fill
+    # preset slots ahead of tier=2/universe-only ones, and within a tier,
+    # a real full-signal health computation ranks ahead of a bare
+    # quantitative threshold check -- universe/quantitative bonds only get
+    # used when the watchlist alone can't reach the preset's bond_count
+    # floor. AEY descending is still the final tiebreaker within each
+    # (tier, health_source) group.
+    eligible.sort(key=lambda c: (
+        c.watchlist_tier,
+        _HEALTH_SOURCE_RANK.get(c.health_source, 2),
+        -c.aey,
+    ))
     target_n = min(max_count, len(eligible))
 
     # Slot-based approximation of the weight caps (max_per_issuer/
@@ -843,6 +935,16 @@ def build_preset(preset_type: str, sizing_mode: str = "equal",
         pd_1y = probs["yr1"] if probs else 0.0
         expected_loss += weights[c.isin] * pd_1y * default_probs.LGD
     net_return = avg_aey - expected_loss
+    # source_breakdown (2026-08-29): keyed on health_source, not
+    # watchlist_tier -- "watchlist (проверены)" means a real reviewed
+    # signal, "universe (количественная оценка)" means a bare threshold
+    # check, matching the Builder UI's own wording. In practice these
+    # correlate near-perfectly with tier=1 vs tier=2/universe-only (only
+    # tier=1 ever gets health_source='full'), but keying on the field the
+    # label actually describes is more robust than assuming that
+    # correlation holds forever.
+    n_watchlist = sum(1 for c in selected if c.health_source == "full")
+    n_universe = len(selected) - n_watchlist
 
     return {
         "preset_type": preset_type,
@@ -859,6 +961,7 @@ def build_preset(preset_type: str, sizing_mode: str = "equal",
             "n_sectors": n_sectors,
             "n_red_included": n_red_included,
         },
+        "source_breakdown": {"watchlist": n_watchlist, "universe": n_universe},
     }
 
 
