@@ -9,6 +9,15 @@
      removed in the Visual redesign task, 2026-08-29, along with the
      home-screen tile drag-reorder feature it powered). -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<!-- D3.js (Market map redesign, 2026-08-31): first JS-library CDN
+     dependency -- unlike the icon font above (a cosmetic fallback if it
+     fails to load), this is a hard runtime dependency of marketTab()'s map.
+     Everything else in this dashboard is hand-rolled canvas/SVG specifically
+     so the file stays usable fully offline; the Рынок tab's map is now the
+     one exception -- it needs network access to cdnjs on first paint (a
+     stale browser cache still works after that). Confirmed with the user
+     before adding this (self-hosting the file was the alternative). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -447,6 +456,38 @@
   /* ---- Portfolio donut charts (active-portfolio allocation) ------------- */
   .pf-alloc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   @media (max-width: 600px) { .pf-alloc-grid { grid-template-columns: 1fr; } }
+
+  /* ---- Multiple portfolio comparison (2026-08-31) ------------------------ */
+  .pf-compare-selector { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .pf-compare-pill { padding: 6px 14px; border-radius: 14px; border: 1px solid var(--border);
+    background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; }
+  .pf-compare-pill.active { border-color: var(--gold-primary); color: var(--gold-primary); font-weight: 600; }
+  .pf-compare-pill.pf-compare-add { border-style: dashed; }
+  .pf-compare-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 900px) { .pf-compare-grid { grid-template-columns: 1fr; } }
+  .pf-compare-col { border: 1px solid var(--border); border-radius: var(--radius-card); padding: 14px; }
+  .pf-compare-col-header { text-align: center; margin-bottom: 10px; }
+  .pf-compare-col-header .pf-preset-badge { display: block; margin: 4px 0; }
+  .pf-compare-col-header .pf-compare-bond-count { color: var(--text-secondary); font-size: 13px; }
+  .pf-compare-metric-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pf-compare-metric-table td { padding: 5px 4px; border-bottom: 1px solid var(--border); }
+  .pf-compare-metric-table td.pf-compare-label { color: var(--text-secondary); }
+  .pf-compare-metric-table td.pf-compare-best { color: var(--gold-primary); font-weight: 700; }
+  .pf-compare-metric-table td.pf-compare-worst { color: var(--text-tertiary); }
+  .pf-compare-sector-row { display: grid; grid-template-columns: 1fr; align-items: center;
+    gap: 2px; padding: 4px 0; font-size: 13px; }
+  @media (min-width: 701px) {
+    .pf-compare-sector-row { grid-template-columns: 140px repeat(var(--pf-compare-cols, 3), 1fr); gap: 10px; }
+  }
+  .pf-compare-bar-track { display: flex; align-items: center; gap: 6px; height: 16px; }
+  .pf-compare-bar-fill { background: var(--gold-primary); height: 10px; border-radius: 3px; }
+  .pf-compare-rating-stack { display: flex; height: 20px; border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+  .pf-compare-rating-col { flex: 1; }
+  .pf-compare-rating-col-label { text-align: center; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .pf-compare-rating-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  @media (min-width: 701px) {
+    .pf-compare-rating-grid { grid-template-columns: repeat(var(--pf-compare-cols, 3), 1fr); }
+  }
   .pf-donut-wrap { position: relative; width: 180px; height: 180px; margin: 10px auto 0; }
   .pf-donut-wrap canvas { display: block; width: 180px; height: 180px; cursor: pointer; }
   .pf-donut-center { position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -1141,17 +1182,18 @@
   .time-btn.custom-scen { color: var(--series-2); border: 1px dashed var(--series-2); }
   .time-btn.custom-scen.active { background: var(--series-2); color: var(--text-primary); border-style: solid; }
   .time-note { font-size: 12px; color: var(--text-muted); margin: -4px 0 12px; }
-  .mm-controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
+  .mm-controls { display: flex; gap: 10px; margin-bottom: 10px; max-width: 260px; }
+  .mm-ctrl-group { flex: 1; }
   .mm-ctrl-group label { display: block; font-size: 14px; color: var(--text-muted); margin-bottom: 3px; }
   .mm-ctrl-group select { width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border);
     background: var(--surface-1); color: var(--text-primary); font-size: 12px; }
-  .mm-filter-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 14px; margin-bottom: 14px; font-size: 14px; }
-  .mm-filter-row label.chk { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); white-space: nowrap; }
-  .mm-filter-row label.chk.chk-active { color: var(--gold-primary); font-weight: 600; }
   .mm-signal-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
-  .mm-signal-card { border-radius: 10px; padding: var(--space-4); border: 0.5px solid var(--border); } /* was 10px 14px */
+  /* Market map redesign (2026-08-31): found via 375px DoD check -- 4 fixed
+     columns don't shrink below their content's natural width (longest
+     label "— Нет рейтинга/сигнала"), overflowing the page horizontally on
+     mobile. Same fix for .mm-stats-bar below, same root cause. */
+  @media (max-width: 600px) { .mm-signal-bar, .mm-stats-bar { grid-template-columns: repeat(2, 1fr); } }
+  .mm-signal-card { border-radius: 10px; padding: var(--space-4); border: 0.5px solid var(--border); min-width: 0; } /* was 10px 14px */
   .mm-signal-card .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .mm-signal-card .l { font-size: 12px; margin-top: 1px; }
   .mm-signal-up { background: color-mix(in srgb, var(--good) 14%, var(--surface-1)); }
@@ -1165,7 +1207,19 @@
   .mm-signal-none .l { color: var(--text-muted); }
   .mm-chart-card { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 12px;
     padding: var(--space-4); position: relative; } /* was 14px */
-  #mmChart { width: 100%; height: 520px; display: block; cursor: crosshair; }
+  #mmSvgWrap { width: 100%; height: 520px; }
+  #mmSvgWrap svg { width: 100%; height: 520px; display: block; cursor: grab; }
+  #mmSvgWrap svg.mm-panning { cursor: grabbing; }
+  .mm-axis path, .mm-axis line { stroke: var(--border); stroke-width: 0.5; }
+  .mm-axis text { font-size: 12px; fill: var(--text-secondary); }
+  .mm-axis-title { font-size: 14px; font-weight: 500; fill: var(--text-primary); }
+  .mm-gridline { stroke: var(--border); stroke-width: 0.5; }
+  .mm-bubble { stroke: var(--border); stroke-width: 0.5; }
+  .mm-bubble.mm-selected { stroke: var(--gold-primary); stroke-width: 2; }
+  .mm-bubble-hole { pointer-events: none; }
+  .mm-warning-ring { fill: none; stroke-dasharray: 3,2; pointer-events: none; }
+  .mm-cluster-label { font-size: 11px; fill: var(--text-muted); pointer-events: none; text-anchor: middle; }
+  .mm-brush .selection { fill: color-mix(in srgb, var(--series-2) 8%, transparent); stroke: var(--series-2); stroke-dasharray: 4,2; }
   .mm-empty-overlay { position: absolute; left: var(--space-4); right: var(--space-4); top: var(--space-4); height: 520px;
     display: flex; align-items: center; justify-content: center; pointer-events: none; }
   .mm-empty-overlay .empty-state-action { pointer-events: auto; }
@@ -1179,7 +1233,7 @@
   .mm-legend-item { display: flex; align-items: center; gap: 5px; }
   .mm-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .mm-stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
-  .mm-stat-tile { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 10px; padding: var(--space-4); } /* was 10px 14px */
+  .mm-stat-tile { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 10px; padding: var(--space-4); min-width: 0; } /* was 10px 14px */
   .mm-stat-tile .value { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .mm-stat-tile .label { color: var(--text-secondary); font-size: 12px; margin-top: 1px; }
   .tooltip .muted { opacity: 0.7; font-size: 14px; }
@@ -1194,11 +1248,6 @@
   .mm-tooltip .mmt-title-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 600; }
   .mm-tooltip .mmt-row { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; color: var(--text-secondary); }
   .mm-tooltip .mmt-mispricing { margin-top: 6px; font-weight: 600; }
-  .mm-lasso-box {
-    position: absolute; border: 1.5px dashed var(--series-2);
-    background: color-mix(in srgb, var(--series-2) 8%, transparent);
-    pointer-events: none; z-index: 5;
-  }
   .mm-selection-tray {
     position: sticky; bottom: 0; background: var(--surface-1); border-top: 0.5px solid var(--border);
     padding: 10px 16px; display: flex; gap: 10px; align-items: center;
@@ -1207,8 +1256,9 @@
   .mm-selection-tray[data-visible="1"] { opacity: 1; }
   #marketTable tr.map-selected-row { background: color-mix(in srgb, var(--series-2) 12%, transparent); }
 
-  /* Map B spec (2026-08-27): zoom/pan, side panel, size legend. */
-  #mmZoomLayer { position: relative; }
+  /* Map B spec (2026-08-27); D3 redesign (2026-08-31) keeps this same
+     overlay-controls layout, now positioned over the SVG instead of the
+     old canvas+zoom-transform layer. */
   .mm-zoom-controls { position: absolute; top: 10px; right: 10px; z-index: 6; display: flex; flex-direction: column; gap: 4px; }
   .mm-zoom-controls button { width: 28px; height: 28px; border-radius: 6px; border: 0.5px solid var(--border);
     background: var(--surface-1); color: var(--text-primary); cursor: pointer; font-size: 15px; line-height: 1; }
@@ -1218,8 +1268,6 @@
     font-size: 11px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px; }
   .mm-size-legend-row { display: flex; align-items: center; gap: 6px; }
   .mm-size-legend-dot { border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
-  .mm-cluster-label { position: absolute; font-size: 11px; color: var(--text-muted); pointer-events: none;
-    transform: translate(-50%, -50%); white-space: nowrap; z-index: 4; }
   .pd-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
   .pd-row .pd-label { width: 92px; font-size: 12px; opacity: 0.85; }
   .pd-bar-track { flex: 1; height: 6px; background: rgba(255,255,255,0.18); border-radius: 4px; overflow: hidden; }
@@ -1266,10 +1314,13 @@
   #cbrChart { width: 100%; height: 320px; display: block; }
   .cbr-chart-card { position: relative; }
 
-  /* Mobile-overflow audit (2026-08-21): #mmChart/#cbrChart both pin their
-     CSS width to 100% of their container, so drawMap()/drawChart() reading
-     canvas.getBoundingClientRect() back always measures the CONTAINER's
-     available width. #spreadHistChart had no such rule -- drawSpreadHistChart()
+  /* Mobile-overflow audit (2026-08-21): #mmSvgWrap/#cbrChart both pin their
+     CSS width to 100% of their container, so renderMarketMap()/drawChart()
+     reading the WRAPPER DIV's clientWidth (not the drawn SVG/canvas
+     element's own box) always measures the CONTAINER's available width --
+     same lesson, ported from the old #mmChart canvas to the D3 redesign's
+     #mmSvgWrap div (Market map redesign, 2026-08-31). #spreadHistChart had
+     no such rule -- drawSpreadHistChart()
      falls back to a hardcoded 800 CSS px (`rect.width || 800`) the first time
      it draws while its tab is still hidden (rect.width reads 0 there), which
      then sets canvas.width=800. With no CSS width to override that, every
@@ -2422,57 +2473,19 @@
 
       <div id="marketMapView" style="display:none">
         <div class="mm-controls">
-          <div class="mm-ctrl-group"><label>Y</label>
-            <select id="mmSelY">
-              <option value="mispricing">Недооценка/переоценка (бп)</option>
-              <option value="ytm" selected>YTM, %</option>
-              <option value="gspread">G-спред (бп)</option>
-              <option value="pdgap">PD рынок−PD рейтинг (%)</option>
-              <option value="pdmarket">PD по цене рынка (%)</option>
-            </select>
-          </div>
-          <div class="mm-ctrl-group"><label>X</label>
-            <select id="mmSelX">
-              <option value="moddur" selected>Модифицированная дюрация</option>
-              <option value="duration">Дюрация (лет)</option>
-              <option value="maturity">Срок до погашения</option>
-              <option value="offer">Срок до оферты</option>
-            </select>
-          </div>
           <div class="mm-ctrl-group"><label>Цвет</label>
             <select id="mmSelColor">
               <option value="mispricing" selected>Недооценка/переоценка</option>
-              <option value="pdgap">Разрыв PD рынок vs рейтинг</option>
+              <option value="health">Здоровье</option>
               <option value="rating">Рейтинг</option>
               <option value="sector">Сектор</option>
-              <option value="liquidity">Ликвидность</option>
             </select>
           </div>
-          <div class="mm-ctrl-group"><label>Размер</label>
-            <select id="mmSelSize">
-              <option value="volume" selected>Объём торгов</option>
-              <option value="moddur">Модиф. дюрация (риск)</option>
-              <option value="equal">Равный</option>
-            </select>
-          </div>
-        </div>
-        <div class="mm-filter-row">
-          <label class="chk"><input type="checkbox" id="mmFOfz" checked> ОФЗ кривая</label>
-          <label class="chk"><input type="checkbox" id="mmFFair" checked> Справедл. спреды</label>
-          <label class="chk"><input type="checkbox" id="mmFPdIso"> PD изолинии</label>
-          <label class="chk"><input type="checkbox" id="mmFStar" checked> ★ Вотчлист</label>
-          <label class="chk" id="mmFYieldCeilingLabel" title="Пер-рейтинговый потолок доходности (Task A): красная линия — рыночный спред пробил потолок относительно справедливого спреда рейтинга (доходность оторвалась от рейтинга, см. compute/inflection.py); жёлтая — начало зоны повышенного риска. Только для рейтингов, реально присутствующих на графике."><input type="checkbox" id="mmFYieldCeiling"> Показать предел доходности</label>
         </div>
         <div class="mm-signal-bar" id="mmSignalBar"></div>
         <div class="health-pill-group" id="mmFilterPills" style="display:none;margin-bottom:8px"></div>
         <div class="mm-chart-card" id="mmChartCard" style="position:relative">
-          <!-- Map B spec (2026-08-27): canvas + lasso box share one transformed
-               layer so a CSS zoom/pan transform moves them together; controls,
-               side panel, legends stay outside it (unaffected by zoom). -->
-          <div id="mmZoomLayer" style="transform-origin:0 0">
-            <canvas id="mmChart"></canvas>
-            <div class="mm-lasso-box" id="mmLassoBox" style="display:none"></div>
-          </div>
+          <div id="mmSvgWrap" style="width:100%;height:520px"></div>
           <div class="mm-zoom-controls" id="mmZoomControls">
             <button type="button" id="mmZoomInBtn" title="Увеличить">+</button>
             <button type="button" id="mmZoomOutBtn" title="Уменьшить">−</button>
@@ -2489,7 +2502,7 @@
           <button type="button" class="uni-btn" id="mmTrayClearBtn">✕ Очистить</button>
         </div>
         <div class="mm-stats-bar" id="mmStatsBar"></div>
-        <p class="uni-caveat">PD по цене рынка и PD по рейтингу — обе выведены из одной и той же таблицы вероятностей дефолта (Эксперт РА), поэтому PD-разрыв арифметически эквивалентен мисценке в бп, только в масштабе вероятности. ОФЗ-кривая — восстановленная по точкам (срок, безрисковая ставка), уже использованным при расчёте G-спреда каждой бумаги в этот день.</p>
+        <p class="uni-caveat">Заполненный круг — бумага из вотчлиста, круг с полым центром — только из общей вселенной (не в вотчлисте). Пунктирное кольцо — предупреждение: мисценка &gt; 1000бп или разрыв PD (рынок vs рейтинг) &gt; 10%. Ось Y ограничена 55% YTM — единичные более доходные бумаги на графике не показаны (см. таблицу).</p>
       </div>
       </div><!-- /corpMarketWrap -->
 
@@ -2679,6 +2692,7 @@
           <button type="button" class="subtab-btn" data-pftab="wall">Стена</button>
           <button type="button" class="subtab-btn" data-pftab="calendar">Календарь</button>
           <button type="button" class="subtab-btn" data-pftab="presets">Пресеты</button>
+          <button type="button" class="subtab-btn" data-pftab="compare">Сравнение</button>
         </div>
       </div>
 
@@ -2944,6 +2958,28 @@
           </div>
         </div>
       </div>
+
+      <!-- Multiple portfolio comparison (2026-08-31): compares up to 3 of
+           the real saved DB portfolios (status='active' in `portfolio`,
+           written by `hybond portfolio-build --save`) side by side -- reads
+           DATA.portfolios (export_all_active_portfolios() in
+           export_dashboard_data.py), NOT the Пресеты subtab's client-side
+           Builder preview above (which never touches these tables, see
+           save_portfolio()'s docstring in portfolio.py). -->
+      <div class="pftab-panel" id="pftab-compare">
+        <h3 style="margin-top:18px">Сравнение портфелей</h3>
+        <p class="section-note">Сравнение сохранённых портфелей (до 3 одновременно) — те же данные, что показаны в «Обзор» для активного портфеля, только рядом. Отметьте портфели ниже, «+ Новый» ведёт к построению нового пресета.</p>
+        <div id="pfCompareEmpty" style="display:none"></div>
+        <div id="pfCompareContent" style="display:none">
+          <div class="pf-compare-selector" id="pfCompareSelector"></div>
+          <div class="pf-compare-grid" id="pfCompareGrid"></div>
+          <h3 class="pf-h3-sep" style="margin-top:22px">Секторальное перекрытие</h3>
+          <div class="card"><div id="pfCompareSectorBars"></div></div>
+          <h3 class="pf-h3-sep" style="margin-top:22px">Распределение по рейтингу</h3>
+          <div class="card"><div id="pfCompareRatingBars"></div></div>
+          <div class="section-note" id="pfCompareOverlap" style="margin-top:14px"></div>
+        </div>
+      </div>
     </section>
   </div>
 
@@ -3050,18 +3086,12 @@ function applyFontScale(pct) {
   fontSizeSlider.value = pct;
   fontSizeReadout.textContent = pct + '%';
   localStorage.setItem(FONT_SCALE_KEY, pct);
-  // Map rendering fix (2026-08-28): mmResizeCanvas() only runs inside
-  // drawMap(), and nothing previously called drawMap() when zoom changed --
-  // confirmed live: changing `zoom` here resizes the market-map canvas's
-  // CSS box immediately, but its internal pixel buffer (canvas.width/height)
-  // stays at the OLD size until the next drawMap() call, so the browser
-  // stretches the stale bitmap to fit the new box. That mismatch is what
-  // was reported as a "double-bubble" artifact (every circle resampled/
-  // blurred by the stretch, not a second shape actually being drawn) and,
-  // separately, as a hit-testing offset (mmPlotPoints/rect measurements
-  // going stale relative to what's on screen). __marketMapRedraw() already
-  // no-ops when the map isn't the active view, so this is safe to call
-  // unconditionally on every slider tick.
+  // Map rendering fix (2026-08-28): the font-size zoom changes the market
+  // map's on-screen box, so it needs a redraw to pick up the new width --
+  // __marketMapRedraw() already no-ops when the map isn't the active view,
+  // so this is safe to call unconditionally on every slider tick. (The
+  // original canvas map additionally had a stale-pixel-buffer artifact
+  // here; the D3/SVG redesign, 2026-08-31, has no such buffer to go stale.)
   if (window.__marketMapRedraw) window.__marketMapRedraw();
 }
 fontSizeSlider.addEventListener('input', () => applyFontScale(+fontSizeSlider.value));
@@ -3140,7 +3170,7 @@ function sectorColor(s) {
 // selectedSecids (Map A spec, 2026-08-27): the multi-select array driven by
 // the map's own click/shift+click/lasso gestures -- selectedSecid (singular,
 // above) stays as-is for the table-row-click-to-highlight path from the
-// Screener task; drawMap()'s highlight ring checks both.
+// Screener task; renderMarketMap()'s bubble highlight checks both.
 // Unified filter bar + Эмитенты/Облигации tabs task (2026-08-28): extends
 // screenFilter with the new Скрининг view's own state. Persistence
 // (SCREENING_FILTER_LS_KEY) is scoped to ONLY these 5 new fields, not the
@@ -7968,8 +7998,8 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     // otherwise.
     table.querySelectorAll('tr.bond-row').forEach(tr => tr.addEventListener('click', () => {
       // Screener spec (2026-08-27): selecting a bond here also flags it for
-      // the map (drawMap() draws a highlight ring around a point matching
-      // screenFilter.selectedSecid) -- update() rather than a direct
+      // the map (renderMarketMap() draws a highlight ring around a bubble
+      // matching screenFilter.selectedSecid) -- update() rather than a direct
       // assignment so any other listener sees the change too.
       window.screenFilter.update({ selectedSecid: tr.dataset.secid });
       openBondDrawer(tr.dataset.secid);
@@ -8042,10 +8072,10 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   }
 
   // ================= market-map (scatter) view =====================
-  // Ported from the former standalone market_map_template.html -- display
-  // logic (axes/color/size/overlay toggles) is map-only, but the bond set
-  // it draws comes from the exact same computeFiltered() the table uses.
-  const RECOVERY = 0.35;
+  // D3-based scatter plot (Market map redesign, 2026-08-31), replacing the
+  // former hand-rolled canvas implementation entirely -- display logic
+  // (color mode/pills) is map-only, but the bond set it draws comes from
+  // the exact same computeFiltered() the table uses, same as before.
 
   function ratingRank(r) {
     if (!r) return null;
@@ -8062,13 +8092,6 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   // SECTOR_PALETTE/sectorColor hoisted to top-level scope (see near
   // RATING_ORDER) so portfolioTab()'s sector treemap can reuse this exact
   // mapping -- no local copy here anymore.
-  function liquidityColor(numTrades) {
-    const t = Math.max(0, Math.min(1, Math.log10((numTrades||0) + 1) / 3));
-    const rr = Math.round(160 * (1 - t) + 40 * t);
-    const g = Math.round(160 * (1 - t) + 120 * t);
-    const b = Math.round(160 * (1 - t) + 220 * t);
-    return `rgb(${rr},${g},${b})`;
-  }
   // Feature 7 (2026-08-27): this is the actual per-bubble fill color for the
   // default "mispricing" color mode (and the tooltip badge), previously a
   // hardcoded green/amber/red literal picked for the dark theme -- the
@@ -8088,452 +8111,81 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     if (v >= -300) return c.yellow;
     return c.red;
   }
-  function pdGapColor(v, cache) {
-    if (v === null || v === undefined) return (cache || {}).grey || '#9a9890';
-    return mmMisColor(v * 10000, cache);
+  const mmState = { color: 'mispricing' };
+  const MM_HEALTH_VAR = { green: '--verdict-green', yellow: '--verdict-yellow', orange: '--verdict-orange', red: '--verdict-red' };
+  function mmHealthColor(status, cache) {
+    const key = MM_HEALTH_VAR[(status || 'green').toLowerCase()] || MM_HEALTH_VAR.green;
+    if (cache && cache.health && cache.health[key]) return cache.health[key];
+    return getComputedStyle(document.documentElement).getPropertyValue(key).trim() || '#9a9890';
   }
-  const mmState = { y: 'ytm', x: 'moddur', color: 'mispricing', size: 'volume', fOfz: true, fFair: true, fPdIso: false, fStar: true, fYieldCeiling: false };
   function colorFor(b, cache) {
     switch (mmState.color) {
       case 'mispricing': return mmMisColor(b.mispricing_bp, cache);
-      case 'pdgap': return pdGapColor(b.pd_gap, cache);
+      case 'health': return mmHealthColor(b.health_status, cache);
       case 'rating': return ratingColor(b.rating);
       case 'sector': return sectorColor(b.sector);
-      case 'liquidity': return liquidityColor(b.num_trades);
       default: return '#2a78d6';
     }
   }
-  // Fair-value overlay (extends #mmFFair, no separate toggle -- see that
-  // checkbox's own comments): same DATA.fair_value_bp_by_tier the dashed
-  // per-tier curve lines already draw from, read via the SAME ratingTier()
-  // the coupon filter already uses to go from a granular rating ("ruBB+")
-  // to the tier the curve is keyed by ("BB"). g_spread_bp is already
-  // ytm-minus-rf in bp (universe_pipeline.py), so subtracting the tier's
-  // fair bp value directly gives "how far this bond's spread sits above/
-  // below its tier's fair curve", in bp -- no need to re-derive rf/duration
-  // client-side, and no recomputation of the curve itself. null (not 0)
-  // when there's no comparable tier (rating outside AA/A/BBB/BB, or no
-  // g_spread_bp) -- points like that fall back to their default color/
-  // tooltip rather than being silently treated as "fair".
-  function fairValueDeltaBp(b) {
-    if (!DATA.fair_value_bp_by_tier || b.g_spread_bp == null || !b.rating) return null;
-    const tier = ratingTier(b.rating);
-    const fairBp = DATA.fair_value_bp_by_tier[tier];
-    if (fairBp == null) return null;
-    return { deltaBp: b.g_spread_bp - fairBp, fairBp };
-  }
-  function tenorToOffer(b, snapDate) {
-    if (!b.offer_date || !snapDate) return null;
-    const off = new Date(b.offer_date), sd = new Date(snapDate);
-    const days = (off - sd) / 86400000;
-    return days > 0 ? days / 365 : null;
-  }
-  // Feature 7 (2026-08-27): per-axis tick formatting -- bp-scale metrics
-  // round to the nearest 50 (a bond-by-bond bp reading finer than that is
-  // noise at this chart's scale), percent-scale metrics keep 1 decimal.
-  const mmFmtBp50 = v => `${Math.round(v / 50) * 50}бп`;
-  const mmFmtPct1 = v => `${v.toFixed(1)}%`;
-  const mmFmtYrs1 = v => v.toFixed(1);
-  const Y_DEFS = {
-    mispricing: { label: 'Недооценка/переоценка, бп', get: b => b.mispricing_bp, fmt: mmFmtBp50 },
-    ytm: { label: 'YTM, %', get: b => b.ytm_pct, fmt: mmFmtPct1 },
-    gspread: { label: 'G-спред, бп', get: b => b.g_spread_bp, fmt: mmFmtBp50 },
-    pdgap: { label: 'PD рынок−PD рейтинг, %', get: b => b.pd_gap !== null && b.pd_gap !== undefined ? b.pd_gap * 100 : null, fmt: mmFmtPct1 },
-    pdmarket: { label: 'PD по цене рынка, %', get: b => b.pd_market !== null && b.pd_market !== undefined ? b.pd_market * 100 : null, fmt: mmFmtPct1 },
-  };
-  const X_DEFS = {
-    moddur: { label: 'Модифицированная дюрация, лет', get: b => b.mod_dur, fmt: mmFmtYrs1 },
-    duration: { label: 'Дюрация, лет', get: b => b.duration_yrs, fmt: mmFmtYrs1 },
-    maturity: { label: 'Срок до погашения, лет', get: b => b.tenor_yrs, fmt: mmFmtYrs1 },
-    offer: { label: 'Срок до оферты, лет', get: (b, snapDate) => tenorToOffer(b, snapDate), fmt: mmFmtYrs1 },
-  };
-  function sizeFor(b) {
-    if (mmState.size === 'equal') return 4.5;
-    if (mmState.size === 'moddur') { const d = b.mod_dur || 0; return 3 + Math.min(9, d * 1.8); }
-    const v = Math.sqrt(Math.max(0, b.volume || 0));
-    return 3 + Math.min(11, v / 250);
-  }
+
+  // X = mod_dur (fixed 0-3.5 years), Y = ytm_pct (fixed 0-55%, p95-ish cap
+  // for this market -- a handful of garbage-data/distressed outliers above
+  // that are simply not plotted, same as any bond missing mod_dur/ytm_pct)
+  // -- Market map redesign (2026-08-31) trades the old X/Y/size dropdowns
+  // and 4 overlay toggles for a fixed, simpler view; see DECISIONS.md for
+  // the scope call (confirmed with the user before dropping them).
+  const MM_X_MIN = 0, MM_X_MAX = 3.5;
+  const MM_Y_MIN = 0, MM_Y_MAX = 55;
+  const MM_MARGIN = { top: 20, right: 24, bottom: 50, left: 60 };
+
   function mmFilteredBonds() {
-    const snapDate = bucket(timeKey).snap_date;
-    const yDef = Y_DEFS[mmState.y], xDef = X_DEFS[mmState.x];
-    return computeFiltered()
-      .map(b => ({ b, xv: xDef.get(b, snapDate), yv: yDef.get(b) }))
-      .filter(p => p.xv !== null && p.xv !== undefined && p.yv !== null && p.yv !== undefined
-                   && isFinite(p.xv) && isFinite(p.yv));
-  }
-  function interpRf(tenor) {
-    const pts = DATA.rf_curve;
-    if (!pts || !pts.length) return null;
-    if (tenor <= pts[0].tenor_yrs) return pts[0].rf_pct;
-    if (tenor >= pts[pts.length - 1].tenor_yrs) return pts[pts.length - 1].rf_pct;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i], c = pts[i + 1];
-      if (tenor >= a.tenor_yrs && tenor <= c.tenor_yrs) {
-        const t = (tenor - a.tenor_yrs) / (c.tenor_yrs - a.tenor_yrs);
-        return a.rf_pct + t * (c.rf_pct - a.rf_pct);
-      }
-    }
-    return null;
+    return computeFiltered().filter(b =>
+      b.mod_dur != null && isFinite(b.mod_dur) && b.ytm_pct != null && isFinite(b.ytm_pct)
+      && b.mod_dur >= MM_X_MIN && b.mod_dur <= MM_X_MAX && b.ytm_pct >= MM_Y_MIN && b.ytm_pct <= MM_Y_MAX);
   }
 
-  const mmCanvas = document.getElementById('mmChart');
-  const mmCtx = mmCanvas.getContext('2d');
-  const mmTooltip = document.getElementById('tooltip'); // reuse the dashboard's own tooltip element
-  let mmPlotPoints = [];
+  // Radius: sqrt-scaled by volume (area, not radius, proportional to
+  // volume -- the standard bubble-chart convention so a 4x volume bond
+  // doesn't look 4x as "big" on screen), clamped to [4,18]px.
+  function mmRadiusScale(bonds) {
+    const maxVol = d3.max(bonds, b => b.volume || 0) || 1;
+    return d3.scaleSqrt().domain([0, maxVol]).range([4, 18]).clamp(true);
+  }
 
-  // Map A spec (2026-08-27): hover/lasso/selection state, local to this
-  // IIFE -- drawMap() (below) reads mmHoveredSecid for the enlarge/dim
-  // effect, and window.screenFilter.selectedSecids for the selection ring
-  // + opacity, on every redraw.
+
   const mmRichTooltip = document.getElementById('mmTooltip');
-  let mmHoveredSecid = null;
-  let mmHoverShowTimer = null;
-  let mmHoverArmedFor = null; // secid the 200ms timer is currently counting for
-  let mmLassoStart = null;    // {mx, my} in canvas-local coords, or null
-  let mmLassoActive = false;  // drag exceeded the click threshold
-  let mmLassoJustFinished = false; // suppresses the native click that follows a drag's mouseup
-  let mmMouseDownOnBubble = false;
-
-  // Map B spec (2026-08-27): zoom/pan state. Applied as a CSS transform on
-  // #mmZoomLayer (canvas + lasso box together, see the HTML) rather than
-  // touching drawMap()'s own coordinate math -- mmPlotPoints stay expressed
-  // in the canvas's own untransformed local space, and every mouse-coordinate
-  // conversion below divides by mmZoomScale to account for it (getBoundingClientRect()
-  // on a transformed element already reflects both the translate and the
-  // scale, so this one division is the whole adjustment needed).
-  let mmZoomScale = 1, mmOffsetX = 0, mmOffsetY = 0;
-  let mmPanStart = null;   // {clientX, clientY, offsetX, offsetY} while a plain drag pans
-  let mmPanMoved = false;
-  let mmPanJustFinished = false; // suppresses the native click after a real pan drag, like mmLassoJustFinished
-
-  function mmPad() { return { l: 56, r: 18, t: 18, b: 42 }; }
-  function mmResizeCanvas() {
-    const rect = mmCanvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    mmCanvas.width = Math.round(rect.width * dpr);
-    mmCanvas.height = Math.round(520 * dpr);
-    mmCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  function mmHideTooltip() { mmRichTooltip.style.opacity = 0; }
+  function mmPositionTooltip(clientX, clientY) {
+    mmRichTooltip.style.left = '-9999px'; mmRichTooltip.style.top = '-9999px';
+    const rect = mmRichTooltip.getBoundingClientRect();
+    let x = clientX + 12, y = clientY + 12;
+    if (x + rect.width > window.innerWidth) x = clientX - 12 - rect.width;
+    if (y + rect.height > window.innerHeight) y = clientY - 12 - rect.height;
+    mmRichTooltip.style.left = Math.max(0, x) + 'px';
+    mmRichTooltip.style.top = Math.max(0, y) + 'px';
   }
-  function mmNiceRange(vals) {
-    let lo = Math.min(...vals), hi = Math.max(...vals);
-    if (lo === hi) { lo -= 1; hi += 1; }
-    const pad = (hi - lo) * 0.08;
-    return [lo - pad, hi + pad];
+  function mmShowTooltipFor(b, clientX, clientY) {
+    const iss = bondLookup.has(b.secid) ? bondLookup.get(b.secid).issuer : null;
+    const health = (b.health_status || (iss ? iss.health_status : null) || 'green').toUpperCase();
+    const volM = b.volume != null ? (b.volume / 1e6).toFixed(1) + 'М ₽' : '—';
+    const misHtml = (!b.signal_excluded && b.mispricing_bp != null)
+      ? `<div class="mmt-mispricing" style="color:${mmMisColor(b.mispricing_bp)}">Миспрайсинг: ${b.mispricing_bp > 0 ? '+' : ''}${Math.round(b.mispricing_bp)}бп ${b.mispricing_bp < 0 ? 'недооценена' : 'переоценена'}</div>`
+      : '';
+    mmRichTooltip.innerHTML = `
+      <div class="mmt-title-row"><span>${escapeHtml(b.emitent_title || b.short_name || b.secid)}</span>${b.in_watchlist ? '<span>★</span>' : ''}</div>
+      <div class="mmt-row"><span>Рейтинг: ${b.rating || 'нет'}</span><span>Здоровье: ${health}</span></div>
+      <div class="mmt-row"><span>YTM: ${b.ytm_pct != null ? b.ytm_pct.toFixed(1) + '%' : '—'}</span><span>AEY: ${b.aey_base_risk_adj_pct != null ? b.aey_base_risk_adj_pct.toFixed(1) + '%' : '—'}</span></div>
+      <div class="mmt-row"><span>G-спред: ${b.g_spread_bp != null ? (b.g_spread_bp > 0 ? '+' : '') + Math.round(b.g_spread_bp) + 'бп' : '—'}</span><span>Дюрация: ${b.mod_dur != null ? b.mod_dur.toFixed(1) + ' лет' : '—'}</span></div>
+      <div class="mmt-row"><span>Сектор: ${b.sector ? sectorLabel(b.sector) : '—'}</span><span>Объём: ${volM}</span></div>
+      ${misHtml}
+    `;
+    mmPositionTooltip(clientX, clientY);
+    mmRichTooltip.style.opacity = 1;
   }
 
-  function drawMap() {
-    mmResizeCanvas();
-    const rect = mmCanvas.getBoundingClientRect();
-    const W = rect.width, H = 520;
-    mmCtx.clearRect(0, 0, W, H);
-    const P = mmPad();
-    const plotW = W - P.l - P.r, plotH = H - P.t - P.b;
-
-    const pts = mmFilteredBonds();
-    mmPlotPoints = [];
-    const styles = getComputedStyle(document.documentElement);
-    const gridColor = styles.getPropertyValue('--grid').trim() || '#e1e0d9';
-    const textColor = styles.getPropertyValue('--text-secondary').trim() || '#52514e';
-    // Feature 7 (2026-08-27): axis TITLES are --text-primary/14px/500,
-    // distinct from tick labels (textColor, --text-secondary/12px, above).
-    const textColorPrimary = styles.getPropertyValue('--text-primary').trim() || '#0b0b0b';
-    // Fair-value point recoloring (#mmFFair, when checked) -- read once per
-    // frame, same pattern as gridColor/textColor above.
-    const fairRedColor = styles.getPropertyValue('--verdict-red').trim() || '#E74C3C';
-    const fairGreenColor = styles.getPropertyValue('--verdict-green').trim() || '#2ECC71';
-    const fairNeutralColor = textColor;
-    // Feature 7 (2026-08-27): precomputed once per frame, same pattern as
-    // the colors above -- passed into colorFor()/mmMisColor() below so the
-    // per-bond render loop (up to ~2000 points) doesn't call
-    // getComputedStyle for every single dot.
-    const mmColorCache = {
-      green: fairGreenColor, red: fairRedColor,
-      yellow: styles.getPropertyValue('--verdict-yellow').trim() || '#c98a00',
-      grey: styles.getPropertyValue('--verdict-grey').trim() || '#9a9890',
-    };
-
-    const emptyOverlay = document.getElementById('mmEmptyOverlay');
-    if (!pts.length) {
-      emptyOverlay.innerHTML = emptyStateHtml({
-        icon: 'search', title: 'Нет облигаций по заданным фильтрам',
-        actionHtml: '<button type="button" class="uni-btn" id="mmResetFiltersBtn">Сбросить фильтры</button>',
-      });
-      emptyOverlay.style.display = '';
-      const resetBtn = document.getElementById('mmResetFiltersBtn');
-      if (resetBtn) resetBtn.addEventListener('click', resetMarketFilters);
-      updateSignalBar([]); updateMmStats([]); updateLegend(); renderMmFilterPills();
-      mmPlotPoints = [];
-      window.hybondMmPlotPoints = mmPlotPoints; // pre-existing bug: this stayed stale on the empty path, misreporting the last non-empty frame's points
-      return;
-    }
-    emptyOverlay.style.display = 'none';
-
-    const xVals = pts.map(p => p.xv), yVals = pts.map(p => p.yv);
-    const [xLo, xHi] = mmNiceRange(xVals);
-    const [yLo, yHi] = mmNiceRange(yVals);
-    const sx = v => P.l + (v - xLo) / (xHi - xLo) * plotW;
-    const sy = v => P.t + plotH - (v - yLo) / (yHi - yLo) * plotH;
-
-    // Feature 7 (2026-08-27): tick font/color (12px, --text-secondary) now
-    // explicitly distinct from the axis title font (14px/500, --text-primary)
-    // drawn further below -- previously both used the same 10.5px/muted
-    // style, so titles never stood out from ticks.
-    const yDefTick = Y_DEFS[mmState.y], xDefTick = X_DEFS[mmState.x];
-    mmCtx.strokeStyle = gridColor; mmCtx.fillStyle = textColor;
-    mmCtx.font = '12px system-ui'; mmCtx.lineWidth = 1;
-    const NX = 6, NY = 6;
-    for (let i = 0; i <= NX; i++) {
-      const v = xLo + (xHi - xLo) * i / NX;
-      const px = sx(v);
-      mmCtx.beginPath(); mmCtx.moveTo(px, P.t); mmCtx.lineTo(px, P.t + plotH); mmCtx.stroke();
-      mmCtx.fillText(xDefTick.fmt(v), px - 12, P.t + plotH + 16);
-    }
-    for (let i = 0; i <= NY; i++) {
-      const v = yLo + (yHi - yLo) * i / NY;
-      const py = sy(v);
-      mmCtx.beginPath(); mmCtx.moveTo(P.l, py); mmCtx.lineTo(P.l + plotW, py); mmCtx.stroke();
-      mmCtx.fillText(yDefTick.fmt(v), 4, py + 3);
-    }
-    // Zero/reference line (Feature 7): only meaningful for the
-    // "Недооценка/переоценка" axis -- 0 is the fair-value boundary the
-    // mispricing color mode itself is keyed off (see mmMisColor above).
-    // Solid + slightly thicker than the dotted gridlines so it doesn't read
-    // as just another tick line.
-    if (mmState.y === 'mispricing' && yLo < 0 && yHi > 0) {
-      const zy = sy(0);
-      mmCtx.save(); mmCtx.strokeStyle = textColor; mmCtx.lineWidth = 1.4;
-      mmCtx.beginPath(); mmCtx.moveTo(P.l, zy); mmCtx.lineTo(P.l + plotW, zy); mmCtx.stroke();
-      mmCtx.fillText('Справедливая оценка', P.l + 6, zy - 4);
-      mmCtx.restore();
-    }
-    mmCtx.font = '500 14px system-ui'; mmCtx.fillStyle = textColorPrimary;
-    mmCtx.save();
-    mmCtx.translate(14, P.t + plotH / 2); mmCtx.rotate(-Math.PI / 2);
-    mmCtx.fillText(yDefTick.label, -50, 0);
-    mmCtx.restore();
-    mmCtx.fillText(xDefTick.label, P.l + plotW / 2 - 70, H - 6);
-
-    if (mmState.y === 'mispricing') {
-      // Same undervalue/overvalue semantic as fairGreenColor/fairRedColor
-      // above -- reuse those (theme-aware) rather than a second, separately
-      // hardcoded green/red pair that would silently drift from the CSS
-      // tokens on a light/dark theme switch.
-      mmCtx.save(); mmCtx.globalAlpha = 0.06;
-      mmCtx.fillStyle = fairGreenColor;
-      mmCtx.fillRect(P.l, P.t, plotW, sy(0) - P.t);
-      mmCtx.fillStyle = fairRedColor;
-      mmCtx.fillRect(P.l, sy(0), plotW, P.t + plotH - sy(0));
-      mmCtx.restore();
-      mmCtx.fillStyle = fairGreenColor; mmCtx.font = 'bold 11px system-ui';
-      mmCtx.fillText('↗ Недооценка', P.l + 6, P.t + 14);
-      mmCtx.fillStyle = fairRedColor;
-      mmCtx.fillText('↘ Переоценка', P.l + 6, P.t + plotH - 6);
-    }
-
-    const xIsMaturityLike = mmState.x === 'moddur' || mmState.x === 'duration' || mmState.x === 'maturity';
-
-    if (mmState.fOfz && mmState.y === 'ytm' && xIsMaturityLike && DATA.rf_curve && DATA.rf_curve.length) {
-      mmCtx.save(); mmCtx.strokeStyle = '#2a78d6'; mmCtx.setLineDash([5, 4]); mmCtx.lineWidth = 1.6;
-      mmCtx.beginPath();
-      let first = true;
-      for (let xv = xLo; xv <= xHi; xv += (xHi - xLo) / 60) {
-        const rf = interpRf(xv);
-        if (rf === null) continue;
-        const px = sx(xv), py = sy(rf);
-        if (first) { mmCtx.moveTo(px, py); first = false; } else mmCtx.lineTo(px, py);
-      }
-      mmCtx.stroke(); mmCtx.restore();
-      mmCtx.fillStyle = '#2a78d6'; mmCtx.font = '10.5px system-ui';
-      mmCtx.fillText('ОФЗ (безрисковая)', P.l + plotW - 110, P.t + 12);
-    }
-
-    if (mmState.fFair && mmState.y === 'ytm' && xIsMaturityLike && DATA.fair_value_bp_by_tier) {
-      const tierColors = { AA: '#1baf7a', A: '#2a78d6', BBB: '#eda100', BB: '#eb6834' };
-      Object.entries(DATA.fair_value_bp_by_tier).forEach(([tier, fairBp]) => {
-        mmCtx.save(); mmCtx.strokeStyle = tierColors[tier] || '#9a9890';
-        mmCtx.setLineDash([2, 3]); mmCtx.lineWidth = 1.2;
-        mmCtx.beginPath(); let first = true;
-        for (let xv = xLo; xv <= xHi; xv += (xHi - xLo) / 60) {
-          const rf = interpRf(xv);
-          if (rf === null) continue;
-          const fairYtm = rf + fairBp / 100;
-          const px = sx(xv), py = sy(fairYtm);
-          if (first) { mmCtx.moveTo(px, py); first = false; } else mmCtx.lineTo(px, py);
-        }
-        mmCtx.stroke(); mmCtx.restore();
-      });
-    }
-
-    // Task A -- PD-adjusted expected-value inflection (compute/
-    // inflection.py): per-rating-tier ceiling/caution reference lines, only
-    // for ratings actually present among the currently plotted points (no
-    // point cluttering the chart with tiers not in view). Converts each
-    // tier's ceiling_spread_bp/caution_spread_bp (market-spread-vs-implied-
-    // fair-spread decoupling thresholds -- the real CEILING, see the
-    // module's docstring for why floor_ytm is NOT drawn here: it's a
-    // near-zero-percent floor for every tier, indistinguishable at this
-    // chart's 20-100%+ ВДО yield scale) to a YTM line the same way the
-    // fFair block above converts fair_value_bp_by_tier -- rf + bp/100.
-    if (mmState.fYieldCeiling && mmState.y === 'ytm' && xIsMaturityLike && DATA.yield_inflection_by_rating) {
-      // Gold/dark tokens, not hardcoded hex -- ceiling = var(--verdict-red)
-      // ("доходность оторвалась от рейтинга" line), caution =
-      // var(--verdict-yellow) (early-warning zone). Read live via
-      // getComputedStyle since canvas strokeStyle can't take a CSS var()
-      // reference directly, same pattern gridColor/textColor above use.
-      const cautionColor = styles.getPropertyValue('--verdict-yellow').trim() || '#F5A623';
-      const ceilingColor = styles.getPropertyValue('--verdict-red').trim() || '#E74C3C';
-      const tiersPresent = [...new Set(pts.map(p => p.b.rating).filter(Boolean))];
-      tiersPresent.forEach(rating => {
-        const infl = DATA.yield_inflection_by_rating[rating];
-        if (!infl) return;
-        [
-          { bp: infl.caution_spread_bp, color: cautionColor, label: `${rating} ↑риск` },
-          { bp: infl.ceiling_spread_bp, color: ceilingColor, label: `${rating} потолок` },
-        ].forEach(({ bp, color, label }) => {
-          mmCtx.save(); mmCtx.strokeStyle = color; mmCtx.setLineDash([6, 3]);
-          mmCtx.lineWidth = 1.2; mmCtx.globalAlpha = 0.75;
-          mmCtx.beginPath();
-          let first = true, lastPx = null, lastPy = null;
-          for (let xv = xLo; xv <= xHi; xv += (xHi - xLo) / 60) {
-            const rf = interpRf(xv);
-            if (rf === null) continue;
-            const ytm = rf + bp / 100;
-            const px = sx(xv), py = sy(ytm);
-            if (first) { mmCtx.moveTo(px, py); first = false; } else mmCtx.lineTo(px, py);
-            lastPx = px; lastPy = py;
-          }
-          mmCtx.stroke(); mmCtx.restore();
-          if (lastPx !== null && lastPy >= P.t && lastPy <= P.t + plotH) {
-            mmCtx.fillStyle = color; mmCtx.font = '9px system-ui';
-            mmCtx.fillText(label, Math.max(P.l, Math.min(lastPx - 55, P.l + plotW - 65)), lastPy - 3);
-          }
-        });
-      });
-    }
-
-    if (mmState.fPdIso && mmState.y === 'ytm' && mmState.x === 'moddur') {
-      [0.05, 0.10, 0.20, 0.40].forEach(pd => {
-        mmCtx.save(); mmCtx.strokeStyle = '#9a5fd0'; mmCtx.setLineDash([1, 4]); mmCtx.lineWidth = 1;
-        mmCtx.beginPath(); let first = true;
-        for (let xv = xLo; xv <= xHi; xv += (xHi - xLo) / 60) {
-          const rf = interpRf(xv);
-          if (rf === null) continue;
-          const ytm = rf + (pd / (1 - RECOVERY)) * 100;
-          const px = sx(xv), py = sy(ytm);
-          if (py < P.t || py > P.t + plotH) continue;
-          if (first) { mmCtx.moveTo(px, py); first = false; } else mmCtx.lineTo(px, py);
-        }
-        mmCtx.stroke(); mmCtx.restore();
-        mmCtx.fillStyle = '#9a5fd0'; mmCtx.font = '9.5px system-ui';
-        mmCtx.fillText(`PD ${Math.round(pd * 100)}%`, P.l + plotW - 42, sy(interpRf(xHi) + (pd / (1 - RECOVERY)) * 100));
-      });
-    }
-
-    // Map A spec (2026-08-27): hover enlarge/dim and lasso-selection
-    // opacity. selectionActive wins over hover dimming when both would
-    // apply (a sticky lasso/shift-click selection shouldn't be further
-    // muddied by a transient hover) -- see mmSf below.
-    const mmSf = window.screenFilter;
-    const mmSelectionActive = !!(mmSf.selectedSecids && mmSf.selectedSecids.length);
-    let mmHoveredPx = null, mmHoveredPy = null;
-    if (mmHoveredSecid && !mmSelectionActive) {
-      const hp = pts.find(p => p.b.secid === mmHoveredSecid);
-      if (hp) { mmHoveredPx = sx(hp.xv); mmHoveredPy = sy(hp.yv); }
-    }
-    pts.forEach(({ b, xv, yv }) => {
-      const px = sx(xv), py = sy(yv);
-      if (px < P.l || px > P.l + plotW || py < P.t || py > P.t + plotH) return;
-      const isHovered = b.secid === mmHoveredSecid;
-      const r = isHovered && !mmSelectionActive ? sizeFor(b) * 1.3 : sizeFor(b);
-      let fillAlpha = 0.85;
-      if (mmSelectionActive) {
-        const isSelected = mmSf.selectedSecids.includes(b.secid) || b.secid === mmSf.selectedSecid;
-        fillAlpha = isSelected ? 0.85 : 0.35;
-      } else if (mmHoveredPx !== null && !isHovered) {
-        const distToHovered = Math.hypot(px - mmHoveredPx, py - mmHoveredPy);
-        if (distToHovered < 80) fillAlpha = 0.4;
-      }
-      let col = colorFor(b, mmColorCache);
-      // Fair-value overlay recoloring: only overrides the point's default
-      // color while #mmFFair is checked, and only for bonds with a
-      // comparable tier (fairValueDeltaBp returns null otherwise, e.g.
-      // unrated or CCC/B tiers the curve doesn't cover) -- those keep
-      // whatever colorFor(b) already gave them, exactly as if the overlay
-      // were off, rather than being forced into the neutral bucket.
-      //
-      // Also gated on mmState.color === 'mispricing' (Bug fix, 2026-08-25:
-      // Market Map Color System task) -- #mmFFair defaults to checked, and
-      // this override used to fire unconditionally regardless of the "Цвет"
-      // dropdown, so switching to Рейтинг/Сектор/Ликвидность/PD-разрыв
-      // visibly did nothing for any bond with a comparable rating tier
-      // (confirmed live: ~185/732 universe bonds are tier-comparable, and
-      // in the current ВДО market nearly all of those sit red-of-fair, so
-      // "all dots red regardless of dropdown" was the default view for most
-      // users). This bug predates the theme-awareness pass (commit 1fd55f6)
-      // by months -- that commit only swapped this block's hardcoded
-      // '#0ca30c'/'#d03b3b' literals for the (correctly theme-aware)
-      // fairGreenColor/fairRedColor consts already declared above in
-      // drawMap(); the override-regardless-of-color-mode behavior itself
-      // dates to the original mmState/#mmFFair feature (commit 3365955).
-      // The overlay is semantically a 3-bucket variant of the "Недооценка/
-      // переоценка" (mispricing) dropdown option, so scoping it to that one
-      // mode is the natural fix: it still recolors by fair-value delta in
-      // its own intended view, and no longer fights the other 4 modes.
-      if (mmState.fFair && mmState.color === 'mispricing') {
-        const fv = fairValueDeltaBp(b);
-        if (fv) {
-          const threshold = Math.abs(fv.fairBp) * 0.10;
-          col = fv.deltaBp > threshold ? fairRedColor
-              : fv.deltaBp < -threshold ? fairGreenColor
-              : fairNeutralColor;
-        }
-      }
-
-      // Warning glow rings (legended in updateLegend() as "зелёное/красное
-      // кольцо"): previously drawn with shadowBlur:10, which renders as a
-      // large soft halo well outside the ring itself -- at the bond's small
-      // radius this reads as an unwanted second faded circle around the dot
-      // rather than a ring. Kept as a crisp stroke at the bond's own radius
-      // instead: same color-coded signal, no blur halo.
-      if (b.mispricing_bp !== null && b.mispricing_bp > 1000) {
-        mmCtx.beginPath(); mmCtx.arc(px, py, r + 2, 0, 7); mmCtx.strokeStyle = fairGreenColor; mmCtx.lineWidth = 1.5; mmCtx.stroke();
-      }
-      if (b.pd_gap !== null && b.pd_gap > 0.10) {
-        mmCtx.beginPath(); mmCtx.arc(px, py, r + 2, 0, 7); mmCtx.strokeStyle = fairRedColor; mmCtx.lineWidth = 1.5; mmCtx.stroke();
-      }
-
-      mmCtx.beginPath(); mmCtx.arc(px, py, r, 0, 7);
-      mmCtx.fillStyle = col; mmCtx.globalAlpha = fillAlpha; mmCtx.fill(); mmCtx.globalAlpha = 1;
-      mmCtx.strokeStyle = 'rgba(0,0,0,0.25)'; mmCtx.lineWidth = 0.6; mmCtx.stroke();
-
-      // Screener spec (2026-08-27) + Map A spec: a bond clicked in the
-      // Рынок table (selectedSecid) or selected on the map itself (click/
-      // shift+click/lasso -> selectedSecids) gets a highlight ring here --
-      // textColor so it reads on both themes, same pattern as gridColor/
-      // textColor already read once per frame above.
-      if (b.secid === window.screenFilter.selectedSecid || (window.screenFilter.selectedSecids && window.screenFilter.selectedSecids.includes(b.secid))) {
-        mmCtx.beginPath(); mmCtx.arc(px, py, r + 4, 0, 7);
-        mmCtx.strokeStyle = textColor; mmCtx.lineWidth = 2; mmCtx.stroke();
-      }
-
-      if (mmState.fStar && b.in_watchlist) {
-        mmCtx.fillStyle = '#111'; mmCtx.font = 'bold 10px system-ui';
-        mmCtx.strokeStyle = '#fff'; mmCtx.lineWidth = 2;
-        mmCtx.strokeText('★', px + r + 1, py - r);
-        mmCtx.fillText('★', px + r + 1, py - r);
-      }
-
-      mmPlotPoints.push({ sx: px, sy: py, b });
-    });
-
-    updateSignalBar(pts.map(p => p.b));
-    updateMmStats(pts.map(p => p.b));
-    updateLegend();
-    renderMmFilterPills();
-    window.hybondMmPlotPoints = mmPlotPoints; // debug/test hook, same convention as window.hybondComputeVerdict
-    renderMmSizeLegend();
-    mmUpdateClusterLabels();
-  }
+  let mmSvg = null, mmG = null, mmZoom = null, mmXScale = null, mmYScale = null;
+  let mmCurrentTransform = null; // d3.zoomIdentity once d3 loads
+  let mmPlotWidth = 0, mmPlotHeight = 0;
 
   function updateSignalBar(bonds) {
     const noSignal = bonds.filter(b => !b.rating || b.signal_excluded);
@@ -8568,61 +8220,40 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   function updateLegend() {
     const legendEl = document.getElementById('mmLegendRow');
     let items = [];
-    // fFair overrides EVERY point's color regardless of the "Цвет" dropdown
-    // (see the pts.forEach loop) -- the legend has to match what's actually
-    // on screen, not the now-superseded mmState.color legend, or it would
-    // actively mislead about what the colors mean. Colors re-read here
-    // (not shared with drawMap()'s local fairRedColor/etc.) since this is a
-    // sibling function, not a nested closure -- same getComputedStyle
-    // pattern those were read with in the first place.
     const s = getComputedStyle(document.documentElement);
     const red = s.getPropertyValue('--verdict-red').trim() || '#E74C3C';
     const green = s.getPropertyValue('--verdict-green').trim() || '#2ECC71';
     const yellow = s.getPropertyValue('--verdict-yellow').trim() || '#c98a00';
+    const orange = s.getPropertyValue('--verdict-orange').trim() || '#E8920F';
     const grey = s.getPropertyValue('--verdict-grey').trim() || '#9a9890';
-    const neutral = s.getPropertyValue('--text-secondary').trim() || '#52514e';
-    if (mmState.fFair) {
-      items = [[red, '> +10% выше справедливого спреда'], [neutral, '±10% от справедливого'], [green, '> 10% ниже справедливого'], [grey, 'нет сопоставимого тира (AA/A/BBB/BB)']];
-    } else if (mmState.color === 'mispricing') {
-      // Feature 7 (2026-08-27): was hardcoded hex here, independently of
-      // colorFor()'s own theme-aware fix above -- the legend must show the
-      // SAME colors the bubbles actually render in, or it silently
-      // mismatches after a theme switch.
+    if (mmState.color === 'mispricing') {
       items = [[green,'> +300бп недооценка'], [yellow,'±300бп справедливо'], [red,'< -300бп переоценка'], [grey,'нет рейтинга']];
-    } else if (mmState.color === 'pdgap') {
-      items = [[green,'рынок пессимистичнее рейтинга'], [yellow,'близко к рейтингу'], [red,'рынок оптимистичнее рейтинга'], [grey,'нет рейтинга']];
+    } else if (mmState.color === 'health') {
+      items = [[green,'GREEN'], [yellow,'YELLOW'], [orange,'ORANGE'], [red,'RED']];
     } else if (mmState.color === 'rating') {
       items = [['rgb(40,190,70)','AAA/AA'], ['rgb(120,160,70)','A'], ['rgb(190,130,70)','BBB'], ['rgb(200,70,70)','BB и ниже']];
     } else if (mmState.color === 'sector') {
       const sectors = [...new Set((bucket(timeKey).bonds || []).map(b => b.sector).filter(Boolean))].slice(0, 8);
       items = sectors.map(s2 => [sectorColor(s2), sectorLabel(s2)]);
-    } else if (mmState.color === 'liquidity') {
-      items = [['rgb(160,160,160)','мало сделок'], ['rgb(40,120,220)','активно торгуется']];
     }
     legendEl.innerHTML = items.map(([c, l]) =>
       `<div class="mm-legend-item"><span class="mm-swatch" style="background:${c}"></span>${l}</div>`).join('')
-      + `<div class="mm-legend-item"><span style="color:${green}">◎</span> зелёное кольцо: мисценка &gt; 1000бп</div>`
-      + `<div class="mm-legend-item"><span style="color:${red}">◎</span> красное кольцо: PD-разрыв &gt; 10%</div>`;
+      + `<div class="mm-legend-item">● заполнен: вотчлист · ○ полый: только вселенная</div>`
+      + `<div class="mm-legend-item"><span style="color:${green}">◌</span> кольцо: мисценка &gt; 1000бп или PD-разрыв &gt; 10%</div>`;
   }
 
-  // Fix 3 (2026-08-28): inline sector/rating pills replacing the removed
-  // side panel. Only shown for the two color modes the underlying dimension
-  // is a discrete category for -- "Сектор" and "Рейтинг" -- everything else
-  // (mispricing/pdgap/liquidity) is a continuous scale a pill picker
-  // wouldn't meaningfully filter by. Sector pills reuse window.screenFilter
-  // .sectors, the SAME allow-list #mSectorPills (the Скринер tab's own
-  // sector row) already drives -- one filter, two pickers. Rating pills are
-  // new: window.screenFilter.ratings, gated in computeFiltered() above
-  // alongside sf.sectors. Tiers match ratingTier()'s real output set
-  // (BBB/BB/B/CCC/none) -- there is no separate "CC" tier in this system,
-  // ratingTier() already folds CC/C into CCC, so a 6th "ruCC" pill would be
-  // permanently empty/dead.
+  // Fix 3 (2026-08-28): inline sector/rating pills, unchanged from the old
+  // implementation -- only shown for the two color modes the underlying
+  // dimension is a discrete category for. Sector pills reuse
+  // window.screenFilter.sectors, the SAME allow-list #mSectorPills (the
+  // Скринер tab's own sector row) already drives. Rating pills reuse
+  // window.screenFilter.ratings.
   const MM_RATING_TIERS = ['BBB', 'BB', 'B', 'CCC', 'none'];
   const MM_RATING_TIER_LABEL = { BBB: 'ruBBB', BB: 'ruBB', B: 'ruB', CCC: 'ruCCC', none: 'Без рейтинга' };
   function mmRatingTierColor(tier) {
     if (tier === 'none') return '#9a9890';
     const idx = MM_RATING_TIERS.indexOf(tier);
-    const rank = idx / (MM_RATING_TIERS.length - 2); // BBB..CCC span 0..1, 'none' handled above
+    const rank = idx / (MM_RATING_TIERS.length - 2);
     const g = Math.round(190 * (1 - rank) + 40 * rank);
     const r2 = Math.round(40 * (1 - rank) + 200 * rank);
     return `rgb(${r2},${g},70)`;
@@ -8634,10 +8265,6 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       const sel = window.screenFilter.sectors;
       const allActive = sel.length === 0;
       const allStyle = allActive ? 'border-color:var(--text-primary);color:var(--text-primary);background:color-mix(in srgb, var(--text-primary) 10%, transparent)' : '';
-      // Full bucket, not mmFilteredBonds() -- a sector picked here must stay
-      // visible/clickable after it filters everything else out, same reason
-      // renderSectorPills() (Скринер tab) uses allBucketBonds rather than
-      // computeFiltered()'s own output.
       const sectors = [...new Set((bucket(timeKey).bonds || []).map(b => b.sector).filter(Boolean))].sort();
       wrap.innerHTML = `<button type="button" class="health-pill${allActive ? ' active' : ''}" data-mm-sector-all="1" style="${allStyle}">Все</button>`
         + sectors.map(s => {
@@ -8686,325 +8313,253 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     }
   }
 
-  // Feature 6b (2026-08-27): size legend. volume is raw MOEX VALTODAY units,
-  // NOT rubles (same caveat already documented elsewhere in this dashboard
-  // for that field) -- labeled honestly with real reference values pulled
-  // from the currently-plotted bonds rather than fabricated "100к/1М/10М ₽"
-  // figures the spec's example implied but this field can't actually back.
-  function renderMmSizeLegend() {
+  // Feature 6b (2026-08-27): size legend, unchanged semantics -- volume is
+  // raw MOEX VALTODAY units, NOT rubles.
+  function renderMmSizeLegend(bonds, rScale) {
     const el = document.getElementById('mmSizeLegend');
-    if (mmState.size === 'equal' || !mmPlotPoints.length) { el.innerHTML = ''; return; }
-    const isVolume = mmState.size === 'volume';
-    const vals = mmPlotPoints.map(p => isVolume ? (p.b.volume || 0) : (p.b.mod_dur || 0))
-      .filter(v => v > 0).sort((a, b) => a - b);
+    if (!bonds.length) { el.innerHTML = ''; return; }
+    const vals = bonds.map(b => b.volume || 0).filter(v => v > 0).sort((a, b) => a - b);
     if (!vals.length) { el.innerHTML = ''; return; }
     const pick = pct => vals[Math.min(vals.length - 1, Math.floor(vals.length * pct))];
     const refs = [pick(0.1), pick(0.5), pick(0.95)];
-    const toBond = v => isVolume ? { volume: v } : { mod_dur: v };
-    const title = isVolume ? 'Объём, усл. ед. MOEX' : 'Мод. дюрация, лет';
-    const fmtVal = v => isVolume ? Math.round(v).toLocaleString('ru-RU') : v.toFixed(1);
-    el.innerHTML = `<div style="font-weight:600;color:var(--text-primary)">${title}</div>` +
+    el.innerHTML = `<div style="font-weight:600;color:var(--text-primary)">Объём, усл. ед. MOEX</div>` +
       refs.map(v => {
-        const r = sizeFor(toBond(v));
-        return `<div class="mm-size-legend-row"><span class="mm-size-legend-dot" style="width:${r * 2}px;height:${r * 2}px"></span><span>${fmtVal(v)}</span></div>`;
+        const r = rScale(v);
+        return `<div class="mm-size-legend-row"><span class="mm-size-legend-dot" style="width:${r * 2}px;height:${r * 2}px"></span><span>${Math.round(v).toLocaleString('ru-RU')}</span></div>`;
       }).join('');
   }
 
-  // Feature 6c (2026-08-27): sector cluster labels, zoomed-out only. Note:
-  // bonds are NOT laid out by sector -- the scatter positions them by
-  // whatever financial metrics the X/Y dropdowns pick, so a sector's bonds
-  // can be spread across the whole chart rather than forming a visually
-  // tight cluster. This still places each label at that sector's real
-  // centroid among the CURRENTLY plotted points (literal reading of "at the
-  // centroid of each sector cluster"), which is informative when a sector
-  // does happen to concentrate in one area but can otherwise just mark its
-  // average position.
-  function mmUpdateClusterLabels() {
-    const container = document.getElementById('mmChartCard');
-    container.querySelectorAll('.mm-cluster-label').forEach(el => el.remove());
-    if (mmZoomScale >= 3 || !mmPlotPoints.length) return;
-    const opacity = mmZoomScale <= 1.5 ? 1 : Math.max(0, 1 - (mmZoomScale - 1.5) / 1.5);
-    if (opacity <= 0) return;
-    const bySector = new Map();
-    mmPlotPoints.forEach(p => {
-      const sec = p.b.sector;
-      if (!sec) return;
-      if (!bySector.has(sec)) bySector.set(sec, { sx: 0, sy: 0, n: 0 });
-      const c = bySector.get(sec);
-      c.sx += p.sx; c.sy += p.sy; c.n++;
-    });
-    const cardRect = container.getBoundingClientRect();
-    const canvasRect = mmCanvas.getBoundingClientRect(); // already reflects the zoom transform
-    bySector.forEach((c, sec) => {
-      if (c.n < 3) return; // a 1-2 point "cluster" centroid isn't a meaningful label
-      const localX = c.sx / c.n, localY = c.sy / c.n;
-      const x = canvasRect.left + localX * mmZoomScale - cardRect.left;
-      const y = canvasRect.top + localY * mmZoomScale - cardRect.top;
-      const labelEl = document.createElement('div');
-      labelEl.className = 'mm-cluster-label';
-      labelEl.style.left = x + 'px'; labelEl.style.top = y + 'px'; labelEl.style.opacity = opacity;
-      labelEl.textContent = sectorLabel(sec);
-      container.appendChild(labelEl);
-    });
+  // Sector cluster labels: centroid of each sector's CURRENTLY plotted
+  // points (Feature 6c, 2026-08-27) -- rendered as SVG <text> INSIDE the
+  // zoomed <g> so they pan/zoom with the content automatically (no manual
+  // pixel math against a CSS transform, unlike the old canvas+absolute-div
+  // version). Hidden above 2x zoom per spec.
+  function mmRenderClusterLabels(g, bonds, k) {
+    const opacity = k >= 2 ? 0 : (k <= 1.3 ? 1 : Math.max(0, 1 - (k - 1.3) / 0.7));
+    const bySector = d3.rollup(bonds.filter(b => b.sector),
+      v => ({ x: d3.mean(v, b => mmXScale(b.mod_dur)), y: d3.mean(v, b => mmYScale(b.ytm_pct)), n: v.length }),
+      b => b.sector);
+    const entries = Array.from(bySector.entries()).filter(([, c]) => c.n >= 3);
+    const sel = g.selectAll('.mm-cluster-label').data(entries, d => d[0]);
+    sel.exit().remove();
+    sel.enter().append('text').attr('class', 'mm-cluster-label')
+      .merge(sel)
+      .attr('x', d => d[1].x).attr('y', d => d[1].y)
+      .style('opacity', opacity)
+      .text(d => sectorLabel(d[0]));
   }
 
-  // Map A spec (2026-08-27): the old mousemove/click handlers here drove
-  // the shared #tooltip (showTip/hideTip, same element every OTHER hover in
-  // the dashboard uses) and opened the bond drawer on a plain click. Both
-  // are superseded below: the rich hover tooltip is its own dedicated
-  // element/content model (mmShowTooltipFor), and a plain click now selects
-  // (see the resolved click-semantics question) -- double-click opens the
-  // drawer instead, so that entry point isn't lost.
-  function mmHitTest(mx, my) {
-    let best = null, bestD = 12;
-    mmPlotPoints.forEach(p => {
-      const d = Math.hypot(p.sx - mx, p.sy - my);
-      if (d < bestD) { bestD = d; best = p; }
-    });
-    return best;
-  }
-  function mmHideTooltip() {
-    clearTimeout(mmHoverShowTimer); mmHoverShowTimer = null; mmHoverArmedFor = null;
-    if (mmHoveredSecid !== null) { mmHoveredSecid = null; drawMap(); }
-    mmRichTooltip.style.opacity = 0;
-  }
-  function mmPositionTooltip(clientX, clientY) {
-    mmRichTooltip.style.left = '-9999px'; mmRichTooltip.style.top = '-9999px'; // measure off-screen first
-    const rect = mmRichTooltip.getBoundingClientRect();
-    let x = clientX + 12, y = clientY + 12;
-    if (x + rect.width > window.innerWidth) x = clientX - 12 - rect.width;
-    if (y + rect.height > window.innerHeight) y = clientY - 12 - rect.height;
-    mmRichTooltip.style.left = Math.max(0, x) + 'px';
-    mmRichTooltip.style.top = Math.max(0, y) + 'px';
-  }
-  function mmShowTooltipFor(b, clientX, clientY) {
-    const iss = bondLookup.has(b.secid) ? bondLookup.get(b.secid).issuer : null;
-    const health = iss ? (iss.health_status || 'green').toUpperCase() : '—';
-    const volM = b.volume != null ? (b.volume / 1e6).toFixed(1) + 'М ₽' : '—';
-    const misHtml = (!b.signal_excluded && b.mispricing_bp != null)
-      ? `<div class="mmt-mispricing" style="color:${mmMisColor(b.mispricing_bp)}">Миспрайсинг: ${b.mispricing_bp > 0 ? '+' : ''}${Math.round(b.mispricing_bp)}бп ${b.mispricing_bp < 0 ? 'недооценена' : 'переоценена'}</div>`
-      : '';
-    mmRichTooltip.innerHTML = `
-      <div class="mmt-title-row"><span>${escapeHtml(b.emitent_title || b.short_name || b.secid)}</span>${b.in_watchlist ? '<span>★</span>' : ''}</div>
-      <div class="mmt-row"><span>Рейтинг: ${b.rating || 'нет'}</span><span>Здоровье: ${health}</span></div>
-      <div class="mmt-row"><span>YTM: ${b.ytm_pct != null ? b.ytm_pct.toFixed(1) + '%' : '—'}</span><span>AEY: ${b.aey_base_risk_adj_pct != null ? b.aey_base_risk_adj_pct.toFixed(1) + '%' : '—'}</span></div>
-      <div class="mmt-row"><span>G-спред: ${b.g_spread_bp != null ? (b.g_spread_bp > 0 ? '+' : '') + Math.round(b.g_spread_bp) + 'бп' : '—'}</span><span>Дюрация: ${b.mod_dur != null ? b.mod_dur.toFixed(1) + ' лет' : '—'}</span></div>
-      <div class="mmt-row"><span>Сектор: ${b.sector ? sectorLabel(b.sector) : '—'}</span><span>Объём: ${volM}</span></div>
-      ${misHtml}
-    `;
-    mmPositionTooltip(clientX, clientY);
-    mmRichTooltip.style.opacity = 1;
+  function mmSelectionState() {
+    const sf = window.screenFilter;
+    const ids = new Set((sf.selectedSecids && sf.selectedSecids.length) ? sf.selectedSecids : (sf.selectedSecid ? [sf.selectedSecid] : []));
+    return ids;
   }
 
-  // Map B spec (2026-08-27): every mouse coordinate below divides by
-  // mmZoomScale to convert a raw viewport click into the canvas's own local
-  // coordinate space -- see the mmZoomScale state comment above for why
-  // that one division is sufficient (getBoundingClientRect() on the
-  // transformed #mmZoomLayer already reflects the translate too).
-  //
-  // Page-zoom fix (2026-08-28): a task once asked for a SECOND division here
-  // by the page's own font-size zoom (document.documentElement.style.zoom),
-  // reasoning that getBoundingClientRect() needed a separate zoom
-  // correction on top of /mmZoomScale. Verified live this is wrong: rect is
-  // already the box's real on-screen (post-zoom) size, exactly like
-  // e.clientX is already a real on-screen coordinate -- both are in the
-  // SAME zoomed CSS-pixel space already, so no extra division is needed,
-  // and adding one double-counts zoom and breaks hit-testing at any zoom
-  // other than 100%. The actual bug behind that report was applyFontScale()
-  // never triggering a map redraw (see its own comment) -- once the canvas
-  // buffer is kept in sync with its CSS box, this function needs no change.
-  function mmLocalXY(e) {
-    const rect = mmCanvas.getBoundingClientRect();
-    return { mx: (e.clientX - rect.left) / mmZoomScale, my: (e.clientY - rect.top) / mmZoomScale };
-  }
+  // Full-rebuild render (Market map redesign, 2026-08-31): clears and
+  // redraws the whole SVG on every call, same cost profile as the old
+  // canvas drawMap() (~a few hundred to ~2000 circles, cheap either way) --
+  // no incremental D3 enter/update/exit diffing, deliberately, to keep this
+  // migration's surface area manageable. Zoom/pan transform persists across
+  // re-renders triggered by filter/color changes (only the Reset button
+  // clears it) via mmCurrentTransform.
+  function renderMarketMap() {
+    const wrap = document.getElementById('mmSvgWrap');
+    const bonds = mmFilteredBonds();
+    const width = Math.max(200, wrap.clientWidth);
+    const height = 480;
+    mmPlotWidth = width - MM_MARGIN.left - MM_MARGIN.right;
+    mmPlotHeight = height - MM_MARGIN.top - MM_MARGIN.bottom;
 
-  mmCanvas.addEventListener('mousemove', (e) => {
-    // Feature 4 (pan) moved to a window-level listener below -- a fast drag
-    // can carry the cursor outside the canvas mid-move, and mousemove
-    // wouldn't otherwise fire there, leaving mmPanStart stuck set (map
-    // appears jammed in pan mode on the next interaction). Same reasoning
-    // as the existing window mouseup listener just below.
-    if (mmPanStart && e.buttons === 1) return;
-
-    const { mx, my } = mmLocalXY(e);
-
-    // Feature 2 -- lasso drag in progress: draw the box, skip hover/tooltip
-    // entirely for this move (mmMouseDownOnBubble means the drag STARTED on
-    // a bubble, which is a click/shift-click gesture, not a lasso).
-    if (mmLassoStart && e.buttons === 1 && !mmMouseDownOnBubble) {
-      const dx = mx - mmLassoStart.mx, dy = my - mmLassoStart.my;
-      if (!mmLassoActive && Math.hypot(dx, dy) > 4) mmLassoActive = true;
-      if (mmLassoActive) {
-        mmHideTooltip();
-        // The box is a sibling of the canvas INSIDE #mmZoomLayer, so it's
-        // positioned in the same untransformed local units mmPlotPoints use
-        // -- the layer's own CSS transform scales/moves it automatically,
-        // same as the canvas.
-        const box = document.getElementById('mmLassoBox');
-        box.style.display = 'block';
-        box.style.left = Math.min(mmLassoStart.mx, mx) + 'px';
-        box.style.top = Math.min(mmLassoStart.my, my) + 'px';
-        box.style.width = Math.abs(dx) + 'px';
-        box.style.height = Math.abs(dy) + 'px';
-        return;
-      }
-    }
-
-    // Feature 1 -- hover tooltip, 200ms show delay, cancelled/restarted
-    // whenever the hovered bubble changes (not on every pixel of movement
-    // within the same bubble, which only repositions the already-shown tip).
-    const best = mmHitTest(mx, my);
-    if (!best) { mmHideTooltip(); return; }
-    const secid = best.b.secid;
-    if (secid !== mmHoverArmedFor) {
-      clearTimeout(mmHoverShowTimer);
-      mmHoverArmedFor = secid;
-      mmHoverShowTimer = setTimeout(() => {
-        mmHoveredSecid = secid;
-        drawMap();
-        mmShowTooltipFor(best.b, e.clientX, e.clientY);
-      }, 200);
-    } else if (mmHoveredSecid === secid) {
-      mmPositionTooltip(e.clientX, e.clientY);
-    }
-  });
-  mmCanvas.addEventListener('mouseleave', mmHideTooltip);
-
-  // Feature 2/4 -- drag start: only from empty canvas space. A mousedown ON
-  // a bubble is left alone here so the eventual click/dblclick handlers
-  // below see it as a normal click gesture, not a drag. Shift held down ->
-  // lasso (Map B's resolved drag-semantics choice); otherwise -> pan.
-  mmCanvas.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return;
-    const { mx, my } = mmLocalXY(e);
-    const best = mmHitTest(mx, my);
-    mmMouseDownOnBubble = !!best;
-    if (best) return;
-    if (e.shiftKey) {
-      mmLassoStart = { mx, my }; mmLassoActive = false;
-    } else {
-      mmPanStart = { clientX: e.clientX, clientY: e.clientY, offsetX: mmOffsetX, offsetY: mmOffsetY };
-      mmPanMoved = false;
-    }
-  });
-  // Pan tracking, bound to window rather than mmCanvas for the same reason
-  // as mouseup just below: a fast drag can carry the cursor outside the
-  // canvas mid-move, and canvas mousemove wouldn't fire there, leaving the
-  // map stuck panning (or unable to start a new gesture) afterward.
-  window.addEventListener('mousemove', (e) => {
-    if (!mmPanStart || e.buttons !== 1) return;
-    const dx = e.clientX - mmPanStart.clientX, dy = e.clientY - mmPanStart.clientY;
-    if (!mmPanMoved && Math.hypot(dx, dy) > 4) mmPanMoved = true;
-    if (mmPanMoved) {
-      mmHideTooltip();
-      mmOffsetX = mmPanStart.offsetX + dx;
-      mmOffsetY = mmPanStart.offsetY + dy;
-      mmClampPan();
-      mmApplyZoomTransform(false);
-    }
-  });
-  // Bound to window, not mmCanvas -- a fast drag can end with the cursor
-  // outside the canvas, and mouseup wouldn't otherwise fire there.
-  window.addEventListener('mouseup', (e) => {
-    mmMouseDownOnBubble = false;
-    if (mmPanStart) {
-      if (mmPanMoved) mmPanJustFinished = true; // browser still fires 'click' right after -- swallowed below
-      mmPanStart = null; mmPanMoved = false;
-    }
-    if (!mmLassoStart) return;
-    if (mmLassoActive) {
-      const { mx, my } = mmLocalXY(e);
-      const x0 = Math.min(mmLassoStart.mx, mx), x1 = Math.max(mmLassoStart.mx, mx);
-      const y0 = Math.min(mmLassoStart.my, my), y1 = Math.max(mmLassoStart.my, my);
-      const picked = mmPlotPoints.filter(p => p.sx >= x0 && p.sx <= x1 && p.sy >= y0 && p.sy <= y1).map(p => p.b.secid);
-      window.screenFilter.update({ selectedSecids: picked, selectedSecid: null });
-      mmLassoJustFinished = true; // the browser still fires a 'click' right after this -- swallow it below
-    }
-    mmLassoStart = null; mmLassoActive = false;
-    document.getElementById('mmLassoBox').style.display = 'none';
-  });
-
-  // Entry point 3/4 (Bond Detail Drawer task) moved to dblclick below (Map A
-  // spec, click-semantics resolution: "click selects, double-click opens
-  // drawer") -- a plain click now drives selectedSecids instead.
-  mmCanvas.addEventListener('click', (e) => {
-    if (mmLassoJustFinished) { mmLassoJustFinished = false; return; }
-    if (mmPanJustFinished) { mmPanJustFinished = false; return; }
-    const { mx, my } = mmLocalXY(e);
-    const best = mmHitTest(mx, my);
-    if (!best) {
-      mmHideTooltip();
-      window.screenFilter.update({ selectedSecids: [], selectedSecid: null });
+    const emptyOverlay = document.getElementById('mmEmptyOverlay');
+    wrap.innerHTML = '';
+    if (!bonds.length) {
+      emptyOverlay.innerHTML = emptyStateHtml({
+        icon: 'search', title: 'Нет облигаций по заданным фильтрам',
+        actionHtml: '<button type="button" class="uni-btn" id="mmResetFiltersBtn">Сбросить фильтры</button>',
+      });
+      emptyOverlay.style.display = '';
+      const resetBtn = document.getElementById('mmResetFiltersBtn');
+      if (resetBtn) resetBtn.addEventListener('click', resetMarketFilters);
+      updateSignalBar([]); updateMmStats([]); updateLegend(); renderMmFilterPills();
+      document.getElementById('mmSizeLegend').innerHTML = '';
       return;
     }
-    const secid = best.b.secid;
-    if (e.shiftKey) {
-      const cur = window.screenFilter.selectedSecids || [];
-      const next = cur.includes(secid) ? cur.filter(s => s !== secid) : cur.concat([secid]);
-      window.screenFilter.update({ selectedSecids: next, selectedSecid: null });
-    } else {
-      window.screenFilter.update({ selectedSecids: [secid], selectedSecid: null });
-    }
-    // Mobile note (Map A spec): a tap synthesizes 'click' but not the
-    // mousemove the hover-tooltip's 200ms timer relies on, so a tap alone
-    // would otherwise never show a tooltip -- show it immediately here too.
-    // Harmless on desktop: same content the hover path would already show.
-    mmShowTooltipFor(best.b, e.clientX, e.clientY);
-  });
-  mmCanvas.addEventListener('dblclick', (e) => {
-    const { mx, my } = mmLocalXY(e);
-    const best = mmHitTest(mx, my);
-    if (best) openBondDrawer(best.b.secid);
-  });
+    emptyOverlay.style.display = 'none';
 
-  // Feature 4 -- zoom/pan controls.
-  function mmApplyZoomTransform(animate) {
-    const layer = document.getElementById('mmZoomLayer');
-    layer.style.transition = animate ? 'transform .2s ease' : 'none';
-    layer.style.transform = `translate(${mmOffsetX}px, ${mmOffsetY}px) scale(${mmZoomScale})`;
-    mmUpdateClusterLabels();
+    mmXScale = d3.scaleLinear().domain([MM_X_MIN, MM_X_MAX]).range([0, mmPlotWidth]);
+    mmYScale = d3.scaleLinear().domain([MM_Y_MIN, MM_Y_MAX]).range([mmPlotHeight, 0]);
+    const rScale = mmRadiusScale(bonds);
+
+    mmSvg = d3.select(wrap).append('svg')
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMinYMin meet');
+    const root = mmSvg.append('g').attr('transform', `translate(${MM_MARGIN.left},${MM_MARGIN.top})`);
+
+    // Clip so zoomed/panned content never draws outside the plot area.
+    const clipId = 'mmClip';
+    root.append('clipPath').attr('id', clipId).append('rect').attr('width', mmPlotWidth).attr('height', mmPlotHeight);
+
+    mmG = root.append('g').attr('clip-path', `url(#${clipId})`);
+    const gridG = mmG.append('g').attr('class', 'mm-grid');
+    const bubbleG = mmG.append('g').attr('class', 'mm-bubbles');
+    const clusterG = mmG.append('g').attr('class', 'mm-clusters');
+    const brushG = mmG.append('g').attr('class', 'mm-brush');
+
+    const xAxisG = root.append('g').attr('class', 'mm-axis mm-x-axis').attr('transform', `translate(0,${mmPlotHeight})`);
+    const yAxisG = root.append('g').attr('class', 'mm-axis mm-y-axis');
+
+    root.append('text').attr('class', 'mm-axis-title')
+      .attr('x', mmPlotWidth / 2).attr('y', mmPlotHeight + 40).attr('text-anchor', 'middle')
+      .text('Модифицированная дюрация, лет');
+    root.append('text').attr('class', 'mm-axis-title')
+      .attr('transform', 'rotate(-90)')
+      .attr('x', -mmPlotHeight / 2).attr('y', -44).attr('text-anchor', 'middle')
+      .text('YTM, %');
+
+    const selectedIds = mmSelectionState();
+    const selectionActive = selectedIds.size > 0;
+    const colorCache = null;
+
+    function draw(xs, ys) {
+      xAxisG.call(d3.axisBottom(xs).ticks(7).tickSize(-mmPlotHeight));
+      yAxisG.call(d3.axisLeft(ys).ticks(11).tickSize(-mmPlotWidth));
+      gridG.selectAll('*').remove();
+
+      const circles = bubbleG.selectAll('circle.mm-bubble').data(bonds, b => b.secid);
+      circles.exit().remove();
+      const entered = circles.enter().append('circle').attr('class', 'mm-bubble');
+      const merged = entered.merge(circles)
+        .attr('cx', b => xs(b.mod_dur)).attr('cy', b => ys(b.ytm_pct))
+        .attr('r', b => rScale(b.volume || 0))
+        .attr('fill', b => colorFor(b, colorCache))
+        .attr('fill-opacity', b => selectionActive ? (selectedIds.has(b.secid) ? 0.9 : 0.3) : 0.85)
+        .classed('mm-selected', b => selectedIds.has(b.secid))
+        .style('cursor', 'pointer');
+
+      // Universe-only bonds (not in the watchlist) get a "donut hole" --
+      // filled watchlist bonds vs. hollow-center universe-only bonds, per
+      // spec. A separate non-interactive circle layered on top, since a
+      // single <circle> can't have two fill colors.
+      const holes = bubbleG.selectAll('circle.mm-bubble-hole').data(bonds.filter(b => !b.in_watchlist), b => b.secid);
+      holes.exit().remove();
+      holes.enter().append('circle').attr('class', 'mm-bubble-hole')
+        .merge(holes)
+        .attr('cx', b => xs(b.mod_dur)).attr('cy', b => ys(b.ytm_pct))
+        .attr('r', b => Math.max(1.5, rScale(b.volume || 0) * 0.45))
+        .attr('fill', getComputedStyle(document.documentElement).getPropertyValue('--surface-1').trim() || '#141720');
+
+      // Warning rings: mispricing > 1000bp OR PD-gap > 10% -- dashed ring
+      // at radius+3, per spec (was a solid stroke in the old canvas map).
+      const warnBonds = bonds.filter(b => (b.mispricing_bp != null && b.mispricing_bp > 1000) || (b.pd_gap != null && b.pd_gap > 0.10));
+      const rings = bubbleG.selectAll('circle.mm-warning-ring').data(warnBonds, b => b.secid);
+      rings.exit().remove();
+      rings.enter().append('circle').attr('class', 'mm-warning-ring')
+        .merge(rings)
+        .attr('cx', b => xs(b.mod_dur)).attr('cy', b => ys(b.ytm_pct))
+        .attr('r', b => rScale(b.volume || 0) + 3)
+        .attr('stroke', b => (b.mispricing_bp != null && b.mispricing_bp > 1000)
+          ? (getComputedStyle(document.documentElement).getPropertyValue('--verdict-green').trim() || '#2ECC71')
+          : (getComputedStyle(document.documentElement).getPropertyValue('--verdict-red').trim() || '#E74C3C'));
+
+      merged
+        .on('mouseover', function (event, b) {
+          d3.select(this).raise().transition().duration(100).attr('r', rScale(b.volume || 0) * 1.3);
+          mmShowTooltipFor(b, event.clientX, event.clientY);
+        })
+        .on('mousemove', function (event, b) { mmPositionTooltip(event.clientX, event.clientY); })
+        .on('mouseout', function (event, b) {
+          d3.select(this).transition().duration(100).attr('r', rScale(b.volume || 0));
+          mmHideTooltip();
+        })
+        .on('click', (event, b) => {
+          if (event.shiftKey) {
+            const cur = window.screenFilter.selectedSecids || [];
+            const next = cur.includes(b.secid) ? cur.filter(s => s !== b.secid) : cur.concat([b.secid]);
+            window.screenFilter.update({ selectedSecids: next, selectedSecid: null });
+          } else {
+            window.screenFilter.update({ selectedSecids: [b.secid], selectedSecid: null });
+          }
+        })
+        .on('dblclick', (event, b) => { openBondDrawer(b.secid); });
+
+      mmRenderClusterLabels(clusterG, bonds, mmCurrentTransform ? mmCurrentTransform.k : 1);
+    }
+
+    draw(mmXScale, mmYScale);
+
+    // ---- Zoom/pan (plain drag/wheel) + brush (Shift+drag lasso) ----------
+    // Standard d3 zoom+brush combo: each behavior's own .filter() decides
+    // whether IT reacts to a given pointer event; a rejected brush gesture
+    // never calls stopPropagation, so the event still reaches the zoom
+    // listener underneath (both are bound on the same <svg> node).
+    mmZoom = d3.zoom()
+      .scaleExtent([1, 8])
+      .translateExtent([[0, 0], [mmPlotWidth, mmPlotHeight]])
+      .filter(event => !event.shiftKey && event.type !== 'dblclick')
+      .on('zoom', (event) => {
+        mmCurrentTransform = event.transform;
+        const xs = event.transform.rescaleX(mmXScale);
+        const ys = event.transform.rescaleY(mmYScale);
+        draw(xs, ys);
+      });
+
+    const brush = d3.brush()
+      .extent([[0, 0], [mmPlotWidth, mmPlotHeight]])
+      .filter(event => event.shiftKey)
+      .on('end', (event) => {
+        if (!event.selection) return;
+        const [[x0, y0], [x1, y1]] = event.selection;
+        const xs = mmCurrentTransform ? mmCurrentTransform.rescaleX(mmXScale) : mmXScale;
+        const ys = mmCurrentTransform ? mmCurrentTransform.rescaleY(mmYScale) : mmYScale;
+        const picked = bonds.filter(b => {
+          const cx = xs(b.mod_dur), cy = ys(b.ytm_pct);
+          return cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
+        }).map(b => b.secid);
+        window.screenFilter.update({ selectedSecids: picked, selectedSecid: null });
+        brushG.call(brush.move, null);
+      });
+    brushG.call(brush);
+
+    mmSvg.call(mmZoom);
+    if (mmCurrentTransform) mmSvg.call(mmZoom.transform, mmCurrentTransform);
+    mmSvg.on('mousedown.grabcursor', () => mmSvg.classed('mm-panning', true));
+    window.addEventListener('mouseup', () => { if (mmSvg) mmSvg.classed('mm-panning', false); }, { passive: true });
+
+    // Click on empty space clears selection (matches the old canvas map's
+    // behavior: clicking a bubble selects, clicking empty space deselects).
+    mmSvg.on('click', (event) => {
+      if (event.target === mmSvg.node() || event.target.tagName === 'rect') {
+        if (!event.defaultPrevented) window.screenFilter.update({ selectedSecids: [], selectedSecid: null });
+      }
+    });
+
+    updateSignalBar(bonds);
+    updateMmStats(bonds);
+    updateLegend();
+    renderMmFilterPills();
+    renderMmSizeLegend(bonds, rScale);
   }
-  // "minimum 20% of bonds must remain visible": approximated as at least
-  // 20% of the SCALED content's width/height staying inside the viewport --
-  // a literal per-bond visibility count isn't worth the cost here, and this
-  // bound produces the same practical result (can't pan the content
-  // entirely out of view).
-  function mmClampPan() {
-    const W = mmCanvas.clientWidth, H = mmCanvas.clientHeight;
-    const scaledW = W * mmZoomScale, scaledH = H * mmZoomScale;
-    const minVisW = scaledW * 0.2, minVisH = scaledH * 0.2;
-    mmOffsetX = Math.min(W - minVisW, Math.max(minVisW - scaledW, mmOffsetX));
-    mmOffsetY = Math.min(H - minVisH, Math.max(minVisH - scaledH, mmOffsetY));
-  }
-  function mmZoomAt(clientX, clientY, factor, animate) {
-    const rect = mmCanvas.getBoundingClientRect();
-    const localX = (clientX - rect.left) / mmZoomScale, localY = (clientY - rect.top) / mmZoomScale;
-    const staticLeft = rect.left - mmOffsetX, staticTop = rect.top - mmOffsetY;
-    const newScale = Math.min(8, Math.max(1, mmZoomScale * factor));
-    mmOffsetX = clientX - staticLeft - localX * newScale;
-    mmOffsetY = clientY - staticTop - localY * newScale;
-    mmZoomScale = newScale;
-    mmClampPan();
-    mmApplyZoomTransform(animate);
-  }
-  mmCanvas.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-    mmZoomAt(e.clientX, e.clientY, factor, false);
-  }, { passive: false });
+
   document.getElementById('mmZoomInBtn').addEventListener('click', () => {
-    const rect = mmCanvas.getBoundingClientRect();
-    mmZoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.5, true);
+    if (mmSvg && mmZoom) mmSvg.transition().duration(200).call(mmZoom.scaleBy, 1.5);
   });
   document.getElementById('mmZoomOutBtn').addEventListener('click', () => {
-    const rect = mmCanvas.getBoundingClientRect();
-    mmZoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, 1 / 1.5, true);
+    if (mmSvg && mmZoom) mmSvg.transition().duration(200).call(mmZoom.scaleBy, 1 / 1.5);
   });
   document.getElementById('mmZoomResetBtn').addEventListener('click', () => {
-    mmZoomScale = 1; mmOffsetX = 0; mmOffsetY = 0;
-    mmApplyZoomTransform(true);
+    mmCurrentTransform = d3.zoomIdentity;
+    if (mmSvg && mmZoom) mmSvg.transition().duration(200).call(mmZoom.transform, d3.zoomIdentity);
   });
 
+  document.getElementById('mmSelColor').addEventListener('change', e => { mmState.color = e.target.value; renderMarketMap(); });
+
+  // Debounced (150ms) per spec -- avoids a full SVG rebuild on every
+  // intermediate resize event during a drag-resize.
+  let mmResizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(mmResizeTimer);
+    mmResizeTimer = setTimeout(() => { if (activeView === 'map') renderMarketMap(); }, 150);
+  });
   // Feature 3 -- selection tray. Registered as a window.screenFilter
   // listener (alongside renderActive above) so it stays correct regardless
   // of which gesture changed selectedSecids -- map click/shift-click/lasso,
@@ -9047,41 +8602,6 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   });
   window.screenFilter.listeners.push(renderSelectionTray);
 
-  document.getElementById('mmSelY').addEventListener('change', e => { mmState.y = e.target.value; drawMap(); });
-  document.getElementById('mmSelX').addEventListener('change', e => { mmState.x = e.target.value; drawMap(); });
-  document.getElementById('mmSelColor').addEventListener('change', e => { mmState.color = e.target.value; drawMap(); });
-  document.getElementById('mmSelSize').addEventListener('change', e => { mmState.size = e.target.value; drawMap(); });
-  document.getElementById('mmFOfz').addEventListener('change', e => { mmState.fOfz = e.target.checked; drawMap(); });
-  // Persisted (hybond-overlay-toggle): restored below, right after this
-  // listener is attached, so a saved "off" correctly overrides the
-  // checked-by-default HTML/mmState.fFair=true starting point.
-  const MM_FAIR_TOGGLE_KEY = 'hybond-overlay-toggle';
-  document.getElementById('mmFFair').addEventListener('change', e => {
-    mmState.fFair = e.target.checked;
-    localStorage.setItem(MM_FAIR_TOGGLE_KEY, e.target.checked ? '1' : '0');
-    drawMap();
-  });
-  {
-    const savedFair = localStorage.getItem(MM_FAIR_TOGGLE_KEY);
-    if (savedFair !== null) {
-      mmState.fFair = savedFair === '1';
-      document.getElementById('mmFFair').checked = mmState.fFair;
-    }
-  }
-  document.getElementById('mmFPdIso').addEventListener('change', e => { mmState.fPdIso = e.target.checked; drawMap(); });
-  document.getElementById('mmFStar').addEventListener('change', e => { mmState.fStar = e.target.checked; drawMap(); });
-  document.getElementById('mmFYieldCeiling').addEventListener('change', e => {
-    mmState.fYieldCeiling = e.target.checked;
-    // var(--gold-primary) when active, var(--text-secondary) when inactive
-    // -- same on/off language as the other toggle-button pairs elsewhere
-    // (view/time toggles, card-view ≡/⊞), applied here as a label-text
-    // color swap since this control keeps its checkbox+label DOM shape
-    // (same as its 3 sibling checkboxes in this row) rather than becoming
-    // a differently-shaped button.
-    document.getElementById('mmFYieldCeilingLabel').classList.toggle('chk-active', e.target.checked);
-    drawMap();
-  });
-  window.addEventListener('resize', () => { if (activeView === 'map') drawMap(); });
 
   // ================= view + time toggles, shared filter wiring =========
   let activeView = 'table';
@@ -9109,7 +8629,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     if (activeView === 'table') {
       if (tableSubView === 'cards') renderCardsView(rows); else renderTableRows(rows);
     } else {
-      drawMap();
+      renderMarketMap();
     }
     renderCoreFiltersSummary();
   }
@@ -9246,7 +8766,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     renderActive();
   });
 
-  window.__marketMapRedraw = () => { if (activeView === 'map') drawMap(); };
+  window.__marketMapRedraw = () => { if (activeView === 'map') renderMarketMap(); };
 
   renderTimeNote();
   renderActive();
@@ -9804,7 +9324,7 @@ document.getElementById('marketInstrumentToggle').addEventListener('click', (e) 
     const textColor = styles.getPropertyValue('--text-secondary').trim() || '#52514e';
     const lineColor = styles.getPropertyValue('--text-primary').trim() || '#0b0b0b';
     // Same base/stress-scenario semantic as the market map's undervalue/
-    // overvalue coloring (drawMap(), above) -- theme-aware green/red
+    // overvalue coloring (renderMarketMap(), above) -- theme-aware green/red
     // instead of a hardcoded pair, so it doesn't silently drift from those
     // CSS tokens on a light/dark switch.
     const goodColor = styles.getPropertyValue('--verdict-green').trim() || '#2ECC71';
@@ -10155,7 +9675,7 @@ renderOfzCurveShape();
   // same shared `selected`/`pool` state below (see renderAll()), regardless
   // of which one is visible, so switching sub-tabs never shows stale data.
   const PF_SUBTAB_KEY = 'hybond-portfolio-tab';
-  const PF_SUBTABS = ['overview', 'scenarios', 'wall', 'calendar', 'presets'];
+  const PF_SUBTABS = ['overview', 'scenarios', 'wall', 'calendar', 'presets', 'compare'];
   function gotoPfSubtab(name) {
     if (!PF_SUBTABS.includes(name)) name = 'overview';
     document.querySelectorAll('.subtab-btn[data-pftab]').forEach(b => b.classList.toggle('active', b.dataset.pftab === name));
@@ -12762,10 +12282,11 @@ renderOfzCurveShape();
   // ---- Active-portfolio allocation donuts (Portfolio donut charts task,
   // 2026-08-29) -- see the HTML comment above #pfAllocationEmpty for why
   // this reads DATA.portfolio_allocation (the SAVED DB portfolio) rather
-  // than this file's own `selected`/`pool` picker state. Canvas 2D, same
-  // hi-DPI pattern as the market map's mmResizeCanvas() (backing buffer
-  // scaled by devicePixelRatio, drawing coordinates stay in one fixed
-  // logical size) -- no new libraries, per the task's explicit constraint.
+  // than this file's own `selected`/`pool` picker state. Canvas 2D, standard
+  // hi-DPI pattern (backing buffer scaled by devicePixelRatio, drawing
+  // coordinates stay in one fixed logical size) -- no new libraries, per
+  // the task's explicit constraint (predates the market map's later move to
+  // D3/SVG, 2026-08-31).
   const RATING_DONUT_COLORS = {
     'ruBBB+': '#1D9E75', 'ruBBB': '#5DCAA5', 'ruBBB-': '#9FE1CB',
     'ruBB+': '#EF9F27', 'ruBB': '#E87040', 'ruB': '#E24B4A',
@@ -12842,9 +12363,8 @@ renderOfzCurveShape();
     // (document.documentElement.style.zoom, see applyFontScale()), is NOT
     // the same as the fixed 180x180 logical space every drawing coordinate
     // above is authored in. getBoundingClientRect().width DOES reflect the
-    // zoom (confirmed live: 216px at 120%, 324px at 180%) and is what the
-    // market map's own mmLocalXY() already relies on for this exact reason
-    // -- canvas.clientWidth does NOT track zoom the same way (confirmed
+    // zoom (confirmed live: 216px at 120%, 324px at 180%) -- canvas.clientWidth
+    // does NOT track zoom the same way (confirmed
     // live: stays 180 regardless of zoom level) and silently breaks hit-
     // testing anywhere but 100%, which this dashboard never defaults to.
     function toLogical(mx, my) {
@@ -13004,6 +12524,194 @@ renderOfzCurveShape();
     renderPfAllocBondTable(pfAllocBondsCache);
   }
   renderPfAllocation();
+
+  // ---- Multiple portfolio comparison (2026-08-31) -------------------------
+  // Reads DATA.portfolios (up to 3 saved DB portfolios, newest first --
+  // export_all_active_portfolios() in export_dashboard_data.py). Selection
+  // state (which of the available portfolios are shown, max 3) persists in
+  // localStorage so a reload keeps the user's chosen comparison.
+  const PF_COMPARE_SELECTED_KEY = 'hybond-pf-compare-selected';
+  const PF_COMPARE_MAX = 3;
+
+  function loadCompareSelection(available) {
+    let ids;
+    try { ids = JSON.parse(localStorage.getItem(PF_COMPARE_SELECTED_KEY) || 'null'); }
+    catch (e) { ids = null; }
+    if (!Array.isArray(ids)) ids = null;
+    const availableIds = new Set(available.map(p => p.id));
+    const filtered = (ids || []).filter(id => availableIds.has(id));
+    if (filtered.length) return filtered.slice(0, PF_COMPARE_MAX);
+    // Default: the PF_COMPARE_MAX most recently created (DATA.portfolios is
+    // already newest-first from the export).
+    return available.slice(0, PF_COMPARE_MAX).map(p => p.id);
+  }
+
+  function saveCompareSelection(ids) {
+    localStorage.setItem(PF_COMPARE_SELECTED_KEY, JSON.stringify(ids));
+  }
+
+  function toggleCompareSelection(id) {
+    const available = DATA.portfolios || [];
+    let selected = loadCompareSelection(available);
+    if (selected.includes(id)) {
+      selected = selected.filter(x => x !== id);
+    } else if (selected.length < PF_COMPARE_MAX) {
+      selected = selected.concat([id]);
+    } else {
+      return; // already at the 3-portfolio cap -- ignore, don't bump anything out silently
+    }
+    saveCompareSelection(selected);
+    renderPfCompare();
+  }
+
+  function renderCompareSelector(available, selectedIds) {
+    const el = document.getElementById('pfCompareSelector');
+    el.innerHTML = available.map(p => {
+      const active = selectedIds.includes(p.id);
+      return `<button type="button" class="pf-compare-pill${active ? ' active' : ''}" data-compare-id="${p.id}">`
+        + `${active ? '✓ ' : ''}${escapeHtml(p.name)}</button>`;
+    }).join('') + `<button type="button" class="pf-compare-pill pf-compare-add" id="pfCompareAddNew">+ Новый</button>`;
+    el.querySelectorAll('[data-compare-id]').forEach(btn => {
+      btn.addEventListener('click', () => toggleCompareSelection(Number(btn.dataset.compareId)));
+    });
+    const addBtn = document.getElementById('pfCompareAddNew');
+    if (addBtn) addBtn.addEventListener('click', () => { showBuilder(); window.__gotoPfSubtab('presets'); });
+  }
+
+  // Metric rows shown per column, in display order. `better` is 'high' (max
+  // wins) or 'low' (min wins) -- drives the teal-best/muted-worst coloring.
+  // Эмитентов/Секторов count diversification as "better" when higher (lower
+  // concentration risk), same direction the concentration-cap warnings
+  // elsewhere on this tab already treat higher issuer/sector counts.
+  const PF_COMPARE_METRICS = [
+    { key: 'avg_aey', label: 'AEY (база)', better: 'high', fmt: v => (v * 100).toFixed(1) + '%' },
+    { key: 'expected_loss', label: 'Ожид. потери', better: 'low', fmt: v => (v * 100).toFixed(1) + '%' },
+    { key: 'net_return', label: 'Чистая доходн.', better: 'high', fmt: v => (v * 100).toFixed(1) + '%' },
+    { key: 'n_issuers', label: 'Эмитентов', better: 'high', fmt: v => String(v) },
+    { key: 'n_sectors', label: 'Секторов', better: 'high', fmt: v => String(v) },
+    { key: 'max_duration', label: 'Макс. дюрация', better: 'low', fmt: v => v.toFixed(1) + ' лет' },
+  ];
+
+  const PF_PRESET_BADGE_LABEL = { conservative: 'Консервативный', balanced: 'Сбалансированный', aggressive: 'Агрессивный' };
+
+  function renderCompareGrid(portfolios) {
+    const grid = document.getElementById('pfCompareGrid');
+    // best/worst only make sense with 2+ columns to compare against.
+    const canCompare = portfolios.length >= 2;
+    const metricRowsHtml = PF_COMPARE_METRICS.map(m => {
+      const values = portfolios.map(p => p.allocation.summary[m.key]);
+      const real = values.filter(v => v != null);
+      const bestVal = real.length ? (m.better === 'high' ? Math.max(...real) : Math.min(...real)) : null;
+      const worstVal = real.length ? (m.better === 'high' ? Math.min(...real) : Math.max(...real)) : null;
+      return { metric: m, values, bestVal, worstVal };
+    });
+
+    grid.innerHTML = portfolios.map((p, colIdx) => {
+      const s = p.allocation.summary;
+      const rowsHtml = metricRowsHtml.map(r => {
+        const v = r.values[colIdx];
+        let cls = '';
+        if (canCompare && v != null && r.bestVal !== r.worstVal) {
+          if (v === r.bestVal) cls = ' pf-compare-best';
+          else if (v === r.worstVal) cls = ' pf-compare-worst';
+        }
+        return `<tr><td class="pf-compare-label">${escapeHtml(r.metric.label)}</td>`
+          + `<td class="${cls.trim()}">${v != null ? r.metric.fmt(v) : '—'}</td></tr>`;
+      }).join('');
+      return `<div class="pf-compare-col">
+        <div class="pf-compare-col-header">
+          <b>${escapeHtml(p.name)}</b>
+          <span class="pf-preset-badge">${escapeHtml(PF_PRESET_BADGE_LABEL[p.preset_type] || p.preset_type || '—')}</span>
+          <div class="pf-compare-bond-count">${s.total_bonds} облигаций</div>
+        </div>
+        <table class="pf-compare-metric-table">${rowsHtml}</table>
+      </div>`;
+    }).join('');
+  }
+
+  function renderCompareSectorBars(portfolios) {
+    const el = document.getElementById('pfCompareSectorBars');
+    const sectors = new Set();
+    portfolios.forEach(p => Object.keys(p.allocation.sector_allocation || {}).forEach(s => sectors.add(s)));
+    const sortedSectors = Array.from(sectors).sort((a, b) => {
+      const maxW = p => Math.max(...portfolios.map(pf => (pf.allocation.sector_allocation[p] || {}).weight || 0));
+      return maxW(b) - maxW(a);
+    });
+    if (!sortedSectors.length) { el.innerHTML = '<p class="section-note">Нет данных по секторам.</p>'; return; }
+    el.innerHTML = sortedSectors.map(sector => {
+      const cells = portfolios.map(p => {
+        const bucket = p.allocation.sector_allocation[sector];
+        if (!bucket || !bucket.weight) return '<div>—</div>';
+        const pct = bucket.weight * 100;
+        return `<div class="pf-compare-bar-track"><div class="pf-compare-bar-fill" style="width:${Math.max(pct, 2).toFixed(1)}%"></div><span>${pct.toFixed(0)}%</span></div>`;
+      }).join('');
+      return `<div class="pf-compare-sector-row" style="--pf-compare-cols:${portfolios.length}"><div>${escapeHtml(sectorLabel(sector))}</div>${cells}</div>`;
+    }).join('');
+  }
+
+  function renderCompareRatingBars(portfolios) {
+    const el = document.getElementById('pfCompareRatingBars');
+    el.classList.add('pf-compare-rating-grid');
+    el.style.setProperty('--pf-compare-cols', portfolios.length);
+    el.innerHTML = portfolios.map(p => {
+      const entries = Object.entries(p.allocation.rating_allocation || {})
+        .filter(([k]) => k !== 'no_rating')
+        .sort((a, b) => b[1].weight - a[1].weight);
+      const totalW = entries.reduce((sum, [, v]) => sum + v.weight, 0) || 1;
+      const segs = entries.map(([rating, v]) =>
+        `<div class="pf-compare-rating-col" style="flex:${v.weight / totalW};background:${ratingDonutColor(rating)}" title="${escapeHtml(rating)}: ${(v.weight * 100).toFixed(0)}%"></div>`
+      ).join('');
+      return `<div>
+        <div class="pf-compare-rating-col-label">${escapeHtml(p.name)}</div>
+        <div class="pf-compare-rating-stack">${segs || '<div class="pf-compare-rating-col" style="background:var(--border)"></div>'}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderCompareOverlap(portfolios) {
+    const el = document.getElementById('pfCompareOverlap');
+    if (portfolios.length < 2) { el.innerHTML = ''; return; }
+    const lines = [];
+    for (let i = 0; i < portfolios.length; i++) {
+      for (let j = i + 1; j < portfolios.length; j++) {
+        const a = portfolios[i], b = portfolios[j];
+        const isinsA = new Set((a.allocation.bonds || []).map(x => x.isin));
+        const isinsB = new Set((b.allocation.bonds || []).map(x => x.isin));
+        const common = Array.from(isinsA).filter(x => isinsB.has(x)).length;
+        const denom = Math.min(isinsA.size, isinsB.size);
+        lines.push(`Общие облигации: <b>${common} из ${denom}</b> (${escapeHtml(a.name)} ∩ ${escapeHtml(b.name)})`);
+      }
+    }
+    el.innerHTML = lines.join('<br>');
+  }
+
+  function renderPfCompare() {
+    const available = DATA.portfolios || [];
+    const emptyEl = document.getElementById('pfCompareEmpty');
+    const contentEl = document.getElementById('pfCompareContent');
+    if (!available.length) {
+      emptyEl.style.display = '';
+      contentEl.style.display = 'none';
+      emptyEl.innerHTML = emptyStateHtml({
+        icon: 'chart', title: 'Нет сохранённых портфелей для сравнения',
+        subtitle: 'hybond portfolio-build --save сохраняет портфель -- после этого он появится здесь.',
+      });
+      return;
+    }
+    emptyEl.style.display = 'none';
+    contentEl.style.display = '';
+
+    const selectedIds = loadCompareSelection(available);
+    renderCompareSelector(available, selectedIds);
+    // Keep DATA.portfolios' own (newest-first) order for the selected subset
+    // rather than click order, so columns don't reshuffle unpredictably.
+    const selected = available.filter(p => selectedIds.includes(p.id));
+    renderCompareGrid(selected);
+    renderCompareSectorBars(selected);
+    renderCompareRatingBars(selected);
+    renderCompareOverlap(selected);
+  }
+  renderPfCompare();
 
   renderPresetCards();
   syncPresetDefaults();

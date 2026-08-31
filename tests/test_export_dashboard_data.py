@@ -805,3 +805,113 @@ def test_export_portfolio_allocation_picks_most_recently_created_active(tmp_path
     assert result["summary"]["preset_type"] == "aggressive"
     assert "energy" in result["sector_allocation"]
     assert "leasing" not in result["sector_allocation"]
+
+
+# ---- Multiple portfolio comparison (2026-08-31) ----------------------------
+
+def test_export_portfolio_allocation_computes_n_issuers_and_max_duration(tmp_path):
+    con = _pa_con(tmp_path)
+    # Two bonds from the SAME issuer must count as one issuer, not two.
+    db.upsert_issuer(con, "I1", "Issuer 1", sector="leasing")
+    db.add_issuer_bond(con, "I1", "B1", source="manual")
+    db.add_issuer_bond(con, "I1", "B2", source="manual")
+    db.insert_universe_snapshot(con, **_snapshot_row(
+        secid="B1", emitent_inn="I1", rating="ruBBB", aey_base=0.25, mod_dur=2.0))
+    db.insert_universe_snapshot(con, **_snapshot_row(
+        secid="B2", emitent_inn="I1", rating="ruBBB", aey_base=0.25, mod_dur=3.5))
+    pid = db.create_portfolio(con, "Тест", "conservative", status="active")
+    db.add_portfolio_bond(con, pid, "B1", weight=0.5)
+    db.add_portfolio_bond(con, pid, "B2", weight=0.5)
+    con.commit()
+
+    result = export_portfolio_allocation(con)
+    assert result["summary"]["n_issuers"] == 1
+    assert abs(result["summary"]["max_duration"] - 3.5) < 1e-9
+
+
+def test_export_portfolio_allocation_expected_loss_and_net_return_from_snapshot(tmp_path):
+    con = _pa_con(tmp_path)
+    _pa_bond(con, "B1", "leasing", "green", "ruBBB", 0.30)
+    pid = db.create_portfolio(con, "Тест", "conservative", status="active")
+    db.add_portfolio_bond(con, pid, "B1", weight=1.0)
+    db.add_portfolio_snapshot(con, portfolio_id=pid, snapshot_date="2026-08-31",
+                               aey=0.30, expected_loss=0.05,
+                               metrics_json="{}")
+    con.commit()
+
+    result = export_portfolio_allocation(con)
+    assert abs(result["summary"]["expected_loss"] - 0.05) < 1e-9
+    assert abs(result["summary"]["net_return"] - (0.30 - 0.05)) < 1e-9
+
+
+def test_export_portfolio_allocation_uses_latest_snapshot_not_first(tmp_path):
+    """monitor_portfolios() writes a NEW snapshot row on every run -- the
+    most recent one (highest id) must win, not the save-time one."""
+    con = _pa_con(tmp_path)
+    _pa_bond(con, "B1", "leasing", "green", "ruBBB", 0.30)
+    pid = db.create_portfolio(con, "Тест", "conservative", status="active")
+    db.add_portfolio_bond(con, pid, "B1", weight=1.0)
+    db.add_portfolio_snapshot(con, portfolio_id=pid, snapshot_date="2026-08-29",
+                               aey=0.30, expected_loss=0.05, metrics_json="{}")
+    db.add_portfolio_snapshot(con, portfolio_id=pid, snapshot_date="2026-08-31",
+                               aey=0.28, expected_loss=0.02, metrics_json="{}")
+    con.commit()
+
+    result = export_portfolio_allocation(con)
+    assert abs(result["summary"]["expected_loss"] - 0.02) < 1e-9
+
+
+def test_export_portfolio_allocation_by_explicit_id_ignores_status(tmp_path):
+    """portfolio_id= lets a caller pick a specific portfolio directly,
+    distinct from the status='active'-only default lookup."""
+    con = _pa_con(tmp_path)
+    _pa_bond(con, "B1", "leasing", "green", "ruBBB", 0.25)
+    pid = db.create_portfolio(con, "Черновик", "conservative", status="draft")
+    db.add_portfolio_bond(con, pid, "B1", weight=1.0)
+    con.commit()
+
+    assert export_portfolio_allocation(con) == {}  # no active portfolio
+    result = export_portfolio_allocation(con, portfolio_id=pid)
+    assert result["summary"]["name"] == "Черновик"
+
+
+def test_export_all_active_portfolios_returns_up_to_three_newest(tmp_path):
+    from export_dashboard_data import export_all_active_portfolios
+
+    con = _pa_con(tmp_path)
+    _pa_bond(con, "B1", "leasing", "green", "ruBBB", 0.25)
+    _pa_bond(con, "B2", "energy", "green", "ruBBB", 0.30)
+    _pa_bond(con, "B3", "mfo", "green", "ruBB", 0.35)
+    _pa_bond(con, "B4", "retail", "green", "ruB", 0.40)
+
+    for i, (name, secid, created) in enumerate([
+        ("Старый", "B4", "2020-01-01"),
+        ("Консервативный", "B1", "2026-08-29"),
+        ("Сбалансированный", "B2", "2026-08-30"),
+        ("Агрессивный", "B3", "2026-08-31"),
+    ]):
+        pid = db.create_portfolio(con, name, "conservative", status="active")
+        db.add_portfolio_bond(con, pid, secid, weight=1.0)
+        con.execute("UPDATE portfolio SET created_at=? WHERE id=?", (created, pid))
+    con.commit()
+
+    result = export_all_active_portfolios(con)
+    assert len(result) == 3  # capped at 3, oldest ("Старый") dropped
+    names = [p["name"] for p in result]
+    assert names == ["Агрессивный", "Сбалансированный", "Консервативный"]
+    assert all("allocation" in p and p["allocation"] for p in result)
+
+
+def test_export_all_active_portfolios_skips_active_with_zero_bonds(tmp_path):
+    from export_dashboard_data import export_all_active_portfolios
+
+    con = _pa_con(tmp_path)
+    _pa_bond(con, "B1", "leasing", "green", "ruBBB", 0.25)
+    db.create_portfolio(con, "Пустой", "conservative", status="active")  # no bonds
+    pid2 = db.create_portfolio(con, "С бумагами", "conservative", status="active")
+    db.add_portfolio_bond(con, pid2, "B1", weight=1.0)
+    con.commit()
+
+    result = export_all_active_portfolios(con)
+    assert len(result) == 1
+    assert result[0]["name"] == "С бумагами"

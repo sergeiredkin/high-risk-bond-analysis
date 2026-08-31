@@ -170,13 +170,20 @@ def portfolio_data_freshness(con) -> dict[str, str | None]:
     }
 
 
-def export_portfolio_allocation(con) -> dict:
-    """Sector/rating/health allocation for the active (status='active',
-    most recently created) saved portfolio -- the one `hybond
-    portfolio-build --save` writes, distinct from the client-side Presets
-    Builder preview (which never touches the DB). Returns {} if no active
-    portfolio exists, or if it has zero bonds -- the dashboard shows an
-    empty state in either case rather than an empty/misleading chart.
+def export_portfolio_allocation(con, portfolio_id: int | None = None) -> dict:
+    """Sector/rating/health allocation for one saved portfolio -- the kind
+    `hybond portfolio-build --save` writes, distinct from the client-side
+    Presets Builder preview (which never touches the DB). Returns {} if the
+    portfolio doesn't exist (or, with portfolio_id=None, if no active
+    portfolio exists at all), or if it has zero bonds -- the dashboard shows
+    an empty state in either case rather than an empty/misleading chart.
+
+    portfolio_id=None (default) keeps the original single-portfolio
+    behavior: the most recently created status='active' portfolio. Pass an
+    explicit id (Multiple portfolio comparison task, 2026-08-31) to export
+    one specific portfolio out of several active ones -- see
+    export_all_active_portfolios() below, which drives the Портфель tab's
+    new Сравнение sub-tab.
 
     Joins portfolio_bond.isin -> issuer_bond.secid -> issuer (sector,
     health_status) for sector/health, and universe_snapshot (latest
@@ -198,9 +205,14 @@ def export_portfolio_allocation(con) -> dict:
     db.init_issuer_bond(con)
     db.init_universe(con)
 
-    row = con.execute(
-        "SELECT id, name, preset_type FROM portfolio WHERE status='active' "
-        "ORDER BY created_at DESC LIMIT 1").fetchone()
+    if portfolio_id is None:
+        row = con.execute(
+            "SELECT id, name, preset_type FROM portfolio WHERE status='active' "
+            "ORDER BY created_at DESC LIMIT 1").fetchone()
+    else:
+        row = con.execute(
+            "SELECT id, name, preset_type FROM portfolio WHERE id = ?",
+            (portfolio_id,)).fetchone()
     if row is None:
         return {}
     portfolio_id, name, preset_type = row["id"], row["name"], row["preset_type"]
@@ -208,7 +220,7 @@ def export_portfolio_allocation(con) -> dict:
     latest_snap = db.latest_universe_snap_date(con)
     bond_rows = con.execute(
         "SELECT pb.isin, pb.weight, i.sector, i.health_status, i.name AS issuer_name, "
-        "us.rating, us.aey_base, us.short_name "
+        "ib.issuer_id, us.rating, us.aey_base, us.short_name, us.mod_dur "
         "FROM portfolio_bond pb "
         "JOIN issuer_bond ib ON ib.secid = pb.isin "
         "JOIN issuer i ON i.issuer_id = ib.issuer_id "
@@ -227,6 +239,8 @@ def export_portfolio_allocation(con) -> dict:
     rating_alloc: dict[str, dict] = {}
     health_alloc: dict[str, dict] = {}
     overall_aey_wsum = overall_aey_wtot = 0.0
+    issuer_ids: set[str] = set()
+    max_duration: float | None = None
 
     for b in bond_rows:
         weight = (b["weight"] or 0.0) / total_weight
@@ -234,6 +248,10 @@ def export_portfolio_allocation(con) -> dict:
         sector = b["sector"] or "other"
         rating = b["rating"] or "no_rating"
         health = b["health_status"] or "green"
+        if b["issuer_id"]:
+            issuer_ids.add(b["issuer_id"])
+        if b["mod_dur"] is not None:
+            max_duration = b["mod_dur"] if max_duration is None else max(max_duration, b["mod_dur"])
 
         for store, key in ((sector_alloc, sector), (rating_alloc, rating)):
             bucket = store.setdefault(key, _new_bucket())
@@ -272,10 +290,25 @@ def export_portfolio_allocation(con) -> dict:
         "short_name": b["short_name"] or b["issuer_name"] or b["isin"],
         "sector": b["sector"] or "other",
         "rating": b["rating"],
+        "issuer_id": b["issuer_id"],
         "health_status": b["health_status"] or "green",
         "weight": (b["weight"] or 0.0) / total_weight,
         "aey_base": b["aey_base"],
     } for b in bond_rows]
+
+    # expected_loss/net_return come from the latest portfolio_snapshot, not
+    # recomputed here -- Multiple portfolio comparison task (2026-08-31).
+    # monitor_portfolios()'s daily snapshot can have a NARROWER metrics_json
+    # than save_portfolio()'s first one (avg_aey/expected_loss/net_return/
+    # n_alerts only, no n_issuers/n_sectors -- confirmed live for
+    # portfolio_id=1 after a monitor run), so n_issuers/max_duration below
+    # are computed fresh from bond_rows instead of trusted from there.
+    snap_row = con.execute(
+        "SELECT expected_loss FROM portfolio_snapshot WHERE portfolio_id = ? "
+        "ORDER BY id DESC LIMIT 1", (portfolio_id,)).fetchone()
+    expected_loss = snap_row["expected_loss"] if snap_row else None
+    avg_aey = (overall_aey_wsum / overall_aey_wtot) if overall_aey_wtot > 0 else None
+    net_return = (avg_aey - expected_loss) if (avg_aey is not None and expected_loss is not None) else None
 
     return {
         "bonds": bonds,
@@ -285,15 +318,49 @@ def export_portfolio_allocation(con) -> dict:
         "summary": {
             "total_bonds": len(bond_rows),
             "n_sectors": len(sector_alloc),
+            "n_issuers": len(issuer_ids),
             # "no_rating" isn't a rating -- excluded from the count, though
             # its bucket stays in rating_allocation so the donut's slices
             # still sum to 100% of the portfolio.
             "n_ratings": len([k for k in rating_alloc if k != "no_rating"]),
-            "avg_aey": (overall_aey_wsum / overall_aey_wtot) if overall_aey_wtot > 0 else None,
+            "avg_aey": avg_aey,
+            "expected_loss": expected_loss,
+            "net_return": net_return,
+            "max_duration": max_duration,
             "preset_type": preset_type,
             "name": name,
         },
     }
+
+
+def export_all_active_portfolios(con, limit: int = 3) -> list[dict]:
+    """Up to `limit` most-recently-created status='active' portfolios, each
+    with its own full allocation via export_portfolio_allocation() --
+    Multiple portfolio comparison task (2026-08-31). Drives the Портфель
+    tab's new Сравнение sub-tab. Distinct from portfolio_allocation (kept
+    unchanged for the existing single-portfolio Обзор consumers, which
+    always show the latest of these same portfolios) -- this exports all of
+    them so the dashboard can render up to 3 side by side.
+    """
+    db.init_portfolio(con)
+    rows = con.execute(
+        "SELECT id, name, preset_type, sizing_mode, created_at "
+        "FROM portfolio WHERE status='active' ORDER BY created_at DESC LIMIT ?",
+        (limit,)).fetchall()
+    out = []
+    for p in rows:
+        alloc = export_portfolio_allocation(con, portfolio_id=p["id"])
+        if not alloc:
+            continue
+        out.append({
+            "id": p["id"],
+            "name": p["name"],
+            "preset_type": p["preset_type"],
+            "sizing_mode": p["sizing_mode"],
+            "created_at": p["created_at"],
+            "allocation": alloc,
+        })
+    return out
 
 
 def spread_history_by_secid(con) -> dict[str, list[dict]]:
@@ -1491,6 +1558,7 @@ def main() -> None:
     expected_returns = expected_returns_by_secid(con)
     portfolio_freshness = portfolio_data_freshness(con)
     portfolio_allocation = export_portfolio_allocation(con)
+    all_active_portfolios = export_all_active_portfolios(con)
     pd_table_date_iso = db.latest_pd_table_date(con)
     pd_table_date = (pd_import.format_report_date(pd_table_date_iso)
                       if pd_table_date_iso else None)
@@ -1706,6 +1774,7 @@ def main() -> None:
         "spread_history_labels": spread_history_labels,
         "portfolio_data_freshness": portfolio_freshness,
         "portfolio_allocation": portfolio_allocation,
+        "portfolios": all_active_portfolios,
         "pd_table_date": pd_table_date,
         "moex_defaults": {
             "watchlist_matches": moex_defaults.get_watchlist_defaults(con),
