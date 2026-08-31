@@ -4,9 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>hybond — Кредитный дашборд ВДО</title>
-<!-- Tabler Icons webfont (sidebar icons, 2026-08-26): second external CDN
-     dependency in this dashboard, after Sortable.js (loaded near the end of
-     body, see its own comment there). -->
+<!-- Tabler Icons webfont (sidebar icons, 2026-08-26): first external CDN
+     dependency in this dashboard (Sortable.js, previously the first, was
+     removed in the Visual redesign task, 2026-08-29, along with the
+     home-screen tile drag-reorder feature it powered). -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <style>
   :root {
@@ -1391,6 +1392,7 @@
     font-variant-numeric: tabular-nums; }
   .pulse-tile .pt-value.pt-good { color: var(--verdict-green); }
   .pulse-tile .pt-value.pt-bad { color: var(--verdict-red); }
+  .pulse-tile .pt-value.pt-warn { color: var(--warning); }
   .pulse-tile .pt-label { font-size: 12px; color: var(--text-tertiary); margin-top: 2px;
     text-transform: uppercase; letter-spacing: 0.5px; } /* was 11.5px var(--text-secondary), no uppercase/letter-spacing */
   .pulse-tile .pt-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
@@ -1434,9 +1436,19 @@
     transition: background 0.15s; }
   .iw-row:hover { background: var(--bg-elevated); }
   .iw-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-  .iw-name { font-weight: 500; font-size: 14px; flex: 1 1 auto; min-width: 0; overflow: hidden;
+  .iw-name { font-weight: 500; font-size: 15px; flex: 1 1 auto; min-width: 0; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
-  .iw-rating { color: var(--text-secondary); font-size: 12px; flex-shrink: 0; width: 64px; }
+  /* Change 7 (Visual redesign, 2026-08-29): rating as a small pill, same
+     visual language as .health-pill elsewhere. Kept in its existing
+     position/width (not moved to a literal "bottom of card" slot) --
+     .iw-rating's fixed width is load-bearing for #sec-table's alternate
+     table-view column alignment below, and health is already its own
+     compact colored dot+tooltip beside the name (Watchlist Health
+     Monitoring task, 2026-08-24) -- relocating either risks regressing
+     the table view or the health-dot's existing hover semantics for a
+     purely cosmetic reshuffle. */
+  .iw-rating { color: var(--text-secondary); font-size: 11px; flex-shrink: 0; width: 64px;
+    border: 0.5px solid var(--border); border-radius: 999px; padding: 2px 8px; text-align: center; }
   .iw-rating-trend { margin-left: 3px; cursor: help; font-weight: 700; }
   .iw-rating-timeline { margin-top: 10px; }
   .iw-rating-timeline-row { display: flex; gap: 10px; font-size: 14px; padding: 3px 0;
@@ -1703,62 +1715,72 @@
   .queue-indicator:hover { text-decoration: underline; }
   #watchlistQueueIndicator:empty { display: none; }
   #watchlistQueueIndicator .queue-indicator { margin: 0 0 14px; }
-  .home-hero-pulse { display: flex; gap: 10px; flex-wrap: wrap; }
-  .home-hero-pulse .pulse-tile { padding: 8px 12px; } /* was 10px 14px */
-  .home-hero-pulse .pt-value { font-size: 16px; }
-  /* auto-fit/minmax rather than a fixed 4-up grid: at 1280px this settles
-     into 4 columns, but still wraps gracefully on the widths in between
-     desktop and the 768px breakpoint below, without a second explicit
-     tablet rule. */
-  .home-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; padding: 14px 20px; align-items: start; }
-  .home-card { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 12px; padding: 14px; }
+  /* Change 6 (Visual redesign, 2026-08-29): top metrics bar = the home
+     hero's pulse strip (ЦБ РФ / средний G-спред / флаги / рынок
+     размещений) -- the only "top metrics bar" that actually sits on the
+     home screen. #statRow (Вотчлист tab's separate "Обзор" strip) is a
+     different element, out of scope here. var(--text-success)/
+     var(--text-warning) named in the spec don't exist as tokens in this
+     file -- var(--gold-primary) (the real brand teal, confirmed against
+     both theme blocks) and var(--warning) (= --verdict-yellow, amber) are
+     the real equivalents already used everywhere else in this file. */
+  .home-hero-pulse { display: flex; gap: 0; flex-wrap: wrap; }
+  .home-hero-pulse .pulse-tile { padding: 8px 16px; border-radius: 0;
+    border: none; border-left: 0.5px solid var(--border); background: transparent; }
+  .home-hero-pulse .pulse-tile:first-child { border-left: none; padding-left: 0; }
+  .home-hero-pulse .pt-value { font-size: 18px; font-weight: 500; }
+  .home-hero-pulse .pt-label { font-size: 11px; text-transform: uppercase; letter-spacing: .02em; color: var(--text-muted); }
+  .home-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; padding: 16px 20px; align-items: start; }
+  .home-main, .home-sidebar { display: flex; flex-direction: column; gap: 16px; }
+  .home-card { background: var(--surface-1); border: 0.5px solid var(--border); border-radius: 12px; padding: 20px; }
+  /* Elevate-on-hover only (no translateY lift, per spec Change 2) --
+     var(--bg-elevated) is this file's one "more elevated than surface-1"
+     tone (same token .stat-tile:hover already uses for an identical
+     purpose), standing in for the spec's var(--surface-2)/var(--surface-1)
+     pair, which this design-token set doesn't have (only one elevated
+     surface tone exists here, not two). */
+  .home-card:hover { background: var(--bg-elevated); }
   .home-card-header { font-size: 14px; font-weight: 600; margin-bottom: 10px; cursor: pointer; }
   .home-card-header:hover { color: var(--gold-primary); }
-  /* ---- Draggable home-screen tiles (2026-08-26): Sortable.js drives
-     reordering of the 4 .home-card tiles inside #homeColumns, dragging by
-     the tile's header (.home-card-header, already the click-to-navigate
-     target -- Sortable's own drag-vs-click threshold keeps both working).
-     Class names passed explicitly to Sortable.create() below. ---- */
-  .home-card[data-tile-id] .home-card-header { cursor: grab; }
-  .home-tile-dragging { opacity: 0.5; cursor: grabbing; }
-  .home-tile-drop-target { border: 2px solid var(--gold-primary); }
-  #homeColActionsHeader { cursor: grab; }
-  .home-issuer-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 0.5px solid var(--border); cursor: pointer; }
-  .home-issuer-row:last-child { border-bottom: none; }
-  .home-verdict-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .home-issuer-name { font-weight: 500; font-size: 14px; }
-  .home-issuer-meta { font-size: 12px; color: var(--text-muted); }
   .home-event-row { padding: 5px 0; border-bottom: 0.5px solid var(--border); }
   .home-event-row:last-child { border-bottom: none; }
   .home-event-tag { font-size: 12px; font-weight: 700; text-transform: uppercase; }
   .home-event-issuer { font-weight: 700; font-size: 14px; }
   .home-event-desc { font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .home-event-date { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
-  .home-sector-bar-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 6px 0; }
-  .home-sector-bar-label { min-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .home-sector-bar-track { flex: 1; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
-  .home-sector-bar-fill { height: 100%; background: var(--gold-primary); }
   .home-preset-btn { display: block; width: 100%; padding: 8px 12px; margin-bottom: 6px; border-radius: 8px;
     border: 0.5px solid var(--border); background: var(--surface-1); color: var(--text-primary);
     cursor: pointer; font-size: 14px; font-weight: 600; text-align: left; }
-  .home-preset-btn:hover { border-color: #C9A227; color: #C9A227; }
-  /* Nested inside a .home-card tile as of the draggable-tiles task
-     (2026-08-26) -- that card already contributes 14px padding, so this no
-     longer needs its own (previously a direct #homeScreen child with no
-     other padding source). */
-  .home-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .home-action-tile { display: flex; align-items: center; gap: 12px; background: var(--surface-1);
-    border: 0.5px solid var(--border); border-radius: 12px; padding: 16px 18px; cursor: pointer; }
-  .home-action-tile:hover { border-color: #C9A227; }
-  .home-action-icon { width: 36px; height: 36px; border-radius: 8px; background: rgba(201,162,39,0.12);
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #C9A227; }
-  .home-action-label { font-size: 14px; font-weight: 500; }
-  .home-action-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .home-preset-btn:hover { border-color: var(--gold-primary); color: var(--gold-primary); }
+  /* ---- Change 3: proactive insight card ---- */
+  .home-insight-card { border-left-width: 4px; border-left-style: solid; display: flex;
+    align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .home-insight-issuer { font-weight: 600; font-size: 15px; }
+  .home-insight-reason { font-size: 13px; color: var(--text-secondary); margin-top: 3px; }
+  .home-insight-link { font-size: 13px; color: var(--gold-primary); cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .home-insight-link:hover { text-decoration: underline; }
+  .home-insight-ok { color: var(--verdict-green); font-weight: 500; font-size: 14px; }
+  /* ---- Change 4: quick screen pills ---- */
+  .home-pills-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .home-quick-pill { padding: 8px 14px; border-radius: 999px; border: 0.5px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); font-size: 13px; cursor: pointer; }
+  .home-quick-pill:hover { border-color: var(--gold-primary); color: var(--gold-primary); }
+  /* ---- Change 5: portfolio snapshot sidebar card ---- */
+  .home-pf-aey { font-size: 28px; font-weight: 500; color: var(--gold-primary); line-height: 1.1; }
+  .home-pf-aey-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .home-pf-meta-row { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+  .home-alloc-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 12px; background: var(--border); }
+  .home-alloc-bar-seg { height: 100%; }
+  /* ---- Change 6-adjacent: CBR + market pulse sidebar cards ---- */
+  .home-cbr-rate { font-size: 22px; font-weight: 500; }
+  .home-cbr-countdown { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+  .home-pulse-row { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; border-bottom: 0.5px solid var(--border); }
+  .home-pulse-row:last-child { border-bottom: none; }
+  .home-pulse-row .val { font-weight: 500; }
   #backToHomeLink { display: none; font-size: 12px; color: var(--text-muted); cursor: pointer; margin: 14px 0 -4px; }
   #backToHomeLink:hover { color: var(--gold-primary); }
   @media (max-width: 768px) {
-    .home-columns { grid-template-columns: 1fr; }
-    .home-actions { grid-template-columns: 1fr; }
+    .home-layout { grid-template-columns: 1fr; }
   }
   /* ---- Mobile layout fixes (390px / iPhone 14 target) --------------------
      .home-columns/.home-actions already collapse to 1fr at 768px above --
@@ -1800,10 +1822,10 @@
     .iw-drawer-close { width: 44px; height: 44px; }
   }
 </style>
-<!-- Google Fonts (Inter, 2026-08-26): third external CDN dependency in
-     this dashboard, after Sortable.js and Tabler Icons. Only 400/500
-     weights -- 600/700 aren't loaded since the design system doesn't use
-     them here (see the body font-family rule above). -->
+<!-- Google Fonts (Inter, 2026-08-26): second external CDN dependency in
+     this dashboard, after Tabler Icons. Only 400/500 weights -- 600/700
+     aren't loaded since the design system doesn't use them here (see the
+     body font-family rule above). -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
@@ -1934,28 +1956,39 @@
       </div>
       <div class="home-hero-pulse" id="homeHeroPulse"></div>
     </div>
-    <!-- Draggable home-screen tiles (2026-08-26): Sortable.create() is
-         attached to #homeColumns near initHomeTileSort() in the script
-         block below. data-tile-id is the persisted-order identity (see
-         HOMESCREEN_TILE_ORDER_KEY); the drag handle is each tile's
-         .home-card-header, same element the click-to-navigate listeners
-         below are already bound to. -->
-    <div class="home-columns" id="homeColumns">
-      <div class="home-card" data-tile-id="watchlist">
-        <div class="home-card-header" id="homeColWatchlistHeader">Вотчлист →</div>
-        <div id="homeColWatchlist"></div>
+    <!-- Visual redesign (2026-08-29): 2/3-1/3 layout replaces the earlier
+         4-equal-card draggable grid. Left column: proactive insight ->
+         quick screen pills -> recent events. Right sidebar: portfolio
+         snapshot -> CBR countdown -> market pulse. The old Вотчлист-preview
+         and Быстрые действия tiles, and tile drag-reorder (Sortable.js),
+         were dropped as part of this redesign (still reachable via their
+         own sidebar tabs) -- see renderHomeScreen() near the bottom of the
+         script block for the render functions. -->
+    <div class="home-layout" id="homeLayout">
+      <div class="home-main">
+        <div class="home-card home-insight-card" id="homeInsightCard"></div>
+        <div class="home-card" id="homePillsCard">
+          <div class="home-card-header" style="cursor:default">Быстрый скрининг</div>
+          <div class="home-pills-row" id="homePillsRow"></div>
+        </div>
+        <div class="home-card" id="homeEventsCard">
+          <div class="home-card-header" id="homeColEventsHeader">Последние события →</div>
+          <div id="homeColEvents"></div>
+        </div>
       </div>
-      <div class="home-card" data-tile-id="events">
-        <div class="home-card-header" id="homeColEventsHeader">Последние события →</div>
-        <div id="homeColEvents"></div>
-      </div>
-      <div class="home-card" data-tile-id="portfolio">
-        <div class="home-card-header" id="homeColPortfolioHeader">Портфель →</div>
-        <div id="homeColPortfolio"></div>
-      </div>
-      <div class="home-card" data-tile-id="actions">
-        <div class="home-card-header" id="homeColActionsHeader">Быстрые действия</div>
-        <div class="home-actions" id="homeActions"></div>
+      <div class="home-sidebar">
+        <div class="home-card" id="homePortfolioCard">
+          <div class="home-card-header" id="homeColPortfolioHeader">Портфель →</div>
+          <div id="homeColPortfolio"></div>
+        </div>
+        <div class="home-card" id="homeCbrCard">
+          <div class="home-card-header" id="homeCbrCardHeader">ЦБ РФ →</div>
+          <div id="homeCbrCardBody"></div>
+        </div>
+        <div class="home-card" id="homePulseCard">
+          <div class="home-card-header" id="homePulseCardHeader">Пульс рынка →</div>
+          <div id="homePulseCardBody"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -2951,11 +2984,6 @@
      dozens of call sites outside the map. -->
 <div class="mm-tooltip" id="mmTooltip"></div>
 
-<!-- Sortable.js (draggable home-screen tiles, 2026-08-26): the first external
-     script dependency in this otherwise self-contained dashboard -- pinned
-     version, loaded from cdnjs. See initHomeTileSort() in the script block
-     below for the Sortable.create() call. -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 <script id="dashboard-data" type="application/json">/*__DASHBOARD_DATA__*/</script>
 <script id="narrative-prompt" type="application/json">/*__NARRATIVE_PROMPT__*/</script>
 <script id="company-scan-prompt" type="application/json">/*__COMPANY_SCAN_PROMPT__*/</script>
@@ -7112,6 +7140,7 @@ function renderHomeHero() {
   const tiles = [
     { value: pulse.cbrRate != null ? pulse.cbrRate.toFixed(2) + '%' : '—', label: 'ЦБ РФ', tab: 'cbr' },
     { value: pulse.avgG != null ? fmtBp(pulse.avgG, heroMobile) : '—',
+      cls: (pulse.avgG != null && pulse.avgG > 1000) ? 'pt-warn' : '',
       label: 'Средний G-спред', tab: 'market' },
     { value: String(pulse.flagsToday), cls: pulse.flagsToday > 0 ? 'pt-bad' : 'pt-good',
       label: 'Флаги', tab: 'market', opts: { marketSubtab: 'sec-market-news' } },
@@ -7128,38 +7157,76 @@ function renderHomeHero() {
   });
 }
 
-function renderHomeWatchlistCol() {
-  const el = document.getElementById('homeColWatchlist');
-  const rows = (DATA.issuers || [])
-    .map(iss => ({ iss, v: issuerWorstVerdict(iss) }))
-    .filter(x => x.v)
-    .sort((a, b) => VERDICT_SEVERITY[b.v.level] - VERDICT_SEVERITY[a.v.level])
-    .slice(0, 5);
-  if (!rows.length) { el.innerHTML = emptyStateHtml({ icon: 'star', title: 'Вотчлист пуст' }); return; }
-  el.innerHTML = rows.map(({ iss, v }) => {
-    const bond = issuerBestBond(iss);
-    const aey = bond && bond.aey_base_pct != null
-      ? `${bond.aey_base_pct >= 0 ? '+' : ''}${bond.aey_base_pct.toFixed(1)}%` : '—';
-    const dotColor = `var(--verdict-${v.level === 'gray' ? 'grey' : v.level})`;
-    return `<div class="home-issuer-row"${bond ? ` data-secid="${bond.secid}"` : ''}>
-      <span class="home-verdict-dot" style="background:${dotColor}"></span>
-      <div style="flex:1;min-width:0">
-        <div class="home-issuer-name">${escapeHtml(iss.name)}</div>
-        <div class="home-issuer-meta">${iss.rating || 'нет рейтинга'} · AEY ${aey}</div>
+// ---- Change 3: proactive insight card (Visual redesign, 2026-08-29) ----
+// Highest-severity unresolved signal from the last 24h: a RED/ORANGE
+// watchlist issuer wins first (it's the one case with a bond to open in
+// the drawer); falls back to the worst unresolved pipeline_health entry
+// (data-quality/operational, no associated bond -- links to the settings
+// drawer's health panel instead); else a green all-clear.
+function renderHomeInsightCard() {
+  const card = document.getElementById('homeInsightCard');
+  const worstIssuer = (DATA.issuers || [])
+    .filter(iss => iss.health_status === 'red' || iss.health_status === 'orange')
+    .sort((a, b) => (a.health_status === 'red' ? 0 : 1) - (b.health_status === 'red' ? 0 : 1))[0];
+  if (worstIssuer) {
+    const color = HEALTH_STATUS_COLOR[worstIssuer.health_status];
+    const bond = issuerBestBond(worstIssuer);
+    card.style.borderLeftColor = color;
+    card.innerHTML = `<div>
+        <div class="home-insight-issuer">${escapeHtml(worstIssuer.name)}</div>
+        <div class="home-insight-reason">${escapeHtml(worstIssuer.health_reason || HEALTH_STATUS_LABEL[worstIssuer.health_status])}</div>
       </div>
-    </div>`;
-  }).join('');
-  el.querySelectorAll('.home-issuer-row[data-secid]').forEach(row => {
-    row.addEventListener('click', () => { gotoTab('watchlist'); openBondDrawer(row.dataset.secid); });
+      ${bond ? `<span class="home-insight-link" id="homeInsightLink" data-secid="${bond.secid}">Смотреть →</span>` : ''}`;
+    const link = document.getElementById('homeInsightLink');
+    if (link) link.addEventListener('click', () => { gotoTab('watchlist'); openBondDrawer(link.dataset.secid); });
+    return;
+  }
+  const health = DATA.pipeline_health;
+  const worstHp = ((health && health.unresolved) || []).find(e => e.level === 'error' || e.level === 'critical');
+  if (worstHp) {
+    card.style.borderLeftColor = worstHp.level === 'critical' ? 'var(--verdict-red)' : 'var(--verdict-orange)';
+    card.innerHTML = `<div>
+        <div class="home-insight-issuer">Проблема пайплайна: ${escapeHtml(worstHp.code)}</div>
+        <div class="home-insight-reason">${escapeHtml(worstHp.detail || '')}</div>
+      </div>
+      <span class="home-insight-link" id="homeInsightHealthLink">Подробнее →</span>`;
+    document.getElementById('homeInsightHealthLink').addEventListener('click', openSettingsDrawer);
+    return;
+  }
+  card.style.borderLeftColor = 'var(--verdict-green)';
+  card.innerHTML = `<span class="home-insight-ok">✓ Всё в порядке — нет активных сигналов</span>`;
+}
+
+// ---- Change 4: quick screen pills -- navigates to Рынок with a specific
+// filter combination pre-set. Rating floor/mispricing/G-spread thresholds
+// are raw DOM inputs owned by the Рынок tab's own closure (not fields on
+// window.screenFilter), so this calls into window.__marketApplyQuickFilter
+// (exposed by that tab, mirroring the window.__pf* cross-tab convention
+// already used for the portfolio preset buttons) rather than trying to
+// reach into that closure's elements directly. ----
+function renderHomeQuickPills() {
+  const pills = [
+    { label: 'Консервативный ruBBB+', kind: 'conservative' },
+    { label: 'Недооценённые > 500бп', kind: 'undervalued' },
+    { label: 'Высокий риск G > 2000', kind: 'highrisk' },
+    { label: '★ Только вотчлист', kind: 'watchlist' },
+  ];
+  document.getElementById('homePillsRow').innerHTML = pills.map(p =>
+    `<button type="button" class="home-quick-pill" data-kind="${p.kind}">${escapeHtml(p.label)}</button>`).join('');
+  document.querySelectorAll('#homePillsRow .home-quick-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      gotoTab('market');
+      if (window.__marketApplyQuickFilter) window.__marketApplyQuickFilter(btn.dataset.kind);
+    });
   });
 }
 
-// Compact preview (Task 4, 2026-08-26): was up to 4 most recent events of
-// any severity; now only critical/high (same filter renderEvents()'s
-// default "Только high/critical" mode uses on the full feed, moved to
-// Рынок -> Новости, sec-market-news), capped to 3, with an explicit link to
-// the full feed rather than relying solely on the card header's own
-// click-to-navigate.
+// Compact preview (Task 4, 2026-08-26; capped at 5 not 3 as of the Visual
+// redesign task, 2026-08-29, per that spec's own "last 5 classified"):
+// only critical/high (same filter renderEvents()'s default "Только
+// high/critical" mode uses on the full feed, moved to Рынок -> Новости,
+// sec-market-news), with an explicit link to the full feed rather than
+// relying solely on the card header's own click-to-navigate.
 function renderHomeEventsCol() {
   const el = document.getElementById('homeColEvents');
   const header = document.getElementById('homeColEventsHeader');
@@ -7178,7 +7245,7 @@ function renderHomeEventsCol() {
     });
   });
   all.sort((a, b) => (b.occurred || '').localeCompare(a.occurred || ''));
-  const shown = all.slice(0, 3);
+  const shown = all.slice(0, 5);
   header.textContent = `Последние события (${shown.length}) →`;
   if (!shown.length) { el.innerHTML = emptyStateHtml({ icon: 'check', title: 'Критичных событий нет' }); return; }
   el.innerHTML = shown.map(e => `
@@ -7194,110 +7261,85 @@ function renderHomeEventsCol() {
   });
 }
 
+// ---- Change 5: portfolio snapshot sidebar card -- pulls from the SAVED
+// active DB portfolio export (DATA.portfolio_allocation, Portfolio donut
+// charts task, 2026-08-28), not the client-side position-picker state
+// (hybondSelectedPositions/window.__pfHomeSummary) the old version of this
+// card showed -- those are two different portfolios (an in-browser preview
+// vs. `hybond portfolio-build --save`'s stored one); the spec explicitly
+// asks for the saved one. Empty-state check (`!pa.summary`) mirrors the
+// donut chart's own (renderPfAllocation() above) for the same data shape.
 function renderHomePortfolioCol() {
   const el = document.getElementById('homeColPortfolio');
-  if (!hybondSelectedPositions.length) {
-    el.innerHTML = [['conservative', 'Консервативный'], ['moderate', 'Умеренный'], ['max', 'Максимальный']]
-      .map(([tier, label]) => `<button type="button" class="home-preset-btn" data-tier="${tier}">${escapeHtml(label)}</button>`)
-      .join('') + `<div class="home-issuer-meta" style="margin-top:2px">Выберите пресет для быстрого старта</div>`;
-    el.querySelectorAll('.home-preset-btn[data-tier]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (window.__pfApplyPreset) window.__pfApplyPreset(btn.dataset.tier);
-        gotoTab('portfolio');
-      });
+  const pa = DATA.portfolio_allocation;
+  if (!pa || !pa.summary) {
+    el.innerHTML = emptyStateHtml({
+      icon: 'chart', title: 'Нет сохранённого портфеля',
+      subtitle: 'hybond portfolio-build --save сохраняет портфель, после чего его сводка появится здесь.',
     });
     return;
   }
-  const summary = window.__pfHomeSummary ? window.__pfHomeSummary() : null;
-  if (!summary) { el.innerHTML = emptyStateHtml({ icon: 'chart', title: 'Нет данных портфеля' }); return; }
-  const aeyHtml = summary.aeyBase != null
-    ? `<div class="home-issuer-name"><span title="${escapeHtml(AEY_BASE_TOOLTIP)}" style="cursor:help">AEY (база)</span>${spravkaLink(4)}: ${summary.aeyBase >= 0 ? '+' : ''}${summary.aeyBase.toFixed(1)}%</div>` : '';
-  const presetHtml = summary.activePresetLabel
-    ? `<span class="pf-preset-badge">${escapeHtml(summary.activePresetLabel)}</span>` : '';
-  const barsHtml = summary.sectorTop4.length ? summary.sectorTop4.map(s => `
-    <div class="home-sector-bar-row">
-      <span class="home-sector-bar-label">${escapeHtml(sectorLabel(s.sector))}</span>
-      <span class="home-sector-bar-track"><span class="home-sector-bar-fill" style="width:${Math.min(100, s.pct).toFixed(1)}%"></span></span>
-      <span>${s.pct.toFixed(1)}%</span>
-    </div>`).join('') : '';
-  el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">${aeyHtml}${presetHtml}</div>` + barsHtml;
+  const s = pa.summary;
+  const aeyPct = s.avg_aey != null ? s.avg_aey * 100 : null;
+  const segs = Object.entries(pa.sector_allocation || {})
+    .sort((a, b) => b[1].weight - a[1].weight)
+    .map(([sector, v]) => `<span class="home-alloc-bar-seg" style="width:${(v.weight * 100).toFixed(1)}%;background:${v.color}" title="${escapeHtml(sectorLabel(sector))}: ${(v.weight * 100).toFixed(1)}%"></span>`)
+    .join('');
+  el.innerHTML = `
+    <div class="home-pf-aey">${aeyPct != null ? (aeyPct >= 0 ? '+' : '') + aeyPct.toFixed(1) + '%' : '—'}</div>
+    <div class="home-pf-aey-label"><span title="${escapeHtml(AEY_BASE_TOOLTIP)}" style="cursor:help">AEY (база)</span>${spravkaLink(4)}${s.name ? ` · <span class="pf-preset-badge">${escapeHtml(s.name)}</span>` : ''}</div>
+    <div class="home-alloc-bar">${segs}</div>
+    <div class="home-pf-meta-row">${s.total_bonds} облигаций · ${s.n_sectors} секторов</div>`;
 }
 
-// Small stroke-based inline SVGs, same convention as EMPTY_ICONS -- no
-// external icon font/CDN dependency (this file is opened via file://).
-const HOME_ACTION_ICONS = {
-  search: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
-  scatter: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><line x1="4" y1="20" x2="20" y2="20"/><line x1="4" y1="20" x2="4" y2="4"/><circle cx="8" cy="15" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="9" r="1.4" fill="currentColor" stroke="none"/><circle cx="16" cy="13" r="1.4" fill="currentColor" stroke="none"/><circle cx="18" cy="7" r="1.4" fill="currentColor" stroke="none"/></svg>',
-  bank: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><path d="M4 21V10"/><path d="M20 21V10"/><path d="M8 21V10"/><path d="M16 21V10"/><path d="M2 10l10-6l10 6"/></svg>',
-  adjustments: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2" fill="var(--surface-1)"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2" fill="var(--surface-1)"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2" fill="var(--surface-1)"/></svg>',
-};
-function renderHomeActions() {
-  const tiles = [
-    { icon: 'search', label: 'Проверить компанию', desc: 'Эмитент вне вотчлиста',
-      action: () => gotoTab('watchlist', { scrollTo: 'sec-company-scan' }) },
-    { icon: 'scatter', label: 'Карта рынка', desc: 'Scatter-график по всей вселенной',
-      action: () => { gotoTab('market'); const btn = document.querySelector('#marketViewToggle .view-btn[data-view="map"]'); if (btn) btn.click(); } },
-    { icon: 'bank', label: 'ЦБ РФ и ОФЗ', desc: 'Траектория ставки, ОФЗ carry',
-      action: () => gotoTab('cbr') },
-    { icon: 'adjustments', label: 'Симулятор ставки', desc: 'Портфель при другой ставке',
-      action: () => gotoTab('cbr', { scrollTo: 'cbrSimCard' }) },
-  ];
-  document.getElementById('homeActions').innerHTML = tiles.map((t, i) => `
-    <div class="home-action-tile" data-i="${i}">
-      <span class="home-action-icon">${HOME_ACTION_ICONS[t.icon]}</span>
-      <div><div class="home-action-label">${escapeHtml(t.label)}</div><div class="home-action-desc">${escapeHtml(t.desc)}</div></div>
-    </div>`).join('');
-  document.querySelectorAll('#homeActions .home-action-tile').forEach((el, i) => {
-    el.addEventListener('click', tiles[i].action);
-  });
+// ---- CBR next-meeting countdown sidebar card (new, Visual redesign task,
+// 2026-08-29) -- reuses DATA.cbr.current_rate/next_meeting, the same
+// fields renderHomeHero()'s cbrClause already reads. ----
+function renderHomeCbrCard() {
+  const el = document.getElementById('homeCbrCardBody');
+  const cbr = DATA.cbr || {};
+  const rateHtml = cbr.current_rate != null
+    ? `<div class="home-cbr-rate">${cbr.current_rate.toFixed(2)}%</div>` : '<div class="home-cbr-rate">—</div>';
+  let countdownHtml = '<div class="home-cbr-countdown">Нет запланированного заседания</div>';
+  const asOf = DATA.day2_snap_date;
+  if (cbr.next_meeting && asOf) {
+    const days = daysBetween(asOf, cbr.next_meeting);
+    if (days != null && days >= 0) {
+      countdownHtml = `<div class="home-cbr-countdown">Следующее заседание через ${days} ${ruPluralDay(days)} (${cbr.next_meeting})</div>`;
+    }
+  }
+  el.innerHTML = rateHtml + countdownHtml;
+}
+
+// ---- Market pulse sidebar card (new, Visual redesign task, 2026-08-29):
+// G-спред + ОФЗ, reusing computeMarketPulse() verbatim -- same numbers the
+// ticker bar and Рынок's own Market Pulse tiles already show, never a
+// second computation of the same figures. ----
+function renderHomePulseCard() {
+  const el = document.getElementById('homePulseCardBody');
+  const pulse = computeMarketPulse();
+  // 1000bp matches promotion_audit.py's own GSPREAD_LEVEL_WARN_BP -- same
+  // "elevated" threshold, kept consistent rather than picked independently.
+  const gElevated = pulse.avgG != null && pulse.avgG > 1000;
+  el.innerHTML = `
+    <div class="home-pulse-row"><span>Средний G-спред</span><span class="val" style="${gElevated ? 'color:var(--warning)' : ''}">${pulse.avgG != null ? Math.round(pulse.avgG) + ' бп' : '—'}</span></div>
+    <div class="home-pulse-row"><span>ОФЗ 10Y</span><span class="val">${pulse.ofz10y && pulse.ofz10y.ytm_pct != null ? pulse.ofz10y.ytm_pct.toFixed(2) + '%' : '—'}</span></div>
+    <div class="home-pulse-row"><span>Флаги сегодня</span><span class="val" style="${pulse.flagsToday > 0 ? 'color:var(--verdict-red)' : ''}">${pulse.flagsToday}</span></div>`;
 }
 
 function renderHomeScreen() {
   renderHomeHero();
-  renderHomeWatchlistCol();
+  renderHomeInsightCard();
+  renderHomeQuickPills();
   renderHomeEventsCol();
   renderHomePortfolioCol();
-  renderHomeActions();
+  renderHomeCbrCard();
+  renderHomePulseCard();
 }
-document.getElementById('homeColWatchlistHeader').addEventListener('click', () => gotoTab('watchlist'));
 document.getElementById('homeColEventsHeader').addEventListener('click', () => gotoTab('market', { marketSubtab: 'sec-market-news' }));
 document.getElementById('homeColPortfolioHeader').addEventListener('click', () => gotoTab('portfolio'));
-
-// ---- Draggable home-screen tiles (2026-08-26): Sortable.js over the 4
-// .home-card tiles in #homeColumns (data-tile-id: watchlist/events/
-// portfolio/actions), dragged by each tile's header. Order persists to
-// localStorage and is restored by reordering the DOM nodes before Sortable
-// attaches -- Sortable itself just reflects whatever DOM order it finds. ----
-const HOMESCREEN_TILE_ORDER_KEY = 'homescreen_tile_order';
-function restoreHomeTileOrder() {
-  const container = document.getElementById('homeColumns');
-  let order;
-  try { order = JSON.parse(localStorage.getItem(HOMESCREEN_TILE_ORDER_KEY) || 'null'); }
-  catch (e) { order = null; }
-  if (!Array.isArray(order)) return;
-  order.forEach(id => {
-    const tile = container.querySelector(`[data-tile-id="${id}"]`);
-    if (tile) container.appendChild(tile);
-  });
-}
-function saveHomeTileOrder() {
-  const order = Array.from(document.querySelectorAll('#homeColumns [data-tile-id]'))
-    .map(el => el.dataset.tileId);
-  localStorage.setItem(HOMESCREEN_TILE_ORDER_KEY, JSON.stringify(order));
-}
-function initHomeTileSort() {
-  const container = document.getElementById('homeColumns');
-  if (!container || typeof Sortable === 'undefined') return;
-  restoreHomeTileOrder();
-  Sortable.create(container, {
-    handle: '.home-card-header',
-    animation: 150,
-    dragClass: 'home-tile-dragging',
-    ghostClass: 'home-tile-drop-target',
-    onEnd: saveHomeTileOrder,
-  });
-}
-initHomeTileSort();
+document.getElementById('homeCbrCardHeader').addEventListener('click', () => gotoTab('cbr'));
+document.getElementById('homePulseCardHeader').addEventListener('click', () => gotoTab('market'));
 
 // ================= Ticker bar + Market Pulse (shared data) ===============
 // One computation shared by the ticker bar (always visible, all tabs) and
@@ -7633,6 +7675,29 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     renderSectorPills();
     renderActive();
   }
+
+  // Home screen quick screen pills (Visual redesign task, 2026-08-29):
+  // exposed globally (window.__marketApplyQuickFilter), same cross-tab
+  // convention as window.__pfApplyPreset/__pfLoadFromMarketSelection --
+  // rating floor/mispricing/G-spread thresholds are raw DOM inputs owned
+  // by this closure (el.mMisMin/mMisMax, el.mGspMin/mGspMax, ratingFloorSel),
+  // not window.screenFilter fields, so a caller outside this IIFE can't set
+  // them directly. Starts from resetMarketFilters()'s clean baseline so
+  // pills never combine with whatever was left over from a prior session.
+  window.__marketApplyQuickFilter = function (kind) {
+    resetMarketFilters();
+    if (kind === 'conservative') {
+      ratingFloorSel.value = 'ruBBB+';
+    } else if (kind === 'undervalued') {
+      el.mMisMin.value = 500;
+    } else if (kind === 'highrisk') {
+      el.mGspMin.value = 2000;
+    } else if (kind === 'watchlist') {
+      document.getElementById('mWatchlistOnlyFilter').checked = true;
+      window.screenFilter.update({ watchlistOnly: true });
+    }
+    renderActive();
+  };
 
   // Sector pills (Screener spec, 2026-08-27): multi-select, "Все" (empty
   // selection) shown active when nothing is picked. Reuses .health-pill/
