@@ -4986,6 +4986,14 @@ document.getElementById('unifiedDrawer').addEventListener('click', (e) => {
       closeUnifiedDrawer();
       gotoTab('market');
       window.screenFilter.update({ selectedSecids: [secid], selectedSecid: secid });
+      // Navigation audit fix (2026-08-29): was leaving the Рынок tab on
+      // whichever view (table/map) was already active -- "Показать на
+      // карте" must actually switch to Карта. Same pattern
+      // spravkaNavigate() already uses for its own map deep link.
+      requestAnimationFrame(() => {
+        const mapBtn = document.querySelector('#marketViewToggle .view-btn[data-view="map"]');
+        if (mapBtn) mapBtn.click();
+      });
     } else if (action === 'watchlist') {
       const issuerId = actBtn.dataset.issuer;
       closeUnifiedDrawer();
@@ -6459,7 +6467,10 @@ function renderIssuerRowsPage(pageIssuers) {
         sectors: iss.sector ? [iss.sector] : [],
         selectedSecids: secids, selectedSecid: secids[0] || null,
       });
-      gotoTab('market');
+      // Navigation audit fix (2026-08-29): was landing on the default
+      // Новости subtab, where this sector/secid filter has no visible
+      // effect -- Скринер (sec-market) is where it actually applies.
+      gotoTab('market', { marketSubtab: 'sec-market' });
     });
   });
 }
