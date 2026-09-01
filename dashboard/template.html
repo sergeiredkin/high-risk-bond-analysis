@@ -1184,7 +1184,13 @@
   .time-note { font-size: 12px; color: var(--text-muted); margin: -4px 0 12px; }
   .mm-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 20px; margin-bottom: 10px; }
   .mm-ctrl-group { flex: 0 0 auto; min-width: 0; }
-  .mm-ctrl-group label { display: block; font-size: 14px; color: var(--text-muted); margin-bottom: 3px; }
+  /* :not(.uni-toggle) -- this rule's (0,1,1) specificity otherwise beats
+     .uni-toggle's own "display:flex" (0,1,0) by source order, which
+     collapsed #mmVdoOnly's toggle-switch <label> to display:block and its
+     switch <span> to 0 width (found via the "toggle looks broken" report --
+     the visible dot was just the switch's ::after knob, absolutely
+     positioned inside a 0-width parent, floating over the label text). */
+  .mm-ctrl-group label:not(.uni-toggle) { display: block; font-size: 14px; color: var(--text-muted); margin-bottom: 3px; }
   .mm-ctrl-group select { width: 220px; max-width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border);
     background: var(--surface-1); color: var(--text-primary); font-size: 12px; }
   #mmMisFilterGroup { flex-basis: 100%; }
@@ -1242,7 +1248,7 @@
 
   /* Map A spec (2026-08-27): rich hover tooltip, lasso box, selection tray. */
   .mm-tooltip {
-    position: fixed; pointer-events: none; z-index: 1000;
+    position: fixed; pointer-events: none; z-index: 9999;
     background: var(--bg-elevated); border: 0.5px solid var(--border); border-radius: 8px;
     padding: 10px 12px; font-size: 12px; max-width: 220px; line-height: 1.5;
     color: var(--text-primary); opacity: 0; transition: opacity .15s;
@@ -8228,14 +8234,30 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
 
   const mmRichTooltip = document.getElementById('mmTooltip');
   function mmHideTooltip() { mmRichTooltip.style.opacity = 0; }
+  // Map fixes task (2026-09-01): this dashboard's font-size control sets
+  // document.documentElement.style.zoom (applyFontScale(), default 120% --
+  // see the identical gotcha already documented at the old canvas market
+  // map's toLogical()). event.clientX/clientY and getBoundingClientRect()
+  // both report REAL on-screen pixels, but a raw style.left/top value set
+  // on an element under a zoomed ancestor is interpreted in that ancestor's
+  // LOCAL (pre-zoom) space and gets multiplied by the zoom factor again at
+  // render time -- so setting style.left = clientX+'px' directly landed at
+  // clientX*zoom on screen (e.g. 681px authored -> 817px actual at 120%),
+  // dragging the tooltip far from the cursor. Fix: do the offset/edge-flip
+  // math in real screen space (matches clientX/Y and window.innerWidth,
+  // confirmed not zoom-scaled), then divide by the zoom factor only when
+  // writing style.left/top.
+  function mmZoomFactor() { return parseFloat(document.documentElement.style.zoom) || 1; }
   function mmPositionTooltip(clientX, clientY) {
+    const z = mmZoomFactor();
     mmRichTooltip.style.left = '-9999px'; mmRichTooltip.style.top = '-9999px';
-    const rect = mmRichTooltip.getBoundingClientRect();
-    let x = clientX + 12, y = clientY + 12;
-    if (x + rect.width > window.innerWidth) x = clientX - 12 - rect.width;
-    if (y + rect.height > window.innerHeight) y = clientY - 12 - rect.height;
-    mmRichTooltip.style.left = Math.max(0, x) + 'px';
-    mmRichTooltip.style.top = Math.max(0, y) + 'px';
+    const rect = mmRichTooltip.getBoundingClientRect(); // real screen px, zoom-aware
+    let x = clientX + 14, y = clientY + 14;
+    if (x + rect.width > window.innerWidth) x = clientX - 14 - rect.width;
+    if (y + rect.height > window.innerHeight) y = clientY - 14 - rect.height;
+    x = Math.max(0, x); y = Math.max(0, y);
+    mmRichTooltip.style.left = (x / z) + 'px';
+    mmRichTooltip.style.top = (y / z) + 'px';
   }
   function mmShowTooltipFor(b, clientX, clientY) {
     // health_status lives directly on every universe_now bond (Universe
@@ -8775,6 +8797,14 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       (activeView === 'table' && tableSubView === 'cards') ? '' : 'none';
     document.getElementById('mvBtnTable').classList.toggle('active', tableSubView === 'table');
     document.getElementById('mvBtnCards').classList.toggle('active', tableSubView === 'cards');
+    // Map fixes task (2026-09-01): #mStats is renderStats()'s own stats
+    // strip for the table/cards views (computeFiltered()'s fully-gated
+    // count) -- renderActive() calls renderStats() unconditionally on
+    // every render regardless of activeView, so it kept showing above the
+    // map too, stacked on top of the map's own #mmStatsSummary line (a
+    // different count, since the map draws from a different, less-gated
+    // set -- see mmFilteredBonds()). Only relevant for the table/cards views.
+    document.getElementById('mStats').style.display = activeView === 'map' ? 'none' : '';
   }
   applySubViewDisplay();
 
