@@ -1182,11 +1182,13 @@
   .time-btn.custom-scen { color: var(--series-2); border: 1px dashed var(--series-2); }
   .time-btn.custom-scen.active { background: var(--series-2); color: var(--text-primary); border-style: solid; }
   .time-note { font-size: 12px; color: var(--text-muted); margin: -4px 0 12px; }
-  .mm-controls { display: flex; gap: 10px; margin-bottom: 10px; max-width: 260px; }
-  .mm-ctrl-group { flex: 1; }
+  .mm-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 20px; margin-bottom: 10px; }
+  .mm-ctrl-group { flex: 0 0 auto; min-width: 0; }
   .mm-ctrl-group label { display: block; font-size: 14px; color: var(--text-muted); margin-bottom: 3px; }
-  .mm-ctrl-group select { width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border);
+  .mm-ctrl-group select { width: 220px; max-width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border);
     background: var(--surface-1); color: var(--text-primary); font-size: 12px; }
+  #mmMisFilterGroup { flex-basis: 100%; }
+  #mmMisFilterPills { display: flex; flex-wrap: wrap; margin: 0; }
   .mm-signal-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
   /* Market map redesign (2026-08-31): found via 375px DoD check -- 4 fixed
      columns don't shrink below their content's natural width (longest
@@ -2481,7 +2483,19 @@
               <option value="sector">Сектор</option>
             </select>
           </div>
+          <div class="mm-ctrl-group">
+            <label class="uni-toggle"><input type="checkbox" id="mmVdoOnly" checked><span class="uni-toggle-switch"></span>★ Только ВДО</label>
+          </div>
+          <div class="mm-ctrl-group" id="mmMisFilterGroup"><label>Мисценка</label>
+            <div class="health-pill-group" id="mmMisFilterPills">
+              <button type="button" class="health-pill active" data-mm-mis="0">Все</button>
+              <button type="button" class="health-pill" data-mm-mis="500">&gt;500бп</button>
+              <button type="button" class="health-pill" data-mm-mis="1000">&gt;1000бп</button>
+              <button type="button" class="health-pill" data-mm-mis="2000">&gt;2000бп</button>
+            </div>
+          </div>
         </div>
+        <p class="section-note" id="mmStatsSummary" style="margin:0 0 10px"></p>
         <div class="mm-signal-bar" id="mmSignalBar"></div>
         <div class="health-pill-group" id="mmFilterPills" style="display:none;margin-bottom:8px"></div>
         <div class="mm-chart-card" id="mmChartCard" style="position:relative">
@@ -2903,7 +2917,7 @@
           <div class="pf-preset-freshness" id="pfPresetFreshness"></div>
           <div class="pf-preset-cards" id="pfPresetCards"></div>
 
-          <div class="pf-preset-options">
+          <div class="pf-preset-options" id="pfPresetOptionsGroup">
             <div class="pf-preset-opt-group">
               <div class="pf-preset-opt-label">Распределение веса</div>
               <div class="view-toggle" id="pfSizingModeToggle">
@@ -8111,19 +8125,45 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     if (v >= -300) return c.yellow;
     return c.red;
   }
-  const mmState = { color: 'mispricing' };
+  const mmState = { color: 'mispricing', misMin: 0 };
   const MM_HEALTH_VAR = { green: '--verdict-green', yellow: '--verdict-yellow', orange: '--verdict-orange', red: '--verdict-red' };
   function mmHealthColor(status, cache) {
     const key = MM_HEALTH_VAR[(status || 'green').toLowerCase()] || MM_HEALTH_VAR.green;
     if (cache && cache.health && cache.health[key]) return cache.health[key];
     return getComputedStyle(document.documentElement).getPropertyValue(key).trim() || '#9a9890';
   }
+  // Map fixes task (2026-09-01): scan-universe-health only writes
+  // health_status for vdo_scope=1 bonds (health_source='full' for tier=1
+  // issuers, 'quantitative' from compute_universe_bond_health() for
+  // everything else -- src/hybond/__main__.py, "scan-universe-health").
+  // Now that "Только ВДО" can be unchecked (Fix 3), the map can show ~1700
+  // extra bonds the scan never touched, so b.health_status is genuinely
+  // null for them -- not a data bug, just outside that command's scope.
+  // Rather than leave those grey (looks broken), mirror the SAME
+  // quantitative thresholds client-side so they still get a real
+  // green/yellow/orange/red. Thresholds copied from
+  // UNIVERSE_RED/ORANGE/YELLOW_YTM_PCT / _GSPREAD_BP in
+  // src/hybond/watchlist_health.py -- keep in sync if those change.
+  function mmHealthClient(b) {
+    const ytm = b.ytm_pct, gs = b.g_spread_bp; // both already on their natural %/bp scale
+    if ((ytm != null && ytm > 150) || (gs != null && gs > 3000)) return 'red';
+    if ((ytm != null && ytm > 60) || (gs != null && gs > 2000)) return 'orange';
+    if ((ytm != null && ytm > 30) || (gs != null && gs > 1000)) return 'yellow';
+    return 'green';
+  }
+  function mmEffectiveHealth(b) { return b.health_status || mmHealthClient(b); }
+  // "Verified" = a real health_status from the DB scan (health_source
+  // 'full' or 'quantitative'); anything else falls back to mmHealthClient()
+  // computed in this render and gets drawn hollow (stroke only) so it
+  // reads as "unreviewed estimate", not hidden or indistinguishable from a
+  // verified read -- see draw()'s health-mode stroke/fill-opacity branch.
+  function mmHealthVerified(b) { return b.health_status != null; }
   function colorFor(b, cache) {
     switch (mmState.color) {
       case 'mispricing': return mmMisColor(b.mispricing_bp, cache);
-      case 'health': return mmHealthColor(b.health_status, cache);
-      case 'rating': return ratingColor(b.rating);
-      case 'sector': return sectorColor(b.sector);
+      case 'health': return mmHealthColor(mmEffectiveHealth(b), cache);
+      case 'rating': return b.rating ? ratingColor(b.rating) : '#9B8EA8';
+      case 'sector': return b.sector ? sectorColor(b.sector) : '#888888';
       default: return '#2a78d6';
     }
   }
@@ -8138,10 +8178,43 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   const MM_Y_MIN = 0, MM_Y_MAX = 55;
   const MM_MARGIN = { top: 20, right: 24, bottom: 50, left: 60 };
 
+  // Map fixes task (2026-08-31): the map used to draw from computeFiltered()
+  // -- the SAME fully-gated set the screener table shows (rating floor,
+  // liquidity floor, AEY slider, maturity buckets, coupon/listing checks,
+  // mispricing range, watchlistOnly). That meant the map silently inherited
+  // every screener default and could show as few as ~74 bonds instead of
+  // the full ВДО universe. The map now sources directly from
+  // DATA.universe_now.bonds, gated ONLY by vdo_scope -- sector/rating pills
+  // (the map's own inline filters, shared with the screener's pills by
+  // design, see renderMmFilterPills()) still apply on top, but the
+  // screener's OTHER gates (rating floor, liquidity floor, AEY range,
+  // maturity buckets, coupon/listing checks, mispricing range,
+  // watchlistOnly) no longer do. No health/AEY-range filter on the map by
+  // design -- there's no UI control for either here.
+  //
+  // vdo_scope is a JSON boolean here (Python bool -> true/false), NOT 1/0
+  // -- `=== 1` would always be false.
+  function applyMapFilters(b) {
+    const sf = window.screenFilter;
+    if (sf.sectors.length && !sf.sectors.includes(b.sector)) return false;
+    if (sf.ratings.length && !sf.ratings.includes(ratingTier(b.rating))) return false;
+    if (mmState.misMin > 0 && !(b.mispricing_bp != null && Math.abs(b.mispricing_bp) > mmState.misMin)) return false;
+    return true;
+  }
+  // Fix 3 (2026-09-01): map-local "★ Только ВДО" toggle (#mmVdoOnly,
+  // default checked) -- deliberately its OWN control, not a read of
+  // window.screenFilter.vdoOnly, since the map already draws independently
+  // of the screener's other gates (see comment above); wiring it to the
+  // shared flag would also silently retoggle the Скринер table underneath.
+  // Unchecked, the map shows the full universe_now.bonds set (~2000),
+  // still capped to the fixed axis domains below.
   function mmFilteredBonds() {
-    return computeFiltered().filter(b =>
-      b.mod_dur != null && isFinite(b.mod_dur) && b.ytm_pct != null && isFinite(b.ytm_pct)
-      && b.mod_dur >= MM_X_MIN && b.mod_dur <= MM_X_MAX && b.ytm_pct >= MM_Y_MIN && b.ytm_pct <= MM_Y_MAX);
+    const vdoOnly = document.getElementById('mmVdoOnly').checked;
+    return ((DATA.universe_now && DATA.universe_now.bonds) || [])
+      .filter(b => !vdoOnly || b.vdo_scope === true)
+      .filter(b => b.mod_dur != null && isFinite(b.mod_dur) && b.ytm_pct != null && isFinite(b.ytm_pct)
+        && b.mod_dur >= MM_X_MIN && b.mod_dur <= MM_X_MAX && b.ytm_pct >= MM_Y_MIN && b.ytm_pct <= MM_Y_MAX)
+      .filter(applyMapFilters);
   }
 
   // Radius: sqrt-scaled by volume (area, not radius, proportional to
@@ -8165,15 +8238,23 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     mmRichTooltip.style.top = Math.max(0, y) + 'px';
   }
   function mmShowTooltipFor(b, clientX, clientY) {
+    // health_status lives directly on every universe_now bond (Universe
+    // Health Scan task, 2026-08-29) -- bondLookup (watchlist-only, keyed by
+    // secid) is just a fallback for the rare case it's somehow missing,
+    // not the primary source; most bonds the full-universe map now shows
+    // (Map fixes task, 2026-08-31) were never on the watchlist at all, so
+    // bondLookup wouldn't have an entry for them regardless.
     const iss = bondLookup.has(b.secid) ? bondLookup.get(b.secid).issuer : null;
-    const health = (b.health_status || (iss ? iss.health_status : null) || 'green').toUpperCase();
+    const health = (b.health_status || (iss ? iss.health_status : null) || 'green').toLowerCase();
+    const healthColor = mmHealthColor(health);
     const volM = b.volume != null ? (b.volume / 1e6).toFixed(1) + 'М ₽' : '—';
     const misHtml = (!b.signal_excluded && b.mispricing_bp != null)
       ? `<div class="mmt-mispricing" style="color:${mmMisColor(b.mispricing_bp)}">Миспрайсинг: ${b.mispricing_bp > 0 ? '+' : ''}${Math.round(b.mispricing_bp)}бп ${b.mispricing_bp < 0 ? 'недооценена' : 'переоценена'}</div>`
       : '';
     mmRichTooltip.innerHTML = `
       <div class="mmt-title-row"><span>${escapeHtml(b.emitent_title || b.short_name || b.secid)}</span>${b.in_watchlist ? '<span>★</span>' : ''}</div>
-      <div class="mmt-row"><span>Рейтинг: ${b.rating || 'нет'}</span><span>Здоровье: ${health}</span></div>
+      <div class="mmt-row"><span style="color:var(--text-secondary)">${escapeHtml(b.secid)}</span></div>
+      <div class="mmt-row"><span>Рейтинг: ${b.rating || 'нет'}</span><span>Здоровье: <span style="color:${healthColor}">${health.toUpperCase()}</span></span></div>
       <div class="mmt-row"><span>YTM: ${b.ytm_pct != null ? b.ytm_pct.toFixed(1) + '%' : '—'}</span><span>AEY: ${b.aey_base_risk_adj_pct != null ? b.aey_base_risk_adj_pct.toFixed(1) + '%' : '—'}</span></div>
       <div class="mmt-row"><span>G-спред: ${b.g_spread_bp != null ? (b.g_spread_bp > 0 ? '+' : '') + Math.round(b.g_spread_bp) + 'бп' : '—'}</span><span>Дюрация: ${b.mod_dur != null ? b.mod_dur.toFixed(1) + ' лет' : '—'}</span></div>
       <div class="mmt-row"><span>Сектор: ${b.sector ? sectorLabel(b.sector) : '—'}</span><span>Объём: ${volM}</span></div>
@@ -8217,7 +8298,42 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       <div class="mm-stat-tile"><div class="value">${wl}</div><div class="label">В вотчлисте</div></div>
     `;
   }
-  function updateLegend() {
+  // Fix 5 (Map fixes task, 2026-08-31): one-line summary above the map --
+  // "Показано N из M ВДО" against the FULL vdo_scope=1 universe (M), not
+  // whatever computeFiltered() would show, since the map no longer draws
+  // from that. "(фильтр: ...)" only appears once a sector/rating pill
+  // actually narrows the set -- an unfiltered map just shows N == M.
+  function mmStatsSummaryFilterLabel() {
+    const sf = window.screenFilter;
+    const parts = [];
+    if (sf.sectors.length) parts.push(sf.sectors.map(sectorLabel).join(', '));
+    if (sf.ratings.length) parts.push(sf.ratings.map(t => MM_RATING_TIER_LABEL[t] || t).join(', '));
+    if (mmState.misMin > 0) parts.push(`мисценка > ${mmState.misMin}бп`);
+    return parts.length ? ` (фильтр: ${parts.join(', ')})` : '';
+  }
+  // Fix 3 (2026-09-01): denominator/label follow #mmVdoOnly -- "N из 303
+  // ВДО" scoped, "N из 2004 всего" unscoped -- same scoped/unscoped
+  // wording the screener's own stats line already uses (scopeLabel,
+  // computeFiltered() above) so the two controls read consistently.
+  function updateMmStatsSummary(bonds) {
+    const vdoOnly = document.getElementById('mmVdoOnly').checked;
+    const allBonds = (DATA.universe_now && DATA.universe_now.bonds) || [];
+    const total = vdoOnly ? allBonds.filter(b => b.vdo_scope === true).length : allBonds.length;
+    const scopeLabel = vdoOnly ? 'ВДО' : 'всего';
+    const gspreads = bonds.map(b => b.g_spread_bp).filter(v => v !== null && v !== undefined);
+    const ytms = bonds.map(b => b.ytm_pct).filter(v => v !== null && v !== undefined);
+    const avgG = gspreads.length ? Math.round(gspreads.reduce((s, v) => s + v, 0) / gspreads.length) : null;
+    const medYtm = ytms.length ? median(ytms) : null;
+    document.getElementById('mmStatsSummary').textContent =
+      `Показано ${bonds.length} из ${total} ${scopeLabel}${mmStatsSummaryFilterLabel()}` +
+      `  ·  Средний G-спред: ${avgG != null ? avgG + 'бп' : '—'}` +
+      `  ·  Медиана YTM: ${medYtm != null ? medYtm.toFixed(1) + '%' : '—'}`;
+  }
+  // bonds: the currently-plotted set (Fix 4, 2026-09-01) -- only needed so
+  // the sector legend can tell whether any plotted bond actually has
+  // sector==null and is worth an explicit "Другое" swatch, rather than
+  // always showing it.
+  function updateLegend(bonds) {
     const legendEl = document.getElementById('mmLegendRow');
     let items = [];
     const s = getComputedStyle(document.documentElement);
@@ -8226,19 +8342,23 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     const yellow = s.getPropertyValue('--verdict-yellow').trim() || '#c98a00';
     const orange = s.getPropertyValue('--verdict-orange').trim() || '#E8920F';
     const grey = s.getPropertyValue('--verdict-grey').trim() || '#9a9890';
+    let footnote = '';
     if (mmState.color === 'mispricing') {
-      items = [[green,'> +300бп недооценка'], [yellow,'±300бп справедливо'], [red,'< -300бп переоценка'], [grey,'нет рейтинга']];
+      items = [[green,'> +300бп недооценка'], [yellow,'±300бп справедливо'], [red,'< -300бп переоценка'], [grey,'нет сигнала']];
     } else if (mmState.color === 'health') {
       items = [[green,'GREEN'], [yellow,'YELLOW'], [orange,'ORANGE'], [red,'RED']];
+      footnote = `<div class="mm-legend-item">● заполнен: подтверждённое здоровье (скан) · ○ полый: оценка по YTM/G-спреду (не сканировалось)</div>`;
     } else if (mmState.color === 'rating') {
-      items = [['rgb(40,190,70)','AAA/AA'], ['rgb(120,160,70)','A'], ['rgb(190,130,70)','BBB'], ['rgb(200,70,70)','BB и ниже']];
+      items = [['rgb(40,190,70)','AAA/AA'], ['rgb(120,160,70)','A'], ['rgb(190,130,70)','BBB'], ['rgb(200,70,70)','BB и ниже'], ['#9B8EA8','Без рейтинга']];
     } else if (mmState.color === 'sector') {
-      const sectors = [...new Set((bucket(timeKey).bonds || []).map(b => b.sector).filter(Boolean))].slice(0, 8);
+      const sectors = [...new Set(((bucket(timeKey).bonds || [])).map(b => b.sector).filter(Boolean))].slice(0, 8);
       items = sectors.map(s2 => [sectorColor(s2), sectorLabel(s2)]);
+      if ((bonds || []).some(b => !b.sector)) items.push(['#888888', 'Другое']);
     }
     legendEl.innerHTML = items.map(([c, l]) =>
       `<div class="mm-legend-item"><span class="mm-swatch" style="background:${c}"></span>${l}</div>`).join('')
       + `<div class="mm-legend-item">● заполнен: вотчлист · ○ полый: только вселенная</div>`
+      + footnote
       + `<div class="mm-legend-item"><span style="color:${green}">◌</span> кольцо: мисценка &gt; 1000бп или PD-разрыв &gt; 10%</div>`;
   }
 
@@ -8380,7 +8500,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       emptyOverlay.style.display = '';
       const resetBtn = document.getElementById('mmResetFiltersBtn');
       if (resetBtn) resetBtn.addEventListener('click', resetMarketFilters);
-      updateSignalBar([]); updateMmStats([]); updateLegend(); renderMmFilterPills();
+      updateSignalBar([]); updateMmStats([]); updateMmStatsSummary([]); updateLegend([]); renderMmFilterPills();
       document.getElementById('mmSizeLegend').innerHTML = '';
       return;
     }
@@ -8399,11 +8519,22 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     const clipId = 'mmClip';
     root.append('clipPath').attr('id', clipId).append('rect').attr('width', mmPlotWidth).attr('height', mmPlotHeight);
 
+    // Map fixes task (2026-09-01): brushG MUST be appended before bubbleG.
+    // d3.brush() sets pointer-events:all on its full-extent overlay <rect>,
+    // and a later SVG sibling paints (and hit-tests) on top of an earlier
+    // one -- with brushG last, that overlay covered every bubble and ate
+    // 100% of real mouse events (verified via elementFromPoint at a
+    // bubble's own screen coords: topmost hit was rect.overlay, not the
+    // circle), so hover/click never reached circle.mm-bubble at all. Only
+    // element.dispatchEvent()-based tests (which target a node directly,
+    // bypassing hit-testing) masked this. Zoom/pan still works either way
+    // since it's bound on the <svg> root and the brush's own filter lets a
+    // non-shift mousedown bubble up uncaptured.
     mmG = root.append('g').attr('clip-path', `url(#${clipId})`);
     const gridG = mmG.append('g').attr('class', 'mm-grid');
+    const brushG = mmG.append('g').attr('class', 'mm-brush');
     const bubbleG = mmG.append('g').attr('class', 'mm-bubbles');
     const clusterG = mmG.append('g').attr('class', 'mm-clusters');
-    const brushG = mmG.append('g').attr('class', 'mm-brush');
 
     const xAxisG = root.append('g').attr('class', 'mm-axis mm-x-axis').attr('transform', `translate(0,${mmPlotHeight})`);
     const yAxisG = root.append('g').attr('class', 'mm-axis mm-y-axis');
@@ -8428,11 +8559,22 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       const circles = bubbleG.selectAll('circle.mm-bubble').data(bonds, b => b.secid);
       circles.exit().remove();
       const entered = circles.enter().append('circle').attr('class', 'mm-bubble');
+      // Fix 4 (2026-09-01): in health mode, a bond with no DB health_status
+      // (mmHealthVerified() false -- health computed client-side via
+      // mmHealthClient() for the purpose of coloring it at all, see
+      // colorFor()) draws hollow -- stroke only, no fill -- so it reads as
+      // an unreviewed estimate rather than a verified scan result, without
+      // hiding the signal or looking like broken/missing data.
       const merged = entered.merge(circles)
         .attr('cx', b => xs(b.mod_dur)).attr('cy', b => ys(b.ytm_pct))
         .attr('r', b => rScale(b.volume || 0))
         .attr('fill', b => colorFor(b, colorCache))
-        .attr('fill-opacity', b => selectionActive ? (selectedIds.has(b.secid) ? 0.9 : 0.3) : 0.85)
+        .attr('fill-opacity', b => {
+          if (mmState.color === 'health' && !mmHealthVerified(b)) return 0;
+          return selectionActive ? (selectedIds.has(b.secid) ? 0.9 : 0.3) : 0.85;
+        })
+        .attr('stroke', b => (mmState.color === 'health' && !mmHealthVerified(b)) ? colorFor(b, colorCache) : null)
+        .attr('stroke-width', b => (mmState.color === 'health' && !mmHealthVerified(b)) ? 2 : null)
         .classed('mm-selected', b => selectedIds.has(b.secid))
         .style('cursor', 'pointer');
 
@@ -8535,7 +8677,8 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
 
     updateSignalBar(bonds);
     updateMmStats(bonds);
-    updateLegend();
+    updateMmStatsSummary(bonds);
+    updateLegend(bonds);
     renderMmFilterPills();
     renderMmSizeLegend(bonds, rScale);
   }
@@ -8552,6 +8695,17 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   });
 
   document.getElementById('mmSelColor').addEventListener('change', e => { mmState.color = e.target.value; renderMarketMap(); });
+  document.getElementById('mmVdoOnly').addEventListener('change', () => renderMarketMap());
+  // Fix 5: 4 mutually-exclusive mispricing-threshold pills (>|mispricing_bp|
+  // > N, "Все" = no filter). Applied in applyMapFilters() above, alongside
+  // the sector/rating pills it already gates on.
+  document.getElementById('mmMisFilterPills').addEventListener('click', e => {
+    const btn = e.target.closest('[data-mm-mis]');
+    if (!btn) return;
+    mmState.misMin = Number(btn.dataset.mmMis) || 0;
+    document.querySelectorAll('#mmMisFilterPills [data-mm-mis]').forEach(b => b.classList.toggle('active', b === btn));
+    renderMarketMap();
+  });
 
   // Debounced (150ms) per spec -- avoids a full SVG rebuild on every
   // intermediate resize event during a drag-resize.
@@ -8583,14 +8737,15 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     document.getElementById('mmTrayCount').textContent = `${ids.length} ${pluralBonds(ids.length)} выбрано`;
   }
   document.getElementById('mmTrayBuildBtn').addEventListener('click', () => {
-    // Same handoff mBuildPortfolioBtn already uses (window.__pfLoadFromMarketSelection)
-    // -- reused rather than reimplemented so the two "send bonds to Портфель"
-    // paths can't drift apart.
+    // Map fixes task (2026-08-31), Fix 4: distinct from mBuildPortfolioBtn's
+    // handoff (window.__pfLoadFromMarketSelection, which sends bonds to the
+    // Обзор tab's manual picker) -- the map's OWN "Построить портфель ->"
+    // goes straight to Портфель -> Пресеты as a "Из карты N облигаций"
+    // custom preset, already built and previewed (window.__pfBuildFromMapSelection).
     const secids = window.screenFilter.selectedSecids || [];
     if (!secids.length) return;
-    const portfolioBtn = document.querySelector('.sidebar-item[data-tab="portfolio"]');
-    if (portfolioBtn) portfolioBtn.click();
-    if (window.__pfLoadFromMarketSelection) window.__pfLoadFromMarketSelection(secids);
+    gotoTab('portfolio', { pftab: 'presets' });
+    if (window.__pfBuildFromMapSelection) window.__pfBuildFromMapSelection();
   });
   document.getElementById('mmTrayShowTableBtn').addEventListener('click', () => {
     const tableBtn = document.querySelector('#marketViewToggle [data-view="table"]');
@@ -11643,6 +11798,57 @@ renderOfzCurveShape();
     return candidates;
   }
 
+  // Map fixes task (2026-08-31), Fix 4: "Из карты N облигаций" -- a
+  // portfolio built from EXACTLY the bonds the user selected on the market
+  // map (window.screenFilter.selectedSecids), not from any preset's
+  // rating/health/AEY eligibility criteria. Deliberately skips
+  // gatherCandidates()'s health-status gate and eligibility filtering --
+  // the user already chose these bonds by hand, so there's nothing left to
+  // screen them against. Returns the same shape buildPreset() does
+  // (bonds/weights/summary/sourceBreakdown/presetType/sizingMode/filters)
+  // so renderPreview()/the save-as-active flow both work unchanged.
+  function buildCustomFromSelection() {
+    const secids = window.screenFilter.selectedSecids || [];
+    const tierByIssuer = {}, nameByIssuer = {};
+    (DATA.issuers || []).forEach(iss => { tierByIssuer[iss.issuer_id] = 1; nameByIssuer[iss.issuer_id] = iss.name; });
+    (DATA.issuers_passive || []).forEach(iss => { tierByIssuer[iss.issuer_id] = 2; nameByIssuer[iss.issuer_id] = iss.name; });
+
+    const bonds = secids.map(secid => {
+      const b = universeBondLookup.get(secid);
+      if (!b) return null; // stale secid (e.g. a snapshot refresh since the map rendered) -- skip rather than throw
+      const watchlistTier = tierByIssuer[b.emitent_inn] != null ? tierByIssuer[b.emitent_inn] : 99;
+      return {
+        isin: b.secid, secid: b.secid, issuerId: b.emitent_inn,
+        issuerName: nameByIssuer[b.emitent_inn] || b.emitent_title || b.emitent_inn || b.secid,
+        sector: b.sector || 'other', rating: b.rating || null,
+        health: (b.health_status || 'green').toLowerCase(), healthSource: b.health_source || null,
+        watchlistTier, aey: b.aey_base_risk_adj_pct != null ? b.aey_base_risk_adj_pct / 100 : null,
+        ytm: b.ytm_pct != null ? b.ytm_pct / 100 : null, gSpreadBp: b.g_spread_bp,
+        gSpreadDelta30d: null, matDate: b.mat_date, offerDate: b.offer_date, flags: {},
+      };
+    }).filter(Boolean);
+    if (!bonds.length) throw new Error('нет выбранных облигаций для построения портфеля');
+
+    const weights = computeWeights(bonds, 'equal');
+    const nIssuers = new Set(bonds.map(c => c.issuerId)).size;
+    const nSectors = new Set(bonds.filter(c => c.sector).map(c => c.sector)).size;
+    const avgAey = bonds.reduce((s, c) => s + weights[c.isin] * (c.aey || 0), 0);
+    let expectedLoss = 0;
+    bonds.forEach(c => {
+      const pd1y = DEFAULT_PD_1YR[normaliseRating(c.rating)] || 0;
+      expectedLoss += weights[c.isin] * pd1y * LGD;
+    });
+    const nWatchlist = bonds.filter(c => c.watchlistTier === 1 || c.watchlistTier === 2).length;
+    return {
+      presetType: 'custom', sizingMode: 'equal', filters: {}, bonds, weights,
+      summary: {
+        avgAey, expectedLoss, netReturn: avgAey - expectedLoss, nBonds: bonds.length,
+        nIssuers, nSectors, nRedIncluded: 0,
+      },
+      sourceBreakdown: { watchlist: nWatchlist, universe: bonds.length - nWatchlist },
+    };
+  }
+
   /** Resolves a preset's effective filters (base preset + user overrides)
    * and the set of candidates surviving them -- the "how many bonds could
    * this preset+filter combination possibly use" step shared by
@@ -11807,7 +12013,7 @@ renderOfzCurveShape();
   function renderPresetCards() {
     const el = document.getElementById('pfPresetCards');
     if (!el) return;
-    el.innerHTML = Object.keys(PRESETS).map(key => {
+    const presetCardsHtml = Object.keys(PRESETS).map(key => {
       const p = PRESETS[key];
       const [lo, hi] = p.bond_count;
       const healthLine = p.health_allowed.map(h => h.toUpperCase()).join('/') +
@@ -11819,6 +12025,19 @@ renderOfzCurveShape();
         <div class="pf-preset-card-line">${healthLine}</div>
       </div>`;
     }).join('');
+    // Fix 4 (Map fixes task, 2026-08-31): a 4th "custom" card, built from
+    // exactly the bonds selected on the market map -- only shown once
+    // there IS a map selection to build from (window.screenFilter is the
+    // shared selection state the map's click/shift-click/lasso write to).
+    const mapSecids = window.screenFilter.selectedSecids || [];
+    const customCardHtml = mapSecids.length
+      ? `<div class="pf-preset-card${selectedPresetType === 'custom' ? ' active' : ''}" data-preset="custom">
+          <div class="pf-preset-card-title">Из карты</div>
+          <div class="pf-preset-card-line">${mapSecids.length} облигаций</div>
+          <div class="pf-preset-card-line">Равный вес, без фильтров</div>
+        </div>`
+      : '';
+    el.innerHTML = presetCardsHtml + customCardHtml;
     el.querySelectorAll('.pf-preset-card').forEach(card => {
       card.addEventListener('click', () => {
         selectedPresetType = card.dataset.preset;
@@ -11830,6 +12049,13 @@ renderOfzCurveShape();
   }
 
   function syncPresetDefaults() {
+    // "Из карты" has no sector-cap/max-per-issuer/RED-override sliders --
+    // it's exactly the user's own selection, not a criteria-driven build.
+    if (selectedPresetType === 'custom') {
+      document.getElementById('pfPresetOptionsGroup').style.display = 'none';
+      return;
+    }
+    document.getElementById('pfPresetOptionsGroup').style.display = '';
     const p = PRESETS[selectedPresetType];
     document.getElementById('pfSectorCapSlider').value = Math.round(p.sector_cap * 100);
     document.getElementById('pfSectorCapVal').textContent = Math.round(p.sector_cap * 100) + '%';
@@ -11910,7 +12136,8 @@ renderOfzCurveShape();
     if (!warnEl || !buildBtn) return;
     let satisfiable = true;
     try {
-      buildPreset(selectedPresetType, selectedSizingMode, currentUserFilters());
+      if (selectedPresetType === 'custom') buildCustomFromSelection();
+      else buildPreset(selectedPresetType, selectedSizingMode, currentUserFilters());
     } catch (e) {
       satisfiable = false;
     }
@@ -12153,7 +12380,9 @@ renderOfzCurveShape();
     const errEl = document.getElementById('pfPresetBuildError');
     errEl.style.display = 'none';
     try {
-      lastBuilt = buildPreset(selectedPresetType, selectedSizingMode, currentUserFilters());
+      lastBuilt = selectedPresetType === 'custom'
+        ? buildCustomFromSelection()
+        : buildPreset(selectedPresetType, selectedSizingMode, currentUserFilters());
       renderPreview(lastBuilt);
     } catch (e) {
       errEl.style.display = '';
@@ -12592,7 +12821,7 @@ renderOfzCurveShape();
     { key: 'max_duration', label: 'Макс. дюрация', better: 'low', fmt: v => v.toFixed(1) + ' лет' },
   ];
 
-  const PF_PRESET_BADGE_LABEL = { conservative: 'Консервативный', balanced: 'Сбалансированный', aggressive: 'Агрессивный' };
+  const PF_PRESET_BADGE_LABEL = { conservative: 'Консервативный', balanced: 'Сбалансированный', aggressive: 'Агрессивный', custom: 'Из карты' };
 
   function renderCompareGrid(portfolios) {
     const grid = document.getElementById('pfCompareGrid');
@@ -12726,6 +12955,35 @@ renderOfzCurveShape();
   if (existingRecord && existingRecord.status === 'active') {
     renderMonitor(existingRecord);
   }
+
+  // "Из карты N" card count/visibility tracks the map's live selection --
+  // e.g. the user adds/removes a bond on the map while already sitting on
+  // Пресеты, or the count changes underneath them via shift-click/lasso.
+  // Only re-renders the card list, not the whole builder -- a build in
+  // progress or an open preview shouldn't be disturbed by an unrelated map
+  // selection change happening on a different tab.
+  window.screenFilter.listeners.push(() => renderPresetCards());
+
+  // Fix 4 (Map fixes task, 2026-08-31): the map's selection-tray "Построить
+  // портфель ->" button (marketTab(), a separate IIFE) calls this cross-
+  // closure hook instead of window.__pfLoadFromMarketSelection (which sends
+  // bonds to the Обзор tab's manual picker) -- selects the "Из карты"
+  // preset card and builds+previews immediately, landing the user straight
+  // on the preview screen rather than an intermediate builder step.
+  window.__pfBuildFromMapSelection = function () {
+    if (!(window.screenFilter.selectedSecids || []).length) return;
+    selectedPresetType = 'custom';
+    renderPresetCards();
+    syncPresetDefaults();
+    try {
+      lastBuilt = buildCustomFromSelection();
+      renderPreview(lastBuilt);
+    } catch (e) {
+      showBuilder();
+      document.getElementById('pfPresetBuildError').style.display = '';
+      document.getElementById('pfPresetBuildError').textContent = e.message;
+    }
+  };
 })();
 
 // ================= Справка tab (2026-08-17) =================================
