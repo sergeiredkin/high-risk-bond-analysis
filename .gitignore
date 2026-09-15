@@ -18,3 +18,6 @@ __pycache__/
 data/*
 !data/exports/
 !data/exports/*.csv
+
+# Built output of the pre-redesign dashboard (scripts/build_dashboard.py)
+dashboard/legacy/index.html

@@ -74,7 +74,10 @@ def test_dashboard_never_overrides_day2_snap_date_with_rebuild_at():
     # Regression guard against re-introducing the rejected design (forcing
     # day2_snap_date to always read as "today", which would hide genuine
     # data staleness -- explicitly rejected in favor of two separate signals).
-    text = (ROOT / "dashboard" / "template.html").read_text()
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from build_dashboard import inline_includes  # template is split into src/ files
+    template = ROOT / "dashboard" / "template.html"
+    text = inline_includes(template.read_text(), template.parent)
     assert "DATA.day2_snap_date = " not in text.replace(" ", "")
     assert "rebuildAt" in text  # the second, distinct signal is actually rendered
 

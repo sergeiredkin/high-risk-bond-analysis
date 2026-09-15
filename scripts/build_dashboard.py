@@ -7,6 +7,7 @@ Run scripts/export_dashboard_data.py first to refresh the data.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -16,7 +17,25 @@ COMPANY_SCAN_PROMPT = ROOT / "skills" / "bond-narrative-card" / "bond_screening_
 
 BUILDS = [
     (ROOT / "dashboard" / "template.html", ROOT / "dashboard" / "index.html"),
+    # Pre-redesign dashboard, kept buildable while the Купон Лаб redesign is
+    # rolled out page by page (stages 2-3 port its screener/map/portfolio
+    # logic). Output is gitignored; delete this entry with the legacy file.
+    (ROOT / "dashboard" / "legacy" / "template.html", ROOT / "dashboard" / "legacy" / "index.html"),
 ]
+
+# /*__INCLUDE:src/app.css__*/ -- inlines a source file (path relative to the
+# template's own directory) so the template can be split into CSS/JS files
+# while the output stays one self-contained HTML file.
+INCLUDE_RE = re.compile(r"/\*__INCLUDE:([\w./-]+)__\*/")
+
+
+def inline_includes(template: str, base: Path) -> str:
+    def repl(m: re.Match) -> str:
+        text = (base / m.group(1)).read_text(encoding="utf-8")
+        if "</script" in text or "</style" in text:
+            raise ValueError(f"{m.group(1)} contains a closing </script or </style tag")
+        return text
+    return INCLUDE_RE.sub(repl, template)
 
 
 def main() -> None:
@@ -42,7 +61,7 @@ def main() -> None:
     company_scan_payload = company_scan_payload.replace("</script", "<\\/script")
 
     for template_path, out_path in BUILDS:
-        template = template_path.read_text(encoding="utf-8")
+        template = inline_includes(template_path.read_text(encoding="utf-8"), template_path.parent)
         html = template.replace("/*__DASHBOARD_DATA__*/", payload)
         html = html.replace("/*__NARRATIVE_PROMPT__*/", prompt_payload)
         html = html.replace("/*__COMPANY_SCAN_PROMPT__*/", company_scan_payload)

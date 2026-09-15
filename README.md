@@ -48,9 +48,15 @@ scripts/
   seed_*.py, bulk_mark_routine.py, revert_board_decisions_routine.py  one-off/demo tooling
 
 dashboard/
-  template.html            main 3-tab dashboard (Вотчлист / Рынок / ЦБ РФ) --
-                           Рынок merges the former Универсум + Карта рынка
-                           tabs into one shared-filter table/scatter view
+  template.html            Купон Лаб redesign shell (Обзор / Карта и скринер /
+                           Портфель / Данные); pulls in src/ via INCLUDE markers
+  src/                     design-system.css + base.css (verbatim from the
+                           Claude Design reference), app.css, core.js, app.js,
+                           pages/*.js -- redesign in progress, stage 1 of 3:
+                           only Обзор is built
+  legacy/template.html     pre-redesign 3-tab dashboard (Вотчлист / Рынок /
+                           ЦБ РФ), still built to legacy/index.html (gitignored)
+                           until stages 2-3 port its logic
   index.html               built output (scripts/build_dashboard.py)
 
 skills/                    Claude Code skills invoked manually at the LLM steps
@@ -165,10 +171,13 @@ PYTHONPATH=src python scripts/export_dashboard_data.py   # -> data/dashboard_dat
 python scripts/build_dashboard.py                         # -> dashboard/index.html
 ```
 
+The sections below describe the pre-redesign dashboard, now at
+`dashboard/legacy/template.html` (built to `dashboard/legacy/index.html`).
+
 Three tabs: **Вотчлист** (watchlist spread screen + maturity wall + factlists
 + per-bond detail panel), **Рынок** (full MOEX universe screener and scatter
 market map, merged into one view with shared rating-floor/liquidity-floor/
-maturity-bucket/AEY filters — see `dashboard/template.html`'s `marketTab()`),
+maturity-bucket/AEY filters — see `dashboard/legacy/template.html`'s `marketTab()`),
 **ЦБ РФ** (key-rate meeting timeline, rate-path chart, and the AEY
 rate-scenario panel).
 
@@ -188,7 +197,7 @@ self-contained HTML file opened locally by one person on their own machine.
 shared/untrusted device, this key-handling approach must not be carried
 over as-is** — move key storage and the API call behind a small server-side
 proxy that holds the key (env var / secrets manager) and never exposes it to
-the client. See the `SECURITY ASSUMPTION` comment in `template.html` right
+the client. See the `SECURITY ASSUMPTION` comment in `dashboard/legacy/template.html` right
 above `NARRATIVE_KEY_STORAGE`.
 
 ## Default probability / mispricing layer

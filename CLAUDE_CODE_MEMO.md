@@ -49,8 +49,10 @@ hybond/
     spravka_parser.py             parses spravka_vdo.md for the dashboard's
                                  Справка tab
   dashboard/
-    template.html                source; build_dashboard.py inlines
-                                 data/dashboard_data.json into index.html
+    template.html + src/         redesign source (split CSS/JS, inlined by
+                                 build_dashboard.py's INCLUDE markers) plus
+                                 data/dashboard_data.json -> index.html
+    legacy/template.html         pre-redesign dashboard, -> legacy/index.html
   scripts/
     export_dashboard_data.py, build_dashboard.py
                                  dashboard rebuild (also invoked directly by

@@ -1,0 +1,153 @@
+/* Shell and page layout. Every value here is transcribed from the inline
+   styles in bond-lab-design-reference.html (the reference expresses layout
+   as style="" attributes and style-hover=""); class names are ours. When
+   the reference and this file disagree, the reference wins. */
+
+[hidden] { display: none !important; }
+button { font-family: inherit; }
+
+.app { min-height: 100vh; background: var(--color-bg); font-family: var(--font-body); color: var(--color-text); }
+
+/* ── top bar ─────────────────────────────────────────────────────────── */
+.topbar {
+  position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 16px;
+  padding: 12px 22px; background: var(--color-neutral-900); color: var(--color-neutral-100); flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: 10px; flex: none; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 999px; background: var(--color-accent);
+  display: grid; place-items: center; color: #f5ead8; font-family: var(--font-heading); font-size: 15px;
+}
+.brand-name { font-family: var(--font-heading); font-size: 19px; line-height: 1; }
+.brand-sub { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; opacity: .5; padding-top: 3px; }
+
+.topnav { display: flex; gap: 4px; flex: none; }
+.topnav-btn {
+  padding: 8px 15px; border-radius: 999px; border: none; background: transparent;
+  color: rgba(245,234,216,.6); font-family: var(--font-heading); font-size: 13.5px; cursor: pointer; transition: all .2s;
+}
+.topnav-btn[aria-current="page"] { background: rgba(255,255,255,.14); color: #f5ead8; }
+
+.topbar-spacer { flex: 1; min-width: 12px; }
+.topbar-readouts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.readout {
+  display: flex; align-items: center; gap: 9px; padding: 6px 13px; border-radius: 999px;
+  background: rgba(255,255,255,.09);
+}
+.readout-kicker { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; opacity: .55; }
+.readout-value { font-family: var(--font-heading); font-size: 15px; }
+.readout-next { font-size: 11px; color: var(--color-accent-300); }
+.readout-health { gap: 8px; border: none; color: #f5ead8; font-size: 11.5px; cursor: pointer; }
+.health-dot {
+  width: 7px; height: 7px; border-radius: 999px; background: var(--color-neutral-400);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+/* ── shared pills (reference: nav()/seg()/pill() style helpers) ─────── */
+.pill-primary {
+  padding: 14px 26px; border-radius: 999px; border: none; background: var(--color-accent); color: var(--color-bg);
+  font-family: var(--font-heading); font-size: 15px; cursor: pointer; transition: background .2s;
+}
+.pill-primary:hover { background: var(--color-accent-600); }
+.pill-outline {
+  padding: 14px 26px; border-radius: 999px; border: 1px solid var(--color-divider); background: transparent;
+  font-family: var(--font-heading); font-size: 15px; color: var(--color-text); cursor: pointer; transition: background .2s;
+}
+.pill-outline:hover { background: var(--color-neutral-200); color: var(--color-text); }
+
+/* ── page containers ─────────────────────────────────────────────────── */
+.page-overview { max-width: 1180px; margin: 0 auto; padding: 52px 26px 80px; display: flex; flex-direction: column; gap: 44px; }
+.page-terminal { padding: 16px 18px 26px; display: flex; flex-direction: column; gap: 12px; }
+.page-wide { max-width: 1240px; margin: 0 auto; padding: 22px 22px 70px; display: flex; flex-direction: column; gap: 16px; }
+.page-title-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.page-title { font-family: var(--font-heading); font-size: 22px; }
+
+/* ── Обзор ───────────────────────────────────────────────────────────── */
+.hero { display: flex; gap: 44px; flex-wrap: wrap; align-items: flex-start; }
+.hero-main { flex: 1 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.hero-kicker { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--color-accent-700); }
+.hero-title {
+  font-family: var(--font-heading); font-weight: 400; font-size: clamp(34px,4.4vw,54px); line-height: 1.08;
+  margin: 0; letter-spacing: -.01em; text-wrap: pretty;
+}
+.hero-lede { font-size: 16px; line-height: 1.65; margin: 0; max-width: 56ch; opacity: .82; }
+.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.hero-aside {
+  flex: 0 1 340px; min-width: 260px; display: flex; flex-direction: column; gap: 10px;
+  padding: 24px; border-radius: 34px; background: var(--color-accent-2-100);
+}
+.hero-aside-kicker { font-size: 10px; letter-spacing: .11em; text-transform: uppercase; color: var(--color-accent-2-800); }
+.hero-aside-body { font-size: 14px; line-height: 1.7; color: var(--color-accent-2-900); }
+
+.groups { display: flex; flex-direction: column; gap: 26px; }
+.group { display: flex; flex-direction: column; gap: 14px; }
+.group-head { display: flex; align-items: baseline; gap: 12px; }
+.group-title { font-family: var(--font-heading); font-size: 22px; }
+.group-rule { flex: 1; height: 1px; background: var(--color-divider); }
+.group-count { font-size: 11.5px; opacity: .5; }
+.cap-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap: 12px; }
+.cap {
+  padding: 20px 22px; border-radius: 28px; background: var(--color-surface);
+  display: flex; flex-direction: column; gap: 8px; animation: riseup .3s ease both;
+}
+.cap-head { display: flex; align-items: center; gap: 10px; }
+.cap-num {
+  width: 26px; height: 26px; flex: none; border-radius: 999px; display: grid; place-items: center;
+  font-family: var(--font-heading); font-size: 12.5px;
+  background: var(--color-accent-200); color: var(--color-accent-800);
+}
+.cap-num.is-alt { background: var(--color-accent-2-200); color: var(--color-accent-2-800); }
+.cap-title { font-family: var(--font-heading); font-size: 15.5px; line-height: 1.25; }
+.cap-body { font-size: 13px; line-height: 1.6; opacity: .75; }
+
+.value-band {
+  padding: 30px 34px; border-radius: 36px; background: var(--color-neutral-900); color: var(--color-neutral-100);
+  display: flex; gap: 26px; flex-wrap: wrap; align-items: center;
+}
+.value-band-main { flex: 1 1 420px; min-width: 0; }
+.value-band-kicker { font-size: 10px; letter-spacing: .11em; text-transform: uppercase; opacity: .5; }
+.value-band-text { font-family: var(--font-heading); font-size: clamp(20px,2.4vw,28px); line-height: 1.3; margin-top: 8px; text-wrap: pretty; }
+.value-band-btn {
+  padding: 14px 26px; border-radius: 999px; border: none; background: var(--color-accent-400); color: var(--color-neutral-900);
+  font-family: var(--font-heading); font-size: 15px; cursor: pointer; flex: none;
+}
+.value-band-btn:hover { background: var(--color-accent-300); }
+
+/* stat tiles -- reference pfStats tile */
+.stat-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit,minmax(230px,1fr)); }
+.stat { padding: 20px 22px; border-radius: 28px; background: var(--color-surface); display: flex; flex-direction: column; gap: 5px; }
+.stat-k { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--color-accent-700); }
+.stat-v { font-family: var(--font-heading); font-size: 29px; line-height: 1.1; color: var(--color-text); }
+.stat-note { font-size: 12px; line-height: 1.5; opacity: .7; }
+.stat.is-green { background: var(--color-accent-2-100); }
+.stat.is-green .stat-k { color: var(--color-accent-2-800); }
+.stat.is-green .stat-v { color: var(--color-accent-2-900); }
+
+/* ── "not yet built" state ───────────────────────────────────────────── */
+.pending {
+  padding: 20px 22px; border-radius: 30px; background: var(--color-surface);
+  display: flex; flex-direction: column; gap: 10px; max-width: 640px;
+}
+.pending-kicker { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--color-accent-700); }
+.pending-title { font-family: var(--font-heading); font-size: 17px; }
+.pending-body { font-size: 12.5px; line-height: 1.6; opacity: .7; }
+.pending-list { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; opacity: .8; }
+.pending-actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+.pending-actions .pill-primary, .pending-actions .pill-outline { padding: 10px 20px; font-size: 13.5px; }
+
+/* ── bond detail drawer ──────────────────────────────────────────────── */
+.detail-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(46,43,37,.4); animation: fadein .2s ease both; }
+.detail-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 61; width: min(560px,100%); overflow: auto;
+  background: var(--color-bg); box-shadow: var(--shadow-lg); animation: slidein .3s cubic-bezier(.22,1,.36,1) both;
+  padding: 22px 24px 60px; display: flex; flex-direction: column; gap: 14px;
+}
+.detail-head { display: flex; align-items: flex-start; gap: 12px; }
+.detail-head-text { flex: 1; min-width: 0; }
+.detail-title { font-family: var(--font-heading); font-size: 25px; line-height: 1.15; }
+.detail-sub { font-size: 12.5px; opacity: .62; margin-top: 3px; }
+.detail-close {
+  width: 34px; height: 34px; flex: none; border-radius: 999px; border: 1px solid var(--color-divider);
+  background: transparent; font-size: 16px; line-height: 1; color: var(--color-text); cursor: pointer;
+}
+.detail-close:hover { background: var(--color-neutral-200); }
