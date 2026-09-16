@@ -84,6 +84,7 @@ SECTOR_LABELS_RU = {
     "construction": "Строительство",
     "construction_materials": "Стройматериалы",
     "debt_collection": "Коллекторы",
+    "energy": "Энергетика",
     "forestry_paper": "Лес и бумага",
     "fuel_retail": "Топливный ретейл",
     "general_industrial": "Пром. производство",
@@ -97,6 +98,8 @@ SECTOR_LABELS_RU = {
     "mobility_tech": "Мобильность/технологии",
     "pawnshop_resale": "Ломбарды/скупка",
     "real_estate": "Недвижимость",
+    "retail": "Ретейл",
+    "services": "Услуги",
     "technology": "Технологии",
     "trading": "Торговля",
 }
@@ -358,6 +361,13 @@ def export_all_active_portfolios(con, limit: int = 3) -> list[dict]:
             "preset_type": p["preset_type"],
             "sizing_mode": p["sizing_mode"],
             "created_at": p["created_at"],
+            # The very rules build_preset() enforced when it picked these
+            # bonds (portfolio.PRESETS), exported so the dashboard's
+            # "Проверка портфеля" can check a portfolio against its own
+            # construction rules instead of inventing thresholds
+            # (Купон Лаб redesign stage 3, 2026-09-16). An unknown
+            # preset_type (hand-built portfolio) carries None.
+            "constraints": portfolio.PRESETS.get(p["preset_type"]),
             "allocation": alloc,
         })
     return out
@@ -774,7 +784,18 @@ def pipeline_health_export(con, latest_spread: str | None) -> dict:
                                    f'{label} latest date is {snap}, expected {today_iso}')
 
     result = health_summary(con)
-    result["unresolved"] = health_unresolved(con, min_level="warn", limit=20)
+    # Two queries, not one: get_unresolved() orders by recorded_at and caps,
+    # so a burst of warnings buries every older error and the Данные page
+    # ends up listing warnings under a header that says "4 ошибки". Pulling
+    # errors/criticals separately guarantees the serious ones are always in
+    # the payload, however many warnings landed after them (Купон Лаб
+    # redesign stage 3, 2026-09-16). Merged by id, newest first.
+    serious = health_unresolved(con, min_level="error", limit=20)
+    recent = health_unresolved(con, min_level="warn", limit=20)
+    merged = {row["id"]: row for row in serious}
+    merged.update({row["id"]: row for row in recent})
+    result["unresolved"] = sorted(merged.values(),
+                                  key=lambda r: r["recorded_at"], reverse=True)
     return result
 
 
@@ -1226,7 +1247,6 @@ def passive_issuers_export(con, tier2_rows: list[dict], watchlist: dict, snap_da
             "issuer_id": issuer_id,
             "name": meta.get("name") or row["name"],
             "sector": meta.get("sector") or row["sector"],
-            "watchlist_tier": 2,
             "rating": rating_row["rating"] if rating_row else meta.get("rating"),
             "last_aey_base_risk_adj_pct": round(max(aeys) * 100, 2) if aeys else None,
             "events": passive_events_since(con, issuer_id, since),
@@ -1648,7 +1668,6 @@ def main() -> None:
             "issuer_id": issuer_id,
             "name": meta.get("name") or issuer_row["name"],
             "sector": meta.get("sector") or issuer_row["sector"],
-            "watchlist_tier": 1,
             "risk_tier": meta.get("risk_tier", "core"),
             "rating": meta.get("rating"),
             "rating_needs_verification": rating_needs_verification,

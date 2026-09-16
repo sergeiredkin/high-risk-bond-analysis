@@ -113,10 +113,15 @@ def import_moex_defaults(xlsx_path: str, con) -> dict:
 def get_watchlist_defaults(con) -> list[dict]:
     """All moex_default rows whose inn matches an issuer in the issuer
     table (any tier, active or not) -- joined on inn = issuer_id. Ordered
-    by issuer name, then planned_date, for a stable display order."""
+    by issuer name, then planned_date, for a stable display order.
+
+    The join still spans both tiers, but the tier itself is deliberately
+    NOT selected: watchlist_tier is an internal pipeline scoping field and
+    was retired from everything the dashboard is handed (Купон Лаб redesign
+    stage 3, 2026-09-16). See AGENTS.md."""
     db.init_moex_default(con)
     rows = con.execute(
-        "SELECT d.inn, i.name AS issuer_name, i.watchlist_tier, d.isin, "
+        "SELECT d.inn, i.name AS issuer_name, d.isin, "
         "       d.obligation_type, d.status, d.planned_date "
         "FROM moex_default d JOIN issuer i ON i.issuer_id = d.inn "
         "ORDER BY i.name, d.planned_date").fetchall()

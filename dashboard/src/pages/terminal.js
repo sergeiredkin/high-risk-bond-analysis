@@ -370,7 +370,7 @@ function termOnClick(e) {
   if (pick) { e.stopPropagation(); BASKET.toggle(pick.dataset.pick); return; }
 
   if (t.closest('#termBasketClear')) { BASKET.clear(); return; }
-  if (t.closest('#termBasketBuild')) { goPage('portfolio'); return; }
+  if (t.closest('#termBasketBuild')) { pfShowBasket(); goPage('portfolio'); return; }
 
   const detailAct = t.closest('[data-detail-action]');
   if (detailAct) {

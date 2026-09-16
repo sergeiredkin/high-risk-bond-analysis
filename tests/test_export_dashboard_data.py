@@ -157,8 +157,11 @@ def test_passive_issuers_export_basic_shape(tmp_path):
     assert len(rows) == 1
     r = rows[0]
     assert r["issuer_id"] == ISSUER
-    assert r["watchlist_tier"] == 2
     assert r["sector"] == "leasing"
+    # watchlist_tier is a pipeline-internal scoping field and is no longer
+    # handed to the dashboard -- being in this list IS the tier=2 signal
+    # (Купон Лаб redesign stage 3); see tests/test_dashboard_pages.py.
+    assert "watchlist_tier" not in r
     assert "bonds" not in r  # no verdict/bond payload for tier=2, by design
     assert "six_pillars" not in r
 

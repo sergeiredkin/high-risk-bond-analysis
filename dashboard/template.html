@@ -14,7 +14,7 @@
     src/core.js            DATA, formatting helpers, tiny DOM helpers
     src/bonds.js           the bond model every page reads (real data only)
     src/app.js             header readouts, page router, detail drawer
-    src/pages/*.js         one file per page (pending.js: pages not rebuilt yet)
+    src/pages/*.js         one file per page
   D3 is the one external script (the market map); everything else, data
   included, is inlined. Without it the map says so and the screener still
   works -- see TerminalMap.mount().
@@ -93,7 +93,8 @@
 <script>/*__INCLUDE:src/pages/terminal-map.js__*/</script>
 <script>/*__INCLUDE:src/pages/bond-detail.js__*/</script>
 <script>/*__INCLUDE:src/pages/terminal.js__*/</script>
-<script>/*__INCLUDE:src/pages/pending.js__*/</script>
+<script>/*__INCLUDE:src/pages/portfolio.js__*/</script>
+<script>/*__INCLUDE:src/pages/data.js__*/</script>
 <script>/*__INCLUDE:src/app.js__*/</script>
 </body>
 </html>

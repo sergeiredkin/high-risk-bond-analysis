@@ -17,9 +17,13 @@ COMPANY_SCAN_PROMPT = ROOT / "skills" / "bond-narrative-card" / "bond_screening_
 
 BUILDS = [
     (ROOT / "dashboard" / "template.html", ROOT / "dashboard" / "index.html"),
-    # Pre-redesign dashboard, kept buildable while the Купон Лаб redesign is
-    # rolled out page by page (stages 2-3 port its screener/map/portfolio
-    # logic). Output is gitignored; delete this entry with the legacy file.
+    # Pre-redesign dashboard. Stage 3 finished porting its pages, but this
+    # copy stays buildable deliberately: it is the fallback for the live
+    # cutover to the Купон Лаб front end, and the only way back if that
+    # cutover goes wrong. Retire it in a later cleanup, once the new front
+    # end has been live and stable -- not before. It is also the last place
+    # the retired Вотчлист route still exists; that is expected here and
+    # nowhere else. Output is gitignored.
     (ROOT / "dashboard" / "legacy" / "template.html", ROOT / "dashboard" / "legacy" / "index.html"),
 ]
 
