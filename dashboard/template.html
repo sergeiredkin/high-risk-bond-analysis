@@ -1087,6 +1087,7 @@
   .uni-toggle input { display: none; }
   .uni-toggle input:checked + .uni-toggle-switch { background: var(--series-1); }
   .uni-toggle input:checked + .uni-toggle-switch::after { left: 16px; }
+  .uni-toggle:has(input:disabled) { opacity: .5; cursor: default; }
   .uni-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
   .uni-btn {
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px;
@@ -1122,6 +1123,47 @@
   .mkt-view-row { flex-wrap: wrap; gap: 8px; }
   .mkt-filters-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
   .mkt-filters-summary { font-size: 12px; color: var(--text-secondary); }
+  /* Filter/chrome space-efficiency spec (2026-09-01): one compact sticky-
+     feeling toolbar row for time/view toggles + all 3 filter triggers,
+     replacing 3+ separate always-visible rows/blocks above the table/map.
+     .mkt-collapse-toggle's own margin-bottom (needed when it stood alone)
+     would otherwise misalign it against the other row items. */
+  .mkt-toolbar-row { align-items: center; }
+  .mkt-toolbar-row .mkt-collapse-toggle, .mkt-toolbar-row .mkt-filters-head { margin-bottom: 0; }
+  /* Generic collapsible accordion (used by #marketAboutAccordion and the 4
+     sections inside #mAdvFilters) -- deliberately separate from the
+     aey-glossary component above, which syncs ALL its instances to ONE
+     shared expand state (AEY_GLOSSARY_KEY); these need independent state
+     per section, and mutually-exclusive state within a
+     data-accordion-group (see toggleMktAccordion()). */
+  .mkt-accordion { border: 0.5px solid var(--border); border-radius: 8px; margin-bottom: 8px; background: var(--surface-1); }
+  .mkt-accordion-head {
+    width: 100%; display: flex; align-items: center; gap: 8px; text-align: left;
+    background: none; border: none; padding: 10px 12px; cursor: pointer;
+    font-size: 14px; color: var(--text-primary); font-family: inherit;
+  }
+  .mkt-accordion-arrow { display: inline-block; width: 1em; transition: transform 0.15s ease; }
+  .mkt-accordion.expanded .mkt-accordion-arrow { transform: rotate(90deg); }
+  .mkt-accordion-summary { margin-left: auto; font-size: 12px; color: var(--text-secondary); font-weight: 400; }
+  .mkt-accordion-body { display: none; padding: 0 12px 12px; }
+  .mkt-accordion.expanded .mkt-accordion-body { display: block; }
+  .mkt-accordion.expanded .mkt-accordion-body.mkt-accordion-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px 20px;
+  }
+  .mkt-accordion-list { margin-bottom: 14px; }
+  /* Map fixes task (2026-09-01), Fix 2: in Карта view, an expanded filter
+     panel (#marketCoreFilters or #mAdvFilters) becomes an absolute-
+     positioned dropdown instead of pushing the map down the page --
+     top/left set from the toggle button's own offset (see
+     positionFilterOverlay()) relative to this container. Reverted to
+     normal block flow (class removed) on every collapse and on any view
+     switch -- see mAdvToggle/marketFiltersToggleBtn handlers and
+     marketViewToggle's click handler. */
+  #corpMarketWrap { position: relative; }
+  .mkt-filter-overlay {
+    position: absolute; z-index: 100; max-height: 60vh; overflow: auto;
+    width: min(640px, calc(100% - 8px)); box-shadow: var(--shadow-card);
+  }
   #marketTable th { cursor: pointer; white-space: nowrap; }
   #marketTable td { white-space: nowrap; } /* was font-size: 12px -- overrode the table default below the readability-pass minimum; now inherits the 14px base */
   .uni-empty { padding: 30px; text-align: center; color: var(--text-muted); }
@@ -1195,14 +1237,16 @@
     background: var(--surface-1); color: var(--text-primary); font-size: 12px; }
   #mmMisFilterGroup { flex-basis: 100%; }
   #mmMisFilterPills { display: flex; flex-wrap: wrap; margin: 0; }
-  .mm-signal-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
-  /* Market map redesign (2026-08-31): found via 375px DoD check -- 4 fixed
-     columns don't shrink below their content's natural width (longest
-     label "— Нет рейтинга/сигнала"), overflowing the page horizontally on
-     mobile. Same fix for .mm-stats-bar below, same root cause. */
-  @media (max-width: 600px) { .mm-signal-bar, .mm-stats-bar { grid-template-columns: repeat(2, 1fr); } }
-  .mm-signal-card { border-radius: 10px; padding: var(--space-4); border: 0.5px solid var(--border); min-width: 0; } /* was 10px 14px */
-  .mm-signal-card .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  /* Space-efficiency spec (2026-09-01): 4 large boxed cards -> one slim
+     inline strip, and moved to render after the chart (see marketMapView
+     markup) instead of before it. flex-wrap so it still degrades to 2
+     lines on narrow screens instead of the old grid-column overflow fix
+     (kept on .mm-stats-bar below, which is unchanged). */
+  .mm-signal-bar { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 10px; }
+  @media (max-width: 600px) { .mm-stats-bar { grid-template-columns: repeat(2, 1fr); } }
+  .mm-signal-card { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+  .mm-signal-card .n { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .mm-signal-card .l { font-size: 12px; color: var(--text-secondary); }
   .mm-signal-card .l { font-size: 12px; margin-top: 1px; }
   .mm-signal-up { background: color-mix(in srgb, var(--good) 14%, var(--surface-1)); }
   .mm-signal-up .n, .mm-signal-up .l { color: var(--good); }
@@ -1258,7 +1302,7 @@
   .mm-tooltip .mmt-mispricing { margin-top: 6px; font-weight: 600; }
   .mm-selection-tray {
     position: sticky; bottom: 0; background: var(--surface-1); border-top: 0.5px solid var(--border);
-    padding: 10px 16px; display: flex; gap: 10px; align-items: center;
+    padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
     opacity: 0; transition: opacity .12s;
   }
   .mm-selection-tray[data-visible="1"] { opacity: 1; }
@@ -2261,25 +2305,27 @@
     </div>
 
     <section id="sec-market" class="market-section">
-      <h2>Рынок ВДО — универсум и карта</h2>
-      <p class="section-note">Полный список рублёвых корпоративных облигаций MOEX (не только вотчлист), как таблица-скринер и как scatter-карта — один и тот же отфильтрованный набор бумаг, переключаемый видом ниже. Собрано <code>hybond universe</code> (<code>src/hybond/universe_pipeline.py</code>). Раньше это были две отдельные вкладки с независимыми фильтрами (и «Карта рынка» жила в отдельном самодостаточном файле <code>market_map.html</code>) — объединены, чтобы порог рейтинга/ликвидности, диапазон срока погашения и диапазон AEY (скорр.) применялись одинаково в обоих представлениях.</p>
-      <div class="banner" id="marketSnapBanner"></div>
-
-      <!-- Market Pulse tiles: unfiltered market-wide snapshot (same numbers
-           the ticker bar shows), separate from #mStats below which reflects
-           the CURRENTLY FILTERED set -- see computeMarketPulse(). Collapsed
-           by default (Declutter Рынок task, 2026-08-25) -- the tiles still
-           render into the DOM on page load (renderPulseTiles() doesn't
-           check visibility), only the initial display state changes. -->
-      <button type="button" class="uni-btn mkt-collapse-toggle" id="pulseToggleBtn" aria-expanded="false">📊 Пульс рынка ▾</button>
-      <div class="pulse-tiles" id="pulseTiles" style="display:none">
-        <div class="pulse-tile skeleton"></div>
-        <div class="pulse-tile skeleton"></div>
-        <div class="pulse-tile skeleton"></div>
-        <div class="pulse-tile skeleton"></div>
+      <!-- Filter/chrome space efficiency task (2026-09-01): the title,
+           long description, and snapshot banner used to be permanent,
+           always-expanded chrome above the fold (29+161+85px measured at
+           1280px) -- folded into one collapsible "about" accordion (same
+           mkt-accordion component the restructured #mAdvFilters below
+           uses, see CSS/JS near the AEY glossary), collapsed by default,
+           with a one-line always-visible summary (date + bond count) so
+           the snapshot-freshness info isn't fully hidden. -->
+      <div class="mkt-accordion" id="marketAboutAccordion">
+        <button type="button" class="mkt-accordion-head" data-accordion-toggle aria-expanded="false">
+          <span class="mkt-accordion-arrow">▶</span>
+          <b>Рынок ВДО — универсум и карта.</b>
+          <span class="mkt-accordion-summary" id="marketAboutSummary"></span>
+        </button>
+        <div class="mkt-accordion-body">
+          <p class="section-note">Полный список рублёвых корпоративных облигаций MOEX (не только вотчлист), как таблица-скринер и как scatter-карта — один и тот же отфильтрованный набор бумаг, переключаемый видом ниже. Собрано <code>hybond universe</code> (<code>src/hybond/universe_pipeline.py</code>). Раньше это были две отдельные вкладки с независимыми фильтрами (и «Карта рынка» жила в отдельном самодостаточном файле <code>market_map.html</code>) — объединены, чтобы порог рейтинга/ликвидности, диапазон срока погашения и диапазон AEY (скорр.) применялись одинаково в обоих представлениях.</p>
+          <div class="banner" id="marketSnapBanner"></div>
+        </div>
       </div>
 
-      <div class="uni-actions" style="margin-bottom:10px">
+      <div class="uni-actions mkt-toolbar-row" style="margin-bottom:6px">
         <div class="view-toggle" id="marketInstrumentToggle">
           <button type="button" class="view-btn active" data-instrument="corp">Корпоративные ВДО</button>
           <button type="button" class="view-btn" data-instrument="ofz">ОФЗ (гос. облигации)</button>
@@ -2287,12 +2333,12 @@
       </div>
 
       <div id="corpMarketWrap">
-      <!-- Unified table/map control row (Declutter Рынок task): time bucket
-           and table/map view were already one flex row via .uni-actions'
-           space-between, just visually loose -- tightened with a divider
-           and icons on the view buttons so it reads as one compact control,
-           not two separate groups. -->
-      <div class="uni-actions mkt-view-row" style="margin-bottom:10px">
+      <!-- Unified compact toolbar (space-efficiency task, 2026-09-01):
+           time bucket, table/map view, Пульс/Фильтры/Ещё фильтры triggers
+           all merged into ONE row (was 3+ separate rows/blocks) -- every
+           element here keeps its original id, so no JS below needed to
+           change, only its position in the markup. -->
+      <div class="uni-actions mkt-view-row mkt-toolbar-row" style="margin-bottom:6px">
         <div class="time-toggle" id="marketTimeToggle">
           <button type="button" class="time-btn active" data-key="universe_now">Сейчас</button>
           <button type="button" class="time-btn" data-key="universe_week_ago">−1 нед.</button>
@@ -2302,6 +2348,18 @@
           <button type="button" class="view-btn active" data-view="table">☰ Таблица</button>
           <button type="button" class="view-btn" data-view="map">🗺 Карта</button>
         </div>
+        <button type="button" class="uni-btn mkt-collapse-toggle" id="pulseToggleBtn" aria-expanded="false">📊 Пульс ▾</button>
+        <div class="mkt-filters-head" style="margin-bottom:0">
+          <button type="button" class="uni-btn mkt-collapse-toggle" id="marketFiltersToggleBtn" aria-expanded="false">Фильтры<span class="subnav-count" id="marketFiltersBadge" style="display:none"></span> ▾</button>
+          <span class="mkt-filters-summary" id="marketFiltersSummary"></span>
+        </div>
+        <button type="button" class="uni-btn mkt-collapse-toggle" id="mAdvToggle" aria-expanded="false">Ещё фильтры<span class="subnav-count" id="mAdvFiltersBadge" style="display:none"></span> ▾</button>
+      </div>
+      <div class="pulse-tiles" id="pulseTiles" style="display:none">
+        <div class="pulse-tile skeleton"></div>
+        <div class="pulse-tile skeleton"></div>
+        <div class="pulse-tile skeleton"></div>
+        <div class="pulse-tile skeleton"></div>
       </div>
       <div class="time-note" id="marketTimeNote"></div>
 
@@ -2311,20 +2369,13 @@
            logic) -- these four apply identically to the table and the map
            below via one shared filteredMarketBonds(), not two copies.
            Collapsed by default (Declutter Рынок task, 2026-08-25) -- toggled
-           via #marketFiltersToggleBtn below, with an always-visible active-
+           via #marketFiltersToggleBtn above, with an always-visible active-
            filters summary line so it's clear filters are applied without
-           expanding the panel. The task's own spec named "the existing
-           Фильтры subnav button" as the toggle, but marketSubnav has no such
-           button (its 4 items are Скринер/Хитмап/Кривая ОФЗ/Размещения,
-           confirmed unchanged per the task's own item 5) -- that's the
-           Вотчлист subnav's button. Built a dedicated toggle button instead,
-           styled like the existing "Ещё фильтры" advanced-panel toggle just
-           below, with the same badge-count component the Вотчлист filters
-           already use (.subnav-count). -->
-      <div class="mkt-filters-head">
-        <button type="button" class="uni-btn mkt-collapse-toggle" id="marketFiltersToggleBtn" aria-expanded="false">Фильтры<span class="subnav-count" id="marketFiltersBadge" style="display:none"></span> ▾</button>
-        <span class="mkt-filters-summary" id="marketFiltersSummary"></span>
-      </div>
+           expanding the panel. Kept as its own separate panel/trigger from
+           the #mAdvFilters accordion drawer below (space-efficiency task,
+           2026-09-01) -- confirmed with the user rather than merged, since
+           that spec's own 4 named sections (Диапазоны/Купон/Рейтинг/Сектор)
+           describe #mAdvFilters's content only, not this panel's. -->
       <div class="uni-filters" id="marketCoreFilters" style="display:none">
         <div class="uni-filter-group">
           <div class="uni-filter-label">Рейтинг, не хуже (порог)</div>
@@ -2367,84 +2418,126 @@
         </div>
       </div>
 
-      <button type="button" class="uni-btn" id="mAdvToggle">Ещё фильтры (YTM, G-спред, дюрация, мисценка, листинг, купон, точный рейтинг) ▾</button>
-      <div class="uni-filters" id="mAdvFilters" style="display:none; margin-top:10px">
-        <div class="uni-filter-group">
-          <div class="uni-filter-label"><span>YTM, %</span><span class="val" id="mLblYtm"></span></div>
-          <div class="uni-range-pair">
-            <input type="range" id="mYtmMin" min="0" max="80" step="1" value="0">
-            <input type="range" id="mYtmMax" min="0" max="80" step="1" value="80">
+      <!-- Space-efficiency spec (2026-09-01): one drawer (#mAdvFilters,
+           behind the existing "Ещё фильтры" trigger, still an overlay in
+           map view via positionFilterOverlay()) with 4 accordion sections
+           instead of one flat always-all-expanded grid -- only one section
+           open at a time (data-accordion-group="mAdv"), each header showing
+           a compact active-state summary via renderAdvFiltersSummary()
+           below, so the user can see what's filtering without opening
+           anything. The 4 misc toggles (qualified/watchlist-star/vdoOnly/
+           watchlistOnly) don't fit any of the spec's 4 named sections --
+           kept as their own small always-visible row, not a 5th accordion,
+           since they're single-click toggles rather than a control group
+           worth hiding behind a click. -->
+      <div class="mkt-accordion-list" id="mAdvFilters" style="display:none; margin-top:10px">
+        <div class="mkt-accordion" data-accordion-group="mAdv">
+          <button type="button" class="mkt-accordion-head" data-accordion-toggle aria-expanded="false">
+            <span class="mkt-accordion-arrow">▶</span><span>Диапазоны</span>
+            <span class="mkt-accordion-summary" id="mAdvAccRangesSummary"></span>
+          </button>
+          <div class="mkt-accordion-body mkt-accordion-grid">
+            <div class="uni-filter-group">
+              <div class="uni-filter-label"><span>YTM, %</span><span class="val" id="mLblYtm"></span></div>
+              <div class="uni-range-pair">
+                <input type="range" id="mYtmMin" min="0" max="80" step="1" value="0">
+                <input type="range" id="mYtmMax" min="0" max="80" step="1" value="80">
+              </div>
+            </div>
+            <div class="uni-filter-group">
+              <div class="uni-filter-label"><span>G-спред, бп</span><span class="val" id="mLblGsp"></span></div>
+              <div class="uni-range-pair">
+                <input type="range" id="mGspMin" min="0" max="5000" step="50" value="0">
+                <input type="range" id="mGspMax" min="0" max="5000" step="50" value="5000">
+              </div>
+            </div>
+            <div class="uni-filter-group">
+              <div class="uni-filter-label"><span>Дюрация, лет</span><span class="val" id="mLblDur"></span></div>
+              <div class="uni-range-pair">
+                <input type="range" id="mDurMin" min="0" max="10" step="0.25" value="0">
+                <input type="range" id="mDurMax" min="0" max="10" step="0.25" value="10">
+              </div>
+            </div>
+            <div class="uni-filter-group">
+              <div class="uni-filter-label"><span>Мисценка, бп</span><span class="val" id="mLblMis"></span></div>
+              <div class="uni-range-pair">
+                <input type="range" id="mMisMin" min="-500" max="5000" step="50" value="-500">
+                <input type="range" id="mMisMax" min="-500" max="5000" step="50" value="5000">
+              </div>
+            </div>
+            <div class="uni-filter-group">
+              <div class="uni-filter-label"><span>Сделок сегодня, мин.</span><span class="val" id="mLblTrades"></span></div>
+              <input type="range" id="mTrades" min="0" max="50" step="1" value="0">
+            </div>
+            <div class="uni-filter-group">
+              <div class="uni-filter-label">Листинг</div>
+              <div class="uni-checks" id="mListing">
+                <label><input type="checkbox" value="1" checked> 1</label>
+                <label><input type="checkbox" value="2" checked> 2</label>
+                <label><input type="checkbox" value="3" checked> 3</label>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="uni-filter-group">
-          <div class="uni-filter-label"><span>G-спред, бп</span><span class="val" id="mLblGsp"></span></div>
-          <div class="uni-range-pair">
-            <input type="range" id="mGspMin" min="0" max="5000" step="50" value="0">
-            <input type="range" id="mGspMax" min="0" max="5000" step="50" value="5000">
+        <div class="mkt-accordion" data-accordion-group="mAdv">
+          <button type="button" class="mkt-accordion-head" data-accordion-toggle aria-expanded="false">
+            <span class="mkt-accordion-arrow">▶</span><span>Купон</span>
+            <span class="mkt-accordion-summary" id="mAdvAccCouponSummary"></span>
+          </button>
+          <div class="mkt-accordion-body mkt-accordion-grid">
+            <div class="uni-filter-group">
+              <div class="uni-filter-label">Тип купона</div>
+              <div class="uni-checks" id="mCoupon">
+                <label><input type="checkbox" value="fixed" checked> Фикс</label>
+                <label><input type="checkbox" value="floater" checked> Флоатер</label>
+              </div>
+              <p class="uni-caveat">Тип купона — эвристика (COUPONPERCENT в мастер-данных MOEX), не точная классификация.</p>
+            </div>
+            <div class="uni-filter-group">
+              <div class="uni-filter-label">Частота купона</div>
+              <div class="uni-checks" id="mCouponFreq">
+                <label><input type="checkbox" value="monthly" checked> Ежемесячно</label>
+                <label><input type="checkbox" value="quarterly" checked> Ежеквартально</label>
+                <label><input type="checkbox" value="semiannual" checked> Раз в полгода</label>
+                <label><input type="checkbox" value="annual" checked> Ежегодно</label>
+              </div>
+              <p class="uni-caveat">По COUPONPERIOD (дней между купонами) в мастер-данных MOEX: ≤35д — ежемесячно, ≤100д — ежеквартально, ≤200д — раз в полгода, иначе ежегодно. Бумаги без известного периода (напр. дисконтные) не проходят ни один пункт этого фильтра.</p>
+            </div>
           </div>
         </div>
-        <div class="uni-filter-group">
-          <div class="uni-filter-label"><span>Дюрация, лет</span><span class="val" id="mLblDur"></span></div>
-          <div class="uni-range-pair">
-            <input type="range" id="mDurMin" min="0" max="10" step="0.25" value="0">
-            <input type="range" id="mDurMax" min="0" max="10" step="0.25" value="10">
+        <div class="mkt-accordion" data-accordion-group="mAdv">
+          <button type="button" class="mkt-accordion-head" data-accordion-toggle aria-expanded="false">
+            <span class="mkt-accordion-arrow">▶</span><span>Рейтинг</span>
+            <span class="mkt-accordion-summary" id="mAdvAccRatingSummary"></span>
+          </button>
+          <div class="mkt-accordion-body mkt-accordion-grid">
+            <div class="uni-filter-group">
+              <div class="uni-filter-label">Точный рейтинг</div>
+              <div class="uni-checks" id="mRatingChecks">
+                <label><input type="checkbox" value="AAA" checked> AAA</label>
+                <label><input type="checkbox" value="AA" checked> AA</label>
+                <label><input type="checkbox" value="A" checked> A</label>
+                <label><input type="checkbox" value="BBB" checked> BBB</label>
+                <label><input type="checkbox" value="BB" checked> BB</label>
+                <label><input type="checkbox" value="B" checked> B</label>
+                <label><input type="checkbox" value="CCC" checked> CCC</label>
+                <label><input type="checkbox" value="none" checked> Нет</label>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="uni-filter-group">
-          <div class="uni-filter-label"><span>Мисценка, бп</span><span class="val" id="mLblMis"></span></div>
-          <div class="uni-range-pair">
-            <input type="range" id="mMisMin" min="-500" max="5000" step="50" value="-500">
-            <input type="range" id="mMisMax" min="-500" max="5000" step="50" value="5000">
+        <div class="mkt-accordion" data-accordion-group="mAdv">
+          <button type="button" class="mkt-accordion-head" data-accordion-toggle aria-expanded="false">
+            <span class="mkt-accordion-arrow">▶</span><span>Сектор</span>
+            <span class="mkt-accordion-summary" id="mAdvAccSectorSummary"></span>
+          </button>
+          <div class="mkt-accordion-body mkt-accordion-grid">
+            <div class="uni-filter-group" style="grid-column: 1 / -1;">
+              <div class="health-pill-group" id="mSectorPills"></div>
+            </div>
           </div>
         </div>
-        <div class="uni-filter-group">
-          <div class="uni-filter-label"><span>Сделок сегодня, мин.</span><span class="val" id="mLblTrades"></span></div>
-          <input type="range" id="mTrades" min="0" max="50" step="1" value="0">
-        </div>
-        <div class="uni-filter-group">
-          <div class="uni-filter-label">Листинг</div>
-          <div class="uni-checks" id="mListing">
-            <label><input type="checkbox" value="1" checked> 1</label>
-            <label><input type="checkbox" value="2" checked> 2</label>
-            <label><input type="checkbox" value="3" checked> 3</label>
-          </div>
-        </div>
-        <div class="uni-filter-group">
-          <div class="uni-filter-label">Тип купона</div>
-          <div class="uni-checks" id="mCoupon">
-            <label><input type="checkbox" value="fixed" checked> Фикс</label>
-            <label><input type="checkbox" value="floater" checked> Флоатер</label>
-          </div>
-          <p class="uni-caveat">Тип купона — эвристика (COUPONPERCENT в мастер-данных MOEX), не точная классификация.</p>
-        </div>
-        <div class="uni-filter-group">
-          <div class="uni-filter-label">Частота купона</div>
-          <div class="uni-checks" id="mCouponFreq">
-            <label><input type="checkbox" value="monthly" checked> Ежемесячно</label>
-            <label><input type="checkbox" value="quarterly" checked> Ежеквартально</label>
-            <label><input type="checkbox" value="semiannual" checked> Раз в полгода</label>
-            <label><input type="checkbox" value="annual" checked> Ежегодно</label>
-          </div>
-          <p class="uni-caveat">По COUPONPERIOD (дней между купонами) в мастер-данных MOEX: ≤35д — ежемесячно, ≤100д — ежеквартально, ≤200д — раз в полгода, иначе ежегодно. Бумаги без известного периода (напр. дисконтные) не проходят ни один пункт этого фильтра.</p>
-        </div>
-        <div class="uni-filter-group">
-          <div class="uni-filter-label">Точный рейтинг</div>
-          <div class="uni-checks" id="mRatingChecks">
-            <label><input type="checkbox" value="AAA" checked> AAA</label>
-            <label><input type="checkbox" value="AA" checked> AA</label>
-            <label><input type="checkbox" value="A" checked> A</label>
-            <label><input type="checkbox" value="BBB" checked> BBB</label>
-            <label><input type="checkbox" value="BB" checked> BB</label>
-            <label><input type="checkbox" value="B" checked> B</label>
-            <label><input type="checkbox" value="CCC" checked> CCC</label>
-            <label><input type="checkbox" value="none" checked> Нет</label>
-          </div>
-        </div>
-        <div class="uni-filter-group">
-          <div class="uni-filter-label">Сектор</div>
-          <div class="health-pill-group" id="mSectorPills"></div>
-        </div>
-        <div class="uni-filter-group">
+        <div class="uni-checks" style="margin-top:10px">
           <label class="uni-toggle"><input type="checkbox" id="mQualified"><span class="uni-toggle-switch"></span>Показывать для квал. инвесторов</label>
           <label class="uni-toggle"><input type="checkbox" id="mWatchlistStar" checked><span class="uni-toggle-switch"></span>Отметить ★ бумаги из вотчлиста</label>
           <label class="uni-toggle"><input type="checkbox" id="mVdoOnly" checked><span class="uni-toggle-switch"></span>Только ВДО (vdo_scope)</label>
@@ -2480,6 +2573,25 @@
       </div>
 
       <div id="marketMapView" style="display:none">
+        <!-- Space-efficiency spec (2026-09-01): #mmChartCard (the SVG)
+             moved to right below the toolbar -- the controls/stats/signal
+             bar that used to sit above it (mm-controls, mmStatsSummary,
+             mmSignalBar, mmFilterPills) now render AFTER it instead, so
+             the chart itself is the first thing visible in Карта view, not
+             buried below its own control row. Nothing about how these
+             controls WORK changed, only their position in the markup --
+             all ids unchanged. -->
+        <div class="mm-chart-card" id="mmChartCard" style="position:relative">
+          <div id="mmSvgWrap" style="width:100%;height:520px"></div>
+          <div class="mm-zoom-controls" id="mmZoomControls">
+            <button type="button" id="mmZoomInBtn" title="Увеличить">+</button>
+            <button type="button" id="mmZoomOutBtn" title="Уменьшить">−</button>
+            <button type="button" id="mmZoomResetBtn" title="Сбросить масштаб">⊡</button>
+          </div>
+          <div class="mm-size-legend" id="mmSizeLegend"></div>
+          <div class="mm-empty-overlay" id="mmEmptyOverlay" style="display:none"></div>
+          <div class="mm-legend-row" id="mmLegendRow"></div>
+        </div>
         <div class="mm-controls">
           <div class="mm-ctrl-group"><label>Цвет</label>
             <select id="mmSelColor">
@@ -2491,6 +2603,9 @@
           </div>
           <div class="mm-ctrl-group">
             <label class="uni-toggle"><input type="checkbox" id="mmVdoOnly" checked><span class="uni-toggle-switch"></span>★ Только ВДО</label>
+          </div>
+          <div class="mm-ctrl-group">
+            <label class="uni-toggle" title="Вкл.: карта показывает то же множество, что и таблица (порог рейтинга, ликвидность, AEY, срок, мисценка, вотчлист). Выкл. (по умолчанию): карта независима от этих фильтров таблицы -- своя ★ Только ВДО плюс сектор/рейтинг/мисценка выше."><input type="checkbox" id="mmSyncFilters"><span class="uni-toggle-switch"></span>🔗 Синхронизировать с фильтрами</label>
           </div>
           <div class="mm-ctrl-group" id="mmMisFilterGroup"><label>Мисценка</label>
             <div class="health-pill-group" id="mmMisFilterPills">
@@ -2504,17 +2619,6 @@
         <p class="section-note" id="mmStatsSummary" style="margin:0 0 10px"></p>
         <div class="mm-signal-bar" id="mmSignalBar"></div>
         <div class="health-pill-group" id="mmFilterPills" style="display:none;margin-bottom:8px"></div>
-        <div class="mm-chart-card" id="mmChartCard" style="position:relative">
-          <div id="mmSvgWrap" style="width:100%;height:520px"></div>
-          <div class="mm-zoom-controls" id="mmZoomControls">
-            <button type="button" id="mmZoomInBtn" title="Увеличить">+</button>
-            <button type="button" id="mmZoomOutBtn" title="Уменьшить">−</button>
-            <button type="button" id="mmZoomResetBtn" title="Сбросить масштаб">⊡</button>
-          </div>
-          <div class="mm-size-legend" id="mmSizeLegend"></div>
-          <div class="mm-empty-overlay" id="mmEmptyOverlay" style="display:none"></div>
-          <div class="mm-legend-row" id="mmLegendRow"></div>
-        </div>
         <div class="mm-selection-tray" id="mmSelectionTray" style="display:none">
           <span id="mmTrayCount"></span>
           <button type="button" class="uni-btn" id="mmTrayBuildBtn">Построить портфель →</button>
@@ -3138,6 +3242,31 @@ document.querySelectorAll('[data-aey-glossary-toggle]').forEach(el => {
   });
 });
 applyAeyGlossaryState(localStorage.getItem(AEY_GLOSSARY_KEY) === '1');
+
+// Generic accordion (space-efficiency spec, 2026-09-01): independent
+// per-instance state (unlike the aey-glossary component above, which syncs
+// every instance to one shared key) -- a .mkt-accordion with
+// data-accordion-group="X" closes its siblings in that same group when
+// opened, so at most one section per group is expanded at once; a
+// standalone .mkt-accordion with no group (e.g. #marketAboutAccordion)
+// toggles independently.
+function toggleMktAccordion(headBtn) {
+  const acc = headBtn.closest('.mkt-accordion');
+  const willExpand = !acc.classList.contains('expanded');
+  const group = acc.dataset.accordionGroup;
+  if (group) {
+    document.querySelectorAll(`.mkt-accordion[data-accordion-group="${group}"]`).forEach(a => {
+      a.classList.remove('expanded');
+      const h = a.querySelector('.mkt-accordion-head');
+      if (h) h.setAttribute('aria-expanded', 'false');
+    });
+  }
+  acc.classList.toggle('expanded', willExpand);
+  headBtn.setAttribute('aria-expanded', String(willExpand));
+}
+document.querySelectorAll('.mkt-accordion-head[data-accordion-toggle]').forEach(btn => {
+  btn.addEventListener('click', () => toggleMktAccordion(btn));
+});
 
 const DATA = JSON.parse(document.getElementById('dashboard-data').textContent);
 const NARRATIVE_PROMPT = JSON.parse(document.getElementById('narrative-prompt').textContent);
@@ -7537,6 +7666,12 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   banner.innerHTML = allBucketBonds.length
     ? `<b>Снимок на ${bucket('universe_now').snap_date}.</b> ${allBucketBonds.length} облигаций с рассчитанным G-спредом (MOEX-доходность как прокси YTM — см. universe_pipeline.py). Мисценка и AEY доступны только для эмитентов с текущим рейтингом в таблице <code>rating</code>.`
     : `<b>Нет данных.</b> Запустите <code>hybond universe</code> и пересоберите дашборд.`;
+  // Space-efficiency spec (2026-09-01): the one line that stays visible
+  // when #marketAboutAccordion is collapsed (default) -- date + count only,
+  // the rest of the banner/description is one click away, not hidden.
+  document.getElementById('marketAboutSummary').textContent = allBucketBonds.length
+    ? `Снимок на ${bucket('universe_now').snap_date} · ${allBucketBonds.length} обл.`
+    : 'Нет данных';
   if (!allBucketBonds.length) {
     document.getElementById('marketTable').innerHTML = '';
     document.getElementById('mStats').innerHTML = '';
@@ -8069,12 +8204,30 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     }));
   }
 
+  // Space-efficiency spec (2026-09-01), selection integration: when a map
+  // lasso/click selection is active (window.screenFilter.selectedSecids),
+  // "Построить портфель из этой выборки" and "Экспорт CSV" act on THAT set
+  // instead of the full filtered table -- makes both work identically
+  // whichever view produced the current selection. The table has no
+  // checkbox/row-selection mechanism of its own (confirmed before this
+  // task -- there was nothing to "unify" the map's selection store with),
+  // so falls back to lastRows (today's unchanged behavior: the whole
+  // currently-filtered set) once the selection is empty. Bonds are looked
+  // up fresh from universeBondLookup rather than filtered out of lastRows,
+  // since a map-only selection (sync off) can include bonds lastRows
+  // doesn't currently contain.
+  function currentSelectionRows() {
+    const sel = window.screenFilter.selectedSecids || [];
+    if (!sel.length) return lastRows;
+    return sel.map(id => universeBondLookup.get(id)).filter(Boolean);
+  }
+
   function exportCsv() {
     const header = ['emitent_title','secid','ytm_pct','g_spread_bp','implied_fair_spread_bp',
                      'mispricing_bp','aey_base_risk_adj_pct','duration_yrs','mat_date','offer_date',
                      'volume','num_trades','rating','list_level','in_watchlist'];
     const csvRows = [header.join(',')];
-    lastRows.forEach(b => {
+    currentSelectionRows().forEach(b => {
       csvRows.push(header.map(k => {
         let v = b[k];
         if (v == null) v = '';
@@ -8214,10 +8367,25 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   // shared flag would also silently retoggle the Скринер table underneath.
   // Unchecked, the map shows the full universe_now.bonds set (~2000),
   // still capped to the fixed axis domains below.
+  //
+  // "🔗 Синхронизировать с фильтрами" (#mmSyncFilters, default OFF --
+  // confirmed with the user, not the task spec's default-on): when on,
+  // the map draws from computeFiltered() instead -- the table's own fully-
+  // gated set (rating floor, liquidity floor, AEY range, maturity buckets,
+  // mispricing range, watchlistOnly, PLUS vdo_scope/sector/rating already
+  // shared via window.screenFilter). Default-on would have silently
+  // resurrected the exact regression the last "Map fixes" task removed
+  // (map inheriting the table's gates and dropping to as few as 74 bonds
+  // instead of the full ВДО universe) -- so this stays opt-in.
+  // #mmVdoOnly is irrelevant while synced (computeFiltered() already reads
+  // sf.vdoOnly) -- disabled rather than hidden, to avoid a layout shift.
   function mmFilteredBonds() {
-    const vdoOnly = document.getElementById('mmVdoOnly').checked;
-    return ((DATA.universe_now && DATA.universe_now.bonds) || [])
-      .filter(b => !vdoOnly || b.vdo_scope === true)
+    const sync = document.getElementById('mmSyncFilters').checked;
+    const base = sync
+      ? computeFiltered()
+      : ((DATA.universe_now && DATA.universe_now.bonds) || [])
+          .filter(b => !document.getElementById('mmVdoOnly').checked || b.vdo_scope === true);
+    return base
       .filter(b => b.mod_dur != null && isFinite(b.mod_dur) && b.ytm_pct != null && isFinite(b.ytm_pct)
         && b.mod_dur >= MM_X_MIN && b.mod_dur <= MM_X_MAX && b.ytm_pct >= MM_Y_MIN && b.ytm_pct <= MM_Y_MAX)
       .filter(applyMapFilters);
@@ -8333,15 +8501,17 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     if (mmState.misMin > 0) parts.push(`мисценка > ${mmState.misMin}бп`);
     return parts.length ? ` (фильтр: ${parts.join(', ')})` : '';
   }
-  // Fix 3 (2026-09-01): denominator/label follow #mmVdoOnly -- "N из 303
-  // ВДО" scoped, "N из 2004 всего" unscoped -- same scoped/unscoped
-  // wording the screener's own stats line already uses (scopeLabel,
-  // computeFiltered() above) so the two controls read consistently.
+  // Fix 3 (2026-09-01): denominator/label follow #mmVdoOnly (or, synced,
+  // the table's own sf.vdoOnly) -- "N из 303 ВДО" scoped, "N из 2004
+  // всего" unscoped -- same scoped/unscoped wording the screener's own
+  // stats line already uses (scopeLabel, computeFiltered() above) so the
+  // two controls read consistently.
   function updateMmStatsSummary(bonds) {
-    const vdoOnly = document.getElementById('mmVdoOnly').checked;
+    const sync = document.getElementById('mmSyncFilters').checked;
+    const vdoOnly = sync ? window.screenFilter.vdoOnly : document.getElementById('mmVdoOnly').checked;
     const allBonds = (DATA.universe_now && DATA.universe_now.bonds) || [];
     const total = vdoOnly ? allBonds.filter(b => b.vdo_scope === true).length : allBonds.length;
-    const scopeLabel = vdoOnly ? 'ВДО' : 'всего';
+    const scopeLabel = (vdoOnly ? 'ВДО' : 'всего') + (sync ? ' (по фильтрам таблицы)' : '');
     const gspreads = bonds.map(b => b.g_spread_bp).filter(v => v !== null && v !== undefined);
     const ytms = bonds.map(b => b.ytm_pct).filter(v => v !== null && v !== undefined);
     const avgG = gspreads.length ? Math.round(gspreads.reduce((s, v) => s + v, 0) / gspreads.length) : null;
@@ -8718,6 +8888,10 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
 
   document.getElementById('mmSelColor').addEventListener('change', e => { mmState.color = e.target.value; renderMarketMap(); });
   document.getElementById('mmVdoOnly').addEventListener('change', () => renderMarketMap());
+  document.getElementById('mmSyncFilters').addEventListener('change', (e) => {
+    document.getElementById('mmVdoOnly').disabled = e.target.checked;
+    renderMarketMap();
+  });
   // Fix 5: 4 mutually-exclusive mispricing-threshold pills (>|mispricing_bp|
   // > N, "Все" = no filter). Applied in applyMapFilters() above, alongside
   // the sector/rating pills it already gates on.
@@ -8817,6 +8991,50 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
       renderMarketMap();
     }
     renderCoreFiltersSummary();
+    renderAdvFiltersSummary();
+  }
+
+  // Per-accordion active-state summaries for #mAdvFilters (space-efficiency
+  // spec, 2026-09-01) -- lets the user see what's filtering inside a
+  // collapsed section without opening it, same "differs from default"
+  // convention renderCoreFiltersSummary() below uses. Also drives
+  // #mAdvFiltersBadge, the drawer trigger's own count -- same
+  // badge/summary pattern #marketFiltersToggleBtn already has.
+  function renderAdvFiltersSummary() {
+    const setSummary = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    let changedSections = 0;
+
+    const rangeDefault = (minEl, maxEl) => +minEl.value === +minEl.min && +maxEl.value === +maxEl.max;
+    let rangesChanged = 0;
+    if (!rangeDefault(el.mYtmMin, el.mYtmMax)) rangesChanged++;
+    if (!rangeDefault(el.mGspMin, el.mGspMax)) rangesChanged++;
+    if (!rangeDefault(el.mDurMin, el.mDurMax)) rangesChanged++;
+    if (!rangeDefault(el.mMisMin, el.mMisMax)) rangesChanged++;
+    if (+el.mTrades.value !== +el.mTrades.min) rangesChanged++;
+    const listingChecked = checkedValues('mListing');
+    if (listingChecked.length < 3) rangesChanged++;
+    setSummary('mAdvAccRangesSummary', rangesChanged ? `${rangesChanged} изменено` : 'Все');
+    if (rangesChanged) changedSections++;
+
+    const couponChecked = checkedValues('mCoupon');
+    const freqChecked = checkedValues('mCouponFreq');
+    const couponIsDefault = couponChecked.length === 2 && freqChecked.length === 4;
+    setSummary('mAdvAccCouponSummary', couponIsDefault ? 'Все' : `${couponChecked.length + freqChecked.length} из 6`);
+    if (!couponIsDefault) changedSections++;
+
+    const ratingChecked = checkedValues('mRatingChecks');
+    setSummary('mAdvAccRatingSummary', ratingChecked.length === 8 ? 'Все' : `${ratingChecked.length} из 8`);
+    if (ratingChecked.length < 8) changedSections++;
+
+    const sf = window.screenFilter;
+    setSummary('mAdvAccSectorSummary', sf.sectors.length ? `${sf.sectors.length} из ${marketSectors.length}` : 'Все');
+    if (sf.sectors.length) changedSections++;
+
+    const badge = document.getElementById('mAdvFiltersBadge');
+    if (badge) {
+      badge.style.display = changedSections ? '' : 'none';
+      badge.textContent = String(changedSections);
+    }
   }
 
   // Active-filters summary + badge (Declutter Рынок task, 2026-08-25): the
@@ -8864,12 +9082,29 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     btn.textContent = nowHidden ? '📊 Пульс рынка ▾' : '📊 Пульс рынка ▴';
   });
 
+  // Fix 2 (2026-09-01): position an expanded filter panel as a dropdown
+  // over #corpMarketWrap (position:relative, see CSS) instead of letting
+  // it push page content down -- only while the map is the active view;
+  // in table view it stays normal block flow (harmless there, and
+  // collapsed by default regardless -- see the Declutter Рынок task).
+  function positionFilterOverlay(panel, toggleBtn, expanded) {
+    if (activeView === 'map' && expanded) {
+      panel.classList.add('mkt-filter-overlay');
+      panel.style.top = (toggleBtn.offsetTop + toggleBtn.offsetHeight + 6) + 'px';
+      panel.style.left = toggleBtn.offsetLeft + 'px';
+    } else {
+      panel.classList.remove('mkt-filter-overlay');
+      panel.style.top = ''; panel.style.left = '';
+    }
+  }
+
   document.getElementById('marketFiltersToggleBtn').addEventListener('click', () => {
     const panel = document.getElementById('marketCoreFilters');
     const btn = document.getElementById('marketFiltersToggleBtn');
     const nowHidden = panel.style.display !== 'none';
     panel.style.display = nowHidden ? 'none' : '';
     btn.setAttribute('aria-expanded', String(!nowHidden));
+    positionFilterOverlay(panel, btn, !nowHidden);
   });
 
   document.getElementById('mvBtnTable').addEventListener('click', () => {
@@ -8889,6 +9124,18 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
     document.querySelector('.market-view-switch').style.display = activeView === 'table' ? '' : 'none';
     applySubViewDisplay();
     document.getElementById('marketMapView').style.display = activeView === 'map' ? '' : 'none';
+    // Fix 2: always start a view switch with both filter panels collapsed
+    // -- simpler and safer than recomputing/carrying an overlay position
+    // across the switch (the toggle button's offset can change between
+    // views), and matches the DoD's own "map stays fully visible" ask,
+    // which only needs to hold right after switching into map view.
+    const coreFilters = document.getElementById('marketCoreFilters');
+    coreFilters.style.display = 'none';
+    document.getElementById('marketFiltersToggleBtn').setAttribute('aria-expanded', 'false');
+    positionFilterOverlay(coreFilters, document.getElementById('marketFiltersToggleBtn'), false);
+    const advFilters = document.getElementById('mAdvFilters');
+    advFilters.style.display = 'none';
+    positionFilterOverlay(advFilters, document.getElementById('mAdvToggle'), false);
     renderActive();
   });
 
@@ -8911,8 +9158,10 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
 
   document.getElementById('mAdvToggle').addEventListener('click', () => {
     const panel = document.getElementById('mAdvFilters');
+    const btn = document.getElementById('mAdvToggle');
     const nowHidden = panel.style.display !== 'none';
     panel.style.display = nowHidden ? 'none' : '';
+    positionFilterOverlay(panel, btn, !nowHidden);
   });
 
   document.getElementById('marketCoreFilters').addEventListener('input', renderActive);
@@ -8933,7 +9182,7 @@ window.addEventListener('resize', () => { renderTicker(); }); // desktop<->mobil
   // row shape from a different tab, so the two tabs can't drift out of sync
   // on field names.
   document.getElementById('mBuildPortfolioBtn').addEventListener('click', () => {
-    const secids = lastRows.map(r => r.secid);
+    const secids = currentSelectionRows().map(r => r.secid);
     if (!secids.length) {
       alert('Текущая выборка пуста — нечего передавать в Портфель.');
       return;
