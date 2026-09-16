@@ -12,14 +12,19 @@
     src/base.css           verbatim page-level rules from the reference
     src/app.css            shell + page layout transcribed from the reference
     src/core.js            DATA, formatting helpers, tiny DOM helpers
+    src/bonds.js           the bond model every page reads (real data only)
     src/app.js             header readouts, page router, detail drawer
     src/pages/*.js         one file per page (pending.js: pages not rebuilt yet)
+  D3 is the one external script (the market map); everything else, data
+  included, is inlined. Without it the map says so and the screener still
+  works -- see TerminalMap.mount().
   scripts/build_dashboard.py inlines every INCLUDE marker and embeds
   data/dashboard_data.json, emitting one self-contained dashboard/index.html.
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;600;700&family=Rubik:wght@700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <style>/* Verbatim copy of the design-system <style> block from bond-lab-design-reference.html
    (Claude Design export, "Organic" system). Do not hand-edit tokens here to fix a
    page -- page-level styling belongs in app.css. */
@@ -447,6 +452,241 @@ button { font-family: inherit; }
   background: transparent; font-size: 16px; line-height: 1; color: var(--color-text); cursor: pointer;
 }
 .detail-close:hover { background: var(--color-neutral-200); }
+
+/* ══ Карта и скринер ══════════════════════════════════════════════════
+   Transcribed from the isTerminal block of the reference. Every padding,
+   radius and font-size below is the reference's own inline value. */
+
+.term-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.seg-group { display: flex; gap: 5px; padding: 4px; border-radius: 999px; background: var(--color-surface); }
+.seg-btn {
+  padding: 8px 16px; border-radius: 999px; border: none; background: transparent; color: var(--color-text);
+  font-family: var(--font-heading); font-size: 13px; cursor: pointer; transition: all .2s;
+}
+.seg-btn.is-on { background: var(--color-accent); color: var(--color-bg); }
+.term-layout-note { font-size: 12px; line-height: 1.5; opacity: .6; flex: 1; min-width: 220px; }
+.term-axis-pills { display: flex; gap: 5px; flex-wrap: wrap; }
+.axis-pill {
+  padding: 8px 15px; border-radius: 999px; border: 1px solid var(--color-divider); background: transparent;
+  color: var(--color-text); font-size: 12.5px; cursor: pointer; white-space: nowrap; transition: all .2s;
+}
+.axis-pill:hover { background: var(--color-neutral-200); }
+.axis-pill.is-on { border-color: transparent; background: var(--color-accent); color: var(--color-bg); }
+
+.term-split { display: grid; gap: 12px; align-items: start; grid-template-columns: minmax(0,1fr); }
+.term-split[data-layout="A"] { grid-template-columns: minmax(0,1.05fr) minmax(0,1fr); }
+@media (max-width: 1020px) { .term-split[data-layout="A"] { grid-template-columns: minmax(0,1fr); } }
+
+.term-card {
+  min-width: 0; border-radius: 30px; background: var(--color-surface);
+  padding: 16px 18px 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.term-screener-card { padding: 16px 4px 12px 18px; }
+.term-card-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.term-screener-head { padding-right: 14px; gap: 10px; }
+.term-card-title { font-family: var(--font-heading); font-size: 17px; }
+.term-card-hint { font-size: 11.5px; opacity: .55; flex: 1; min-width: 120px; }
+.chip-clear {
+  padding: 6px 13px; border-radius: 999px; border: 1px solid var(--color-divider); background: transparent;
+  font-size: 11.5px; color: var(--color-text); cursor: pointer; flex: none;
+}
+.chip-clear:hover { background: var(--color-neutral-200); }
+
+/* ── map ─────────────────────────────────────────────────────────────── */
+.map-root { position: relative; }
+.map-svg { display: block; touch-action: none; cursor: crosshair; user-select: none; }
+.map-empty { padding: 38px 14px; text-align: center; font-size: 13px; opacity: .55; }
+.map-dot { cursor: pointer; transition: fill-opacity .25s, r .25s; }
+.map-tick { font-size: 10px; fill: #201e1d; fill-opacity: .45; }
+.map-axis-name { font-size: 9.5px; fill: #201e1d; fill-opacity: .45; }
+.map-dot-label { font-size: 9.5px; fill: #201e1d; }
+.map-curve-label { font-size: 10px; fill: var(--color-accent); }
+.map-fair-label { font-size: 9.5px; fill: #56633f; }
+.map-brush { fill: var(--color-accent); fill-opacity: .08; stroke: var(--color-accent); stroke-width: 1.6; stroke-dasharray: 5 4; }
+.map-brush-count { font-size: 10.5px; fill: var(--color-accent-800); }
+.map-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 11px; opacity: .62; padding: 0 2px 2px; }
+.map-legend-item { display: flex; align-items: center; gap: 6px; }
+.map-legend-dot { width: 9px; height: 9px; border-radius: 999px; }
+.map-note { font-size: 10.5px; line-height: 1.5; opacity: .45; padding: 0 2px 2px; }
+.map-tip {
+  position: absolute; z-index: 5; pointer-events: none; min-width: 168px;
+  padding: 9px 12px; border-radius: 16px; background: var(--color-neutral-900); color: var(--color-neutral-100);
+  box-shadow: var(--shadow-md); font-size: 11.5px; line-height: 1.5;
+}
+.map-tip-title { font-family: var(--font-heading); font-size: 13px; }
+.map-tip-sub { opacity: .6; font-size: 10.5px; margin-bottom: 4px; }
+.map-tip-row { display: flex; justify-content: space-between; gap: 14px; }
+
+/* ── screener ────────────────────────────────────────────────────────── */
+.term-chips { display: flex; gap: 6px; overflow: auto; padding-right: 14px; padding-bottom: 2px; }
+.chip {
+  flex: none; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--color-divider);
+  background: transparent; color: var(--color-text); font-size: 11.5px; cursor: pointer;
+  white-space: nowrap; transition: all .2s;
+}
+.chip:hover { background: var(--color-neutral-200); }
+.chip.is-on { border-color: transparent; background: var(--color-accent-2-600); color: #f5ead8; }
+.chip.is-custom { border-style: dashed; }
+
+.screener-scroll { overflow: auto; max-height: 430px; }
+.term-split[data-layout="B"] .screener-scroll { max-height: 520px; }
+.screener { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.screener th {
+  padding: 6px 6px 8px; text-align: right; font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+  opacity: .5; font-weight: 400; white-space: nowrap; border-bottom: 1px solid var(--color-divider);
+  position: sticky; top: 0; background: var(--color-surface); z-index: 2;
+}
+.screener th.al-left { padding-left: 0; text-align: left; }
+.screener th.al-center { text-align: center; }
+.screener th.is-sortable { cursor: pointer; }
+.screener th.is-sorted { opacity: .85; }
+.screener td { padding: 9px 6px; white-space: nowrap; border-bottom: 1px solid var(--color-divider); }
+.screener td.al-left { padding-left: 0; text-align: left; }
+.screener td.al-right { text-align: right; }
+.screener td.al-center { text-align: center; }
+.screener td.c-flag, .screener th.c-flag { padding-right: 14px; font-size: 11px; opacity: .55; }
+.screener th.c-flag { font-size: 10px; }
+.screener tbody tr { cursor: pointer; transition: background .18s; }
+.screener tbody tr:hover { background: var(--color-neutral-200); }
+.screener tbody tr.is-sel { background: var(--color-accent-100); }
+.screener .dim { opacity: .8; }
+.c-name-row { display: flex; align-items: center; gap: 8px; }
+.c-ticker { font-family: var(--font-heading); font-size: 13.5px; }
+.c-name-text { min-width: 0; }
+.c-issuer { font-size: 10.5px; opacity: .55; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.term-split[data-layout="B"] .c-issuer { max-width: 320px; }
+.c-aey { font-family: var(--font-heading); font-size: 13.5px; }
+.v-up { color: var(--color-accent-700); }
+.v-down { color: var(--color-neutral-600); }
+.v-fair { color: var(--color-accent-2-700); }
+.v-caution { color: var(--color-accent-600); }
+.pick {
+  width: 24px; height: 24px; flex: none; border-radius: 999px; border: 1px solid var(--color-divider);
+  background: transparent; color: var(--color-text); font-size: 12px; line-height: 1; cursor: pointer; transition: all .18s;
+}
+.pick:hover { background: var(--color-neutral-200); }
+.pick.is-on { border-color: transparent; background: var(--color-accent-2-600); color: #f5ead8; }
+.rat { display: inline-block; font-size: 10.5px; padding: 3px 8px; border-radius: 999px; }
+.rat-high { background: var(--color-accent-2-200); color: var(--color-accent-2-900); }
+.rat-mid { background: var(--color-neutral-200); color: var(--color-neutral-800); }
+.rat-low { background: var(--color-accent-200); color: var(--color-accent-900); }
+.rat-none { background: transparent; color: var(--color-neutral-500); padding-inline: 0; }
+.score { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.score-track { width: 34px; height: 5px; border-radius: 999px; background: var(--color-neutral-200); overflow: hidden; }
+.score-fill { height: 100%; }
+.score-fill.is-good { background: var(--color-accent-2-600); }
+.score-fill.is-mid { background: var(--color-accent-400); }
+.score-fill.is-bad { background: var(--color-accent-700); }
+.score-num { font-size: 11.5px; opacity: .75; width: 20px; }
+.screener-more { padding: 14px 14px 6px; text-align: center; }
+.screener-more .pill-outline { padding: 9px 20px; font-size: 13px; }
+.screener-empty { padding: 38px 14px; text-align: center; font-size: 13px; opacity: .55; }
+
+/* ── basket bar ──────────────────────────────────────────────────────── */
+.basket-bar {
+  position: sticky; bottom: 14px; z-index: 40; display: flex; align-items: center; gap: 14px;
+  padding: 13px 18px; border-radius: 26px; background: var(--color-neutral-900); color: var(--color-neutral-100);
+  box-shadow: var(--shadow-lg); animation: riseup .3s ease both; flex-wrap: wrap;
+}
+.basket-main { flex: 1 1 260px; min-width: 0; }
+.basket-kicker { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; opacity: .5; }
+.basket-names { font-family: var(--font-heading); font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.basket-stats { display: flex; gap: 22px; font-size: 12px; flex: none; }
+.basket-stats span { opacity: .5; }
+.basket-stats b { font-family: var(--font-heading); font-weight: 400; font-size: 14px; }
+.basket-actions { display: flex; gap: 8px; flex: none; }
+.basket-clear {
+  padding: 10px 16px; border-radius: 999px; border: none; background: rgba(255,255,255,.12);
+  color: var(--color-neutral-100); font-size: 12.5px; cursor: pointer;
+}
+.basket-build {
+  padding: 10px 20px; border-radius: 999px; border: none; background: var(--color-accent-400);
+  color: var(--color-neutral-900); font-family: var(--font-heading); font-size: 13.5px; cursor: pointer;
+}
+.basket-build:hover { background: var(--color-accent-300); }
+
+/* ── bond drawer body ────────────────────────────────────────────────── */
+.det-tiles { display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; }
+.det-tile { padding: 14px 16px; border-radius: 24px; background: var(--color-surface); }
+.det-tile-k { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; opacity: .55; }
+.det-tile-v { font-family: var(--font-heading); font-size: 24px; line-height: 1.1; margin-top: 3px; }
+.det-tile.is-green { background: var(--color-accent-2-100); }
+.det-tile.is-green .det-tile-k { color: var(--color-accent-2-800); }
+.det-tile.is-green .det-tile-v { color: var(--color-accent-2-900); }
+
+.det-facts { display: grid; grid-template-columns: repeat(4,1fr); gap: 9px; font-size: 12px; padding: 0 4px; }
+.det-facts span { display: block; opacity: .5; font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
+.det-facts b { font-family: var(--font-heading); font-weight: 400; font-size: 14px; }
+.det-flags { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 4px; }
+.det-flag { font-size: 10.5px; padding: 3px 10px; border-radius: 999px; background: var(--color-accent-200); color: var(--color-accent-900); }
+.det-warn {
+  padding: 12px 16px; border-radius: 20px; background: var(--color-accent-100);
+  color: var(--color-accent-900); font-size: 12px; line-height: 1.55;
+}
+
+.det-card { padding: 18px 20px; border-radius: 28px; background: var(--color-surface); display: flex; flex-direction: column; gap: 11px; }
+.det-card-head { display: flex; align-items: baseline; gap: 10px; }
+.det-card-title { font-family: var(--font-heading); font-size: 16px; flex: 1; }
+.det-card-aside-v { font-family: var(--font-heading); font-size: 18px; }
+.det-card-aside-v.is-good { color: var(--color-accent-2-700); }
+.det-card-aside-v.is-mid { color: var(--color-accent-600); }
+.det-card-aside-v.is-bad { color: var(--color-accent-700); }
+.det-svg { display: block; }
+.wf-label { font-size: 11px; fill: #201e1d; fill-opacity: .75; }
+.wf-value { font-size: 12.5px; fill: #201e1d; font-family: var(--font-heading); }
+.det-tick { font-size: 9.5px; fill: #201e1d; fill-opacity: .45; }
+.det-point { font-size: 9.5px; fill: #56633f; }
+.det-note { font-size: 12.5px; line-height: 1.6; opacity: .72; }
+.det-note.is-strong { opacity: 1; font-size: 13px; }
+
+.det-pillars { display: flex; flex-direction: column; gap: 9px; }
+.det-pillar-head { display: flex; align-items: baseline; gap: 8px; }
+.det-pillar-name { font-size: 12.5px; flex: 1; }
+.det-pillar-raw { font-size: 12px; opacity: .55; }
+.det-pillar-v { font-family: var(--font-heading); font-size: 13px; width: 30px; text-align: right; }
+.det-pillar-v.is-good, .det-pillar-fill.is-good { color: var(--color-accent-2-600); background: var(--color-accent-2-600); }
+.det-pillar-v.is-mid, .det-pillar-fill.is-mid { color: var(--color-accent-400); background: var(--color-accent-400); }
+.det-pillar-v.is-bad, .det-pillar-fill.is-bad { color: var(--color-accent-700); background: var(--color-accent-700); }
+.det-pillar-v { background: none !important; }
+.det-pillar-track { height: 6px; border-radius: 999px; background: var(--color-neutral-200); overflow: hidden; }
+.det-pillar-fill { height: 100%; transition: width .5s cubic-bezier(.22,1,.36,1); }
+
+.det-ratings { display: flex; flex-direction: column; gap: 6px; }
+.det-rating {
+  display: flex; align-items: center; gap: 11px; padding: 10px 13px; border-radius: 20px;
+  background: var(--color-bg); color: rgba(32,30,29,.45);
+}
+.det-rating.is-win { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
+.det-rating-ag { font-size: 12.5px; width: 90px; flex: none; opacity: .8; }
+.det-rating-grade { font-family: var(--font-heading); font-size: 14px; flex: none; width: 62px; }
+.det-rating-date { font-size: 11.5px; opacity: .7; flex: 1; min-width: 0; }
+.det-rating-mark { font-size: 11px; flex: none; }
+
+.det-gap { gap: 9px; }
+.det-gap-row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.det-gap-spacer { flex: 1; }
+.det-gap-right { text-align: right; }
+.det-gap-v { font-family: var(--font-heading); font-size: 24px; }
+.det-gap-v.is-dim { opacity: .55; }
+.det-gap-k { font-size: 11px; opacity: .6; }
+.det-gap-up { background: var(--color-accent-100); color: var(--color-accent-900); }
+.det-gap-down { background: var(--color-neutral-200); color: var(--color-neutral-900); }
+.det-gap-fair { background: var(--color-accent-2-100); color: var(--color-accent-2-900); }
+.det-gap-none { background: var(--color-surface); }
+.det-gap .det-card-title { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-family: var(--font-body); }
+
+.det-events { display: flex; flex-direction: column; gap: 10px; }
+.det-event { display: flex; gap: 11px; align-items: flex-start; }
+.det-event-cls { font-size: 10.5px; padding: 3px 9px; border-radius: 999px; flex: none; white-space: nowrap; }
+.ev-hot { background: var(--color-accent-200); color: var(--color-accent-900); }
+.ev-mid { background: var(--color-neutral-200); color: var(--color-neutral-900); }
+.ev-calm { background: var(--color-accent-2-200); color: var(--color-accent-2-900); }
+.det-event-body { flex: 1; min-width: 0; }
+.det-event-text { font-size: 12.5px; line-height: 1.5; }
+.det-event-meta { font-size: 10.5px; opacity: .5; margin-top: 2px; }
+
+.det-actions { display: flex; gap: 9px; }
+.det-actions .pill-outline, .det-actions .pill-primary { flex: 1; padding: 14px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -560,6 +800,162 @@ function escapeHtml(s) {
 
 // Pages register here; app.js owns routing and calls render(el) on first show.
 const PAGES = {};
+</script>
+<script>// Bond model shared by the map, the screener and the detail drawer.
+// One row per bond in DATA.universe_now.bonds (the latest MOEX snapshot),
+// joined to its issuer's monitoring record where one exists. Nothing is
+// estimated: a field the export does not carry stays null and renders "—".
+//
+// Field sources (scripts/export_dashboard_data.py):
+//   ytm          ytm_pct
+//   aeyBase      aey_base_pct            AEY before credit losses
+//   aey          aey_base_risk_adj_pct   (1 − PD)·AEY − PD·LGD; rated bonds only
+//   gs           g_spread_bp             spread to the ОФЗ zero curve
+//   fair         implied_fair_spread_bp  PD × LGD for the rating (compute/default_probs.py)
+//   gap          mispricing_bp           gs − fair; null when the signal is excluded
+//   score        mean of the issuer's four РСБУ pillar scores (compute/pillars.py), 0–10
+//   pdRating     pd_rating × 100         annual PD in percent (export gives a fraction)
+//   watch        in_watchlist            the "наблюдение" flag on a bond
+
+// Bands and thresholds. Chosen for this data, not copied from the design's
+// mock numbers (its ±60 б.п. band and 500 млн ₽ liquidity cut sit outside
+// the real distribution).
+const FAIR_BAND_BP = 300;          // |gap| within this = "в пределах модели" (old map's ±300 б.п. band)
+const CANDIDATE_GAP_BP = 300;      // "кандидат": wider than fair by more than the band, EV zone green
+const LIQUID_VOLUME_RUB = 1e6;     // "Ликвидные" chip: оборот за сессию ≥ 1 млн ₽ (top ~7% of the universe)
+const LOW_LIQ_VOLUME_RUB = 1e4;    // "низкая ликв." flag: оборот за сессию < 10 тыс. ₽ (bottom quartile)
+const EVENT_LOOKBACK_DAYS = 30;
+
+const SECTOR_LABELS = DATA.sector_labels || {};
+function sectorLabel(s) { return s ? (SECTOR_LABELS[s] || s) : null; }
+
+const PILLARS = [
+  // [score key, name, raw-ratio formatter]
+  ['score_leverage', 'Долговая нагрузка', p => p.debt_to_ebit != null ? `долг/EBIT ${fmtNum(p.debt_to_ebit, 1)}×` : null],
+  ['score_liquidity', 'Ликвидность', p => p.current_ratio != null ? `тек. ликв. ${fmtNum(p.current_ratio, 2)}` : null],
+  ['score_refinancing', 'Рефинансирование', p => p.short_term_debt_share != null ? `кор. долг ${fmtNum(p.short_term_debt_share * 100, 0)}%` : null],
+  ['score_operations', 'Рентабельность', p => p.net_margin != null ? `чистая маржа ${fmtNum(p.net_margin * 100, 1)}%` : null],
+];
+
+function pillarScore(sixPillars) {
+  if (!sixPillars) return null;
+  const v = PILLARS.map(([k]) => sixPillars[k]).filter(x => x != null);
+  return v.length ? v.reduce((a, c) => a + c, 0) / v.length / 10 : null;
+}
+
+// 'Общество с ограниченной ответственностью "Ромашка"' -> 'Ромашка'
+const LEGAL_FORM_RE = /^(публичное акционерное общество|непубличное акционерное общество|акционерное общество|общество с ограниченной ответственностью|пао|ао|ооо|нао)\s+/i;
+function shortIssuerName(title) {
+  if (!title) return null;
+  const s = title.replace(LEGAL_FORM_RE, '').replace(/["«»“”]/g, '').trim();
+  return s || title;
+}
+
+function ratingClass(r) {
+  // 'ruBBB+' -> 'BBB'; CC/C fold into CCC like the old map's rating tiers
+  if (!r) return null;
+  const core = r.replace(/^ru/i, '').replace(/[+-]$/, '').split('.')[0];
+  return core === 'CC' || core === 'C' ? 'CCC' : core;
+}
+
+function daysAgo(iso, asOf) {
+  const a = Date.parse((iso || '').slice(0, 10)), b = Date.parse((asOf || '').slice(0, 10));
+  return isFinite(a) && isFinite(b) ? (b - a) / 864e5 : null;
+}
+
+const BONDS = (() => {
+  const asOf = (DATA.universe_now && DATA.universe_now.snap_date) || DATA.day2_snap_date;
+  const monitored = new Map((DATA.issuers || []).map(i => [i.issuer_id, i]));
+  const passive = new Map((DATA.issuers_passive || []).map(i => [i.issuer_id, i]));
+  const known = DATA.known_issuers || {};
+
+  return ((DATA.universe_now && DATA.universe_now.bonds) || []).map(b => {
+    const iss = monitored.get(b.emitent_inn) || null;
+    const pass = passive.get(b.emitent_inn) || null;
+    const events = ((iss || pass || {}).events || []);
+    const recentSerious = events.filter(e => (e.severity === 'critical' || e.severity === 'high')
+      && daysAgo(e.occurred, asOf) != null && daysAgo(e.occurred, asOf) <= EVENT_LOOKBACK_DAYS);
+    const flagsToday = iss && iss.snap_date === asOf ? (iss.flags_today || []).filter(f => f.secid === b.secid) : [];
+    const gap = b.signal_excluded ? null : b.mispricing_bp;
+    const name = (known[b.emitent_inn] && known[b.emitent_inn].name) || shortIssuerName((iss && iss.name) || b.emitent_title) || b.secid;
+
+    const bond = {
+      secid: b.secid, t: b.short_name || b.secid, n: name, inn: b.emitent_inn,
+      sector: b.sector, sectorLabel: sectorLabel(b.sector),
+      m: b.tenor_yrs, dur: b.mod_dur, matDate: b.mat_date, offerDate: b.offer_date,
+      ytm: b.ytm_pct, aeyBase: b.aey_base_pct, aey: b.aey_base_risk_adj_pct,
+      gs: b.g_spread_bp, fair: b.implied_fair_spread_bp, gap,
+      rating: b.rating, ratingClass: ratingClass(b.rating),
+      // pd_rating is exported as a fraction (0.0598); DATA.pd_by_rating is the
+      // same number in percent (5.98). Kept in percent here, like every other
+      // rate on the page.
+      pdRating: b.pd_rating == null ? null : b.pd_rating * 100,
+      decomposition: b.aey_risk_decomposition,
+      score: pillarScore(iss && iss.six_pillars),
+      vol: b.volume, trades: b.num_trades, coupon: b.coupon_pct, couponType: b.coupon_type,
+      price: b.last_pct, yieldSource: b.yield_source, yieldZone: b.yield_zone,
+      vdo: b.vdo_scope === true, watch: b.in_watchlist === true,
+      issuer: iss, passiveIssuer: pass, recentSerious, flagsToday,
+      raw: b,
+    };
+    bond.flags = bondFlags(bond);
+    return bond;
+  });
+})();
+
+const BOND_BY_SECID = new Map(BONDS.map(b => [b.secid, b]));
+
+// Short, highest-priority-first. The first one is what the screener's Флаг
+// column shows, so the zone verdict leads: a bond can carry a 300% AEY and
+// still be one the model says to stay away from, and the number alone does
+// not say that.
+function bondFlags(b) {
+  const f = [];
+  if (b.yieldZone === 'negative_ev') f.push('красная зона');
+  else if (b.yieldZone === 'caution') f.push('жёлтая зона');
+  if (b.watch) f.push('наблюдение');
+  if (b.recentSerious.length || b.flagsToday.length) f.push('событие');
+  if (b.gap != null && b.gap > CANDIDATE_GAP_BP && b.yieldZone === 'green') f.push('кандидат');
+  if (b.vol != null && b.vol < LOW_LIQ_VOLUME_RUB) f.push('низкая ликв.');
+  if (b.yieldSource && b.yieldSource !== 'moex') f.push('цена искажена');
+  return f;
+}
+
+// 'выше' / 'в модели' / 'ниже' / null (no rating -> no fair spread)
+function gapBand(b) {
+  if (b.gap == null) return null;
+  return b.gap > FAIR_BAND_BP ? 'above' : b.gap < -FAIR_BAND_BP ? 'below' : 'fair';
+}
+
+// Russian money: 1 234 ₽ / 56 тыс. ₽ / 1,2 млн ₽
+function fmtRub(v) {
+  if (v == null || !isFinite(v)) return DASH;
+  if (v >= 1e6) return `${fmtNum(v / 1e6, 1)} млн ₽`;
+  if (v >= 1e4) return `${fmtNum(v / 1e3, 0)} тыс. ₽`;
+  return `${fmtNum(v, 0)} ₽`;
+}
+
+function fmtBpSigned(v) {
+  return v == null || !isFinite(v) ? DASH : `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtNum(Math.abs(Math.round(v)), 0)}`;
+}
+
+// Basket ("Отобрано в корзину") shared with the Портфель page (stage 3).
+// Kept per browser in localStorage; the page works without it.
+const BASKET = (() => {
+  const KEY = 'kl.basket';
+  let ids = [];
+  try { ids = JSON.parse(localStorage.getItem(KEY) || '[]').filter(id => BOND_BY_SECID.has(id)); } catch (e) { ids = []; }
+  const listeners = [];
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(ids)); } catch (e) { /* storage unavailable */ } }
+  function emit() { save(); listeners.forEach(fn => fn()); }
+  return {
+    ids: () => ids.slice(),
+    has: id => ids.includes(id),
+    toggle(id) { ids = ids.includes(id) ? ids.filter(x => x !== id) : ids.concat([id]); emit(); },
+    clear() { ids = []; emit(); },
+    onChange(fn) { listeners.push(fn); },
+  };
+})();
 </script>
 <script>// Обзор -- hero, the 18 capability blocks and the value band, copy taken
 // verbatim from bond-lab-design-reference.html (renderVals() `cap` array and
@@ -739,7 +1135,1164 @@ function renderOverviewMarketBand(el) {
   el.hidden = false;
 }
 </script>
-<script>// Pages not rebuilt yet (redesign stages 2 and 3). Each keeps the page
+<script>// Карта -- D3 scatter for the Карта и скринер page. Geometry, colours and the
+// drag-a-frame gesture follow buildMap() in bond-lab-design-reference.html;
+// the zoom/pan behaviour and the event-layering lessons come from the old
+// D3 market map (dashboard/legacy/template.html, commits 660357d, f8a81d7).
+//
+// Gestures:
+//   drag on the plot        draw a selection frame (the screener filters live)
+//   click a point           open the bond drawer; Shift+click toggles the basket
+//   wheel                   zoom around the cursor (1×–16×)
+//   Shift+drag              pan
+// The frame is stored in unzoomed plot coordinates, so zooming or panning
+// never moves it off the bonds it selected.
+//
+// Faults the old maps had, and why they cannot recur here:
+//   - stale pixel buffer after a page-zoom change (canvas map, a502a27): this
+//     is SVG in a fixed viewBox, there is no bitmap to resync.
+//   - pan stuck after a fast drag leaves the plot (canvas map, a2676d5): the
+//     frame drag uses pointer capture and ends on pointerup, pointercancel or
+//     lostpointercapture; the pan is d3.zoom's own gesture, which listens on
+//     window.
+//   - d3.brush's overlay swallowing every hover and click (660357d): there is
+//     no d3.brush; the frame is a pointer-events:none <rect> drawn above the
+//     points, and the gesture is bound on the <svg> itself.
+
+const TerminalMap = (() => {
+  const PL = 54, PR = 26, PT = 28, PB = 30;
+  // The viewBox is sized to the container so one SVG unit is one CSS pixel:
+  // a fixed 760-unit viewBox would magnify every label when the card is
+  // wider (layout B is full-width), which the reference's own 760 assumes
+  // away because its map never leaves the split.
+  const MW_MIN = 520, MW_MAX = 1800;
+  let MW = 760;
+  const INK = '#201e1d', BG = '#f5ead8', ACC = '#c67139', ACC2 = '#7a8a5e', GREY = '#8a8478', MUTED = '#c0b6a5';
+  const DUR_MAX = 8;             // modified duration axis, years
+  const AXES = {
+    // y domains are fixed so the picture does not jump between rebuilds;
+    // bonds outside them are counted, not silently lost (see offAxisCount).
+    spread: { y: [-500, 3000], yUnit: 'б.п.', yFmt: v => fmtNum(v, 0), title: 'Карта спредов' },
+    aey: { y: [0, 60], yUnit: 'AEY', yFmt: v => fmtNum(v, 0) + '%', title: 'Доходность против качества' },
+    curve: { y: [0, 55], yUnit: 'YTM', yFmt: v => fmtNum(v, 0) + '%', title: 'Кривая доходности' },
+  };
+
+  let ctl = null;                // controller from terminal.js
+  let root = null, svg = null, tip = null;
+  let H = 430, axis = 'spread', transform = null, zoom = null;
+  let xBase = null, yBase = null;
+  let drag = null;               // frame being drawn, unzoomed plot coords
+  let base = new Map();          // secid -> [x, y] unzoomed, or absent if not plottable
+  let rScale = null;
+  let pending = 0;
+
+  // ОФЗ curve. DATA.rf_curve keeps one bond per 0.1-year bucket ("last one
+  // wins" in the exporter), so a bond carrying a fallback rf_rate makes the
+  // published curve zigzag. Rebuilt here as the median of every bond's own
+  // rf_rate_pct per bucket, and drawn only while a bucket holds enough bonds
+  // for that median to mean anything -- the thin long end is left undrawn
+  // rather than smoothed over. Bucketed by modified duration, not tenor, so
+  // the curve lands on the same axis the bonds are plotted against.
+  const CURVE_MIN_PER_TENOR = 8;
+  const RF_CURVE = (() => {
+    const buckets = new Map();
+    BONDS.forEach(b => {
+      const t = b.dur, r = b.raw.rf_rate_pct;
+      if (t == null || r == null || t > DUR_MAX) return;
+      const k = Math.round(t * 10) / 10;
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(r);
+    });
+    const out = [];
+    [...buckets.keys()].sort((a, b) => a - b).forEach(k => {
+      const v = buckets.get(k);
+      if (v.length < CURVE_MIN_PER_TENOR) return;
+      if (out.length && k - out[out.length - 1][0] > 0.45) return;   // stop at the first real gap
+      v.sort((a, b) => a - b);
+      out.push([k, v.length % 2 ? v[v.length >> 1] : (v[(v.length >> 1) - 1] + v[v.length >> 1]) / 2]);
+    });
+    return out;
+  })();
+
+  const hasD3 = () => typeof d3 !== 'undefined';
+  const plotW = () => MW - PL - PR;
+  const durT = d => Math.log(d + 0.5);
+
+  function mapHeight(layout) { return layout === 'A' ? 430 : 230; }
+  function measureWidth() {
+    const w = root ? Math.round(root.clientWidth) : 0;
+    return w ? Math.max(MW_MIN, Math.min(MW_MAX, w)) : MW;
+  }
+  // x = PL + t·(MW − PL − PR): re-express a frame drawn at one width in the
+  // coordinates of another, so a resize keeps the same bonds selected.
+  function rescaleBrush(br, oldMW, newMW) {
+    const o = oldMW - PL - PR, n = newMW - PL - PR;
+    const f = x => PL + (x - PL) / o * n;
+    return { x0: f(br.x0), x1: f(br.x1), y0: br.y0, y1: br.y1 };
+  }
+
+  // ── geometry ──────────────────────────────────────────────────────────
+  function buildScales() {
+    const ax = AXES[axis];
+    xBase = axis === 'aey'
+      ? d3.scaleLinear().domain([0, 10]).range([PL, MW - PR])
+      : d3.scaleLinear().domain([durT(0), durT(DUR_MAX)]).range([PL, MW - PR]);
+    yBase = d3.scaleLinear().domain(ax.y).range([H - PB, PT]);
+    base = new Map();
+    BONDS.forEach(b => {
+      const xv = axis === 'aey' ? b.score : (b.dur != null && b.dur >= 0 && b.dur <= DUR_MAX ? durT(b.dur) : null);
+      const yv = axis === 'spread' ? b.gs : axis === 'aey' ? b.aey : b.ytm;
+      if (xv == null || yv == null || !isFinite(yv) || yv < ax.y[0] || yv > ax.y[1]) return;
+      base.set(b.secid, [xBase(xv), yBase(yv)]);
+    });
+  }
+
+  function offAxisCount() {
+    // bonds that have the axis' values but fall outside the fixed domain
+    const ax = AXES[axis];
+    return BONDS.filter(b => {
+      const yv = axis === 'spread' ? b.gs : axis === 'aey' ? b.aey : b.ytm;
+      const hasX = axis === 'aey' ? b.score != null : b.dur != null;
+      return hasX && yv != null && !base.has(b.secid) && isFinite(yv) && (yv < ax.y[0] || yv > ax.y[1] || b.dur > DUR_MAX);
+    }).length;
+  }
+
+  function inBrush(b) {
+    const br = drag || ctl.state.brush;
+    if (!br) return true;
+    const p = base.get(b.secid);
+    if (!p) return false;
+    return p[0] >= br.x0 && p[0] <= br.x1 && p[1] >= br.y0 && p[1] <= br.y1;
+  }
+
+  function norm(d) {
+    return { x0: Math.min(d.x0, d.x1), x1: Math.max(d.x0, d.x1), y0: Math.min(d.y0, d.y1), y1: Math.max(d.y0, d.y1) };
+  }
+
+  // ── build (layout or axis change) ─────────────────────────────────────
+  function mount(el, controller) {
+    ctl = controller;
+    root = el;
+    if (!hasD3()) {
+      root.innerHTML = `<div class="map-empty">Библиотека D3 не загрузилась (нужен доступ к cdnjs.cloudflare.com), поэтому карты нет. Скринер работает без неё.</div>`;
+      return;
+    }
+    root.innerHTML = '';
+    tip = document.createElement('div');
+    tip.className = 'map-tip';
+    tip.hidden = true;
+    root.appendChild(tip);
+    rScale = d3.scaleSqrt()
+      .domain([0, d3.quantile(BONDS.map(b => b.vol || 0).sort(d3.ascending), 0.98) || 1])
+      .range([3, 9]).clamp(true);
+    rebuild(false);
+    if (typeof ResizeObserver === 'function') {
+      let raf = 0;
+      new ResizeObserver(() => {
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          if (!root.clientWidth || measureWidth() === MW) return;   // hidden page, or nothing to do
+          rebuild(false);
+          ctl.onResize();
+        });
+      }).observe(root);
+    }
+  }
+
+  function rebuild(animate) {
+    if (!hasD3() || !root) return;
+    const newH = mapHeight(ctl.state.layout), newMW = measureWidth();
+    const layoutChanged = newH !== H || newMW !== MW || !svg;
+    const prevPos = animate && !layoutChanged ? new Map(base) : null;
+    if (newMW !== MW && ctl.state.brush) ctl.state.brush = rescaleBrush(ctl.state.brush, MW, newMW);
+    H = newH;
+    MW = newMW;
+    axis = ctl.state.axis;
+    drag = null;
+    buildScales();
+    if (layoutChanged) createSvg();
+    transform = d3.zoomIdentity;
+    zoom.extent([[PL, PT], [MW - PR, H - PB]]).translateExtent([[PL, PT], [MW - PR, H - PB]]);
+    svg.property('__zoom', d3.zoomIdentity);
+    drawGrid();
+    drawOverlay();
+    drawDots(prevPos);
+    refresh();
+  }
+
+  function createSvg() {
+    if (svg) svg.remove();
+    svg = d3.select(root).append('svg')
+      .attr('class', 'map-svg')
+      .attr('viewBox', `0 0 ${MW} ${H}`)
+      .attr('width', '100%');
+    svg.append('defs').append('clipPath').attr('id', 'mapClip')
+      .append('rect').attr('x', PL).attr('y', PT - 12).attr('width', plotW()).attr('height', H - PT - PB + 12);
+    svg.append('g').attr('class', 'map-grid');
+    const plot = svg.append('g').attr('clip-path', 'url(#mapClip)');
+    plot.append('g').attr('class', 'map-overlay');
+    plot.append('g').attr('class', 'map-dots');
+    plot.append('g').attr('class', 'map-labels').attr('pointer-events', 'none');
+    const brushG = svg.append('g').attr('pointer-events', 'none');
+    brushG.append('rect').attr('class', 'map-brush').attr('rx', 10).attr('display', 'none');
+    brushG.append('text').attr('class', 'map-brush-count').attr('display', 'none');
+
+    zoom = d3.zoom()
+      .scaleExtent([1, 16])
+      // wheel always; mouse drag only with Shift (a plain drag draws the
+      // frame); two-finger touch pans/zooms.
+      .filter(e => e.type === 'wheel' || (e.type === 'mousedown' && e.shiftKey && e.button === 0) || e.type.startsWith('touch'))
+      .on('zoom', e => {
+        transform = e.transform;
+        hideTip();
+        position();
+        ctl.onZoom(transform.k > 1.001 || Math.abs(transform.x) > 0.5 || Math.abs(transform.y) > 0.5);
+      });
+    svg.call(zoom).on('dblclick.zoom', null);
+
+    const node = svg.node();
+    node.addEventListener('pointerdown', onDown);
+    node.addEventListener('pointermove', onMove);
+    node.addEventListener('pointerup', onUp);
+    node.addEventListener('pointercancel', onUp);
+    node.addEventListener('lostpointercapture', onUp);
+  }
+
+  // ── frame gesture ─────────────────────────────────────────────────────
+  function svgPoint(e) {
+    const [x, y] = d3.pointer(e, svg.node());
+    return transform.invert([x, y]);
+  }
+  function onDown(e) {
+    if (e.button !== 0 || e.shiftKey || e.pointerType === 'touch') return;
+    if (e.target.closest && e.target.closest('.map-dot')) return;
+    e.preventDefault(); // also suppresses the compatibility mousedown, so d3.zoom does not pan
+    const [x, y] = svgPoint(e);
+    // capture can be refused (pointer already gone); the gesture still ends
+    // on pointerup/cancel, so a failure here must not abort the drag
+    try { svg.node().setPointerCapture(e.pointerId); } catch (err) { /* no capture */ }
+    drag = { x0: x, y0: y, x1: x, y1: y, id: e.pointerId };
+    hideTip();
+  }
+  function onMove(e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    const [x, y] = svgPoint(e);
+    drag.x1 = x; drag.y1 = y;
+    schedule();
+  }
+  function onUp(e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag;
+    drag = null;
+    try { if (svg.node().hasPointerCapture(e.pointerId)) svg.node().releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+    const n = norm(d);
+    // a click (or a tiny wiggle) on empty plot clears the frame, as in the reference
+    const tooSmall = (n.x1 - n.x0) * transform.k < 8 || (n.y1 - n.y0) * transform.k < 8;
+    ctl.setBrush(tooSmall ? null : { x0: n.x0, x1: n.x1, y0: n.y0, y1: n.y1 });
+  }
+  function schedule() {
+    if (pending) return;
+    pending = requestAnimationFrame(() => { pending = 0; ctl.onBrushDrag(); });
+  }
+
+  // ── drawing ───────────────────────────────────────────────────────────
+  function drawDots(prevPos) {
+    const dots = svg.select('.map-dots').selectAll('circle.map-dot')
+      .data(BONDS, b => b.secid)
+      .join(enter => enter.append('circle').attr('class', 'map-dot')
+        .on('click', (e, b) => {
+          e.stopPropagation();
+          if (e.shiftKey) ctl.onTogglePick(b.secid); else ctl.onOpen(b.secid);
+        })
+        .on('pointerenter', (e, b) => showTip(e, b))
+        .on('pointermove', e => moveTip(e))
+        .on('pointerleave', hideTip));
+    dots.attr('display', b => base.has(b.secid) ? null : 'none');
+    if (prevPos) {
+      // axis switch: glide from the old position where the bond had one
+      dots.filter(b => base.has(b.secid) && prevPos.has(b.secid))
+        .attr('cx', b => prevPos.get(b.secid)[0]).attr('cy', b => prevPos.get(b.secid)[1])
+        .transition().duration(500).ease(d3.easeCubicOut)
+        .attr('cx', b => base.get(b.secid)[0]).attr('cy', b => base.get(b.secid)[1]);
+      dots.filter(b => base.has(b.secid) && !prevPos.has(b.secid)).call(placeDots);
+    } else {
+      dots.call(placeDots);
+    }
+  }
+
+  function placeDots(sel) {
+    sel.filter(b => base.has(b.secid))
+      .attr('cx', b => transform.applyX(base.get(b.secid)[0]))
+      .attr('cy', b => transform.applyY(base.get(b.secid)[1]));
+  }
+
+  function colorOf(b) {
+    const band = gapBand(b);
+    return band === 'above' ? ACC : band === 'below' ? GREY : band === 'fair' ? ACC2 : MUTED;
+  }
+
+  // Styles that depend on filter / frame / selection / basket.
+  function refresh() {
+    if (!hasD3() || !svg) return;
+    const S = ctl.state;
+    const on = new Set(ctl.visibleIds());
+    svg.select('.map-dots').selectAll('circle.map-dot')
+      .attr('r', b => rScale(b.vol || 0) + (S.sel === b.secid ? 3.5 : 0))
+      .attr('fill', colorOf)
+      .attr('fill-opacity', b => on.has(b.secid) ? (S.sel === b.secid ? 1 : 0.82) : 0.14)
+      .attr('stroke', b => BASKET.has(b.secid) ? INK : BG)
+      .attr('stroke-width', b => BASKET.has(b.secid) ? 2.2 : 1.2)
+      .filter(b => S.sel === b.secid || BASKET.has(b.secid)).raise();
+    drawBrush(on.size);
+    drawLabels(on);
+  }
+
+  // Zoom/pan: move everything without restyling.
+  function position() {
+    svg.select('.map-dots').selectAll('circle.map-dot').interrupt().call(placeDots);
+    drawGrid();
+    drawOverlay();
+    drawLabels(new Set(ctl.visibleIds()));
+    drawBrush(null);
+  }
+
+  function drawGrid() {
+    const g = svg.select('.map-grid');
+    g.selectAll('*').remove();
+    const ax = AXES[axis];
+    const ys = transform.rescaleY(yBase);
+    ys.ticks(ctl.state.layout === 'A' ? 7 : 4).forEach(v => {
+      const y = ys(v);
+      if (y < PT - 1 || y > H - PB + 1) return;
+      g.append('line').attr('x1', PL - 6).attr('x2', MW - PR).attr('y1', y).attr('y2', y)
+        .attr('stroke', INK).attr('stroke-opacity', v === 0 ? 0.2 : 0.07);
+      g.append('text').attr('x', PL - 11).attr('y', y + 3.5).attr('class', 'map-tick').attr('text-anchor', 'end').text(ax.yFmt(v));
+    });
+    g.append('text').attr('x', 2).attr('y', 11).attr('class', 'map-axis-name').text(ax.yUnit);
+
+    const xs = transform.rescaleX(xBase);
+    if (axis === 'aey') {
+      xs.ticks(6).forEach(v => {
+        const x = xs(v);
+        if (x < PL || x > MW - PR - 60) return;
+        g.append('text').attr('x', x).attr('y', H - 9).attr('class', 'map-tick').attr('text-anchor', 'middle').text(fmtNum(v, v % 1 ? 1 : 0));
+      });
+      g.append('text').attr('x', MW - PR).attr('y', H - 9).attr('class', 'map-axis-name').attr('text-anchor', 'end').text('кредитный балл →');
+    } else {
+      let last = -Infinity;
+      [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 6, 7].forEach(v => {
+        const x = xs(durT(v));
+        if (x < PL + 4 || x > MW - PR - 64 || x - last < 34) return;
+        last = x;
+        g.append('text').attr('x', x).attr('y', H - 9).attr('class', 'map-tick').attr('text-anchor', 'middle').text(fmtNum(v, v % 1 ? (v * 4) % 1 ? 2 : v % 0.5 ? 2 : 1 : 0) + ' г.');
+      });
+      g.append('text').attr('x', MW - PR).attr('y', H - 9).attr('class', 'map-axis-name').attr('text-anchor', 'end').text('дюрация →');
+    }
+  }
+
+  function drawOverlay() {
+    const g = svg.select('.map-overlay');
+    g.selectAll('*').remove();
+    const xs = transform.rescaleX(xBase), ys = transform.rescaleY(yBase);
+    if (axis === 'curve') {
+      const pts = RF_CURVE.map(([t, r]) => [xs(durT(t)), ys(r)]);
+      if (pts.length < 2) return;
+      const line = d3.line().curve(d3.curveMonotoneX);
+      const bottom = ys(AXES.curve.y[0]);
+      g.append('path').attr('d', line(pts) + `L${pts[pts.length - 1][0]},${bottom}L${pts[0][0]},${bottom}Z`)
+        .attr('fill', ACC).attr('fill-opacity', 0.09);
+      g.append('path').attr('d', line(pts)).attr('fill', 'none').attr('stroke', ACC)
+        .attr('stroke-width', 2.75).attr('stroke-linecap', 'round');
+      const end = pts[pts.length - 1];
+      g.append('text').attr('x', Math.min(end[0] + 8, MW - PR)).attr('y', end[1] - 12).attr('class', 'map-curve-label')
+        .attr('text-anchor', end[0] + 8 > MW - PR - 70 ? 'end' : 'start')
+        .text(`кривая ОФЗ · до ${fmtNum(RF_CURVE[RF_CURVE.length - 1][0], 1)} г.`);
+    } else if (axis === 'spread') {
+      // Fair spread is a function of the rating, not of duration
+      // (PD × LGD per notch, DATA.fair_value_bp_by_tier), so it is drawn as
+      // one dashed level per rating class rather than a sloped band.
+      const tiers = Object.entries(DATA.fair_value_bp_by_tier || {}).sort((a, b) => b[1] - a[1]);
+      let lastY = -Infinity;
+      tiers.forEach(([tier, bp]) => {
+        const y = ys(bp);
+        if (y < PT || y > H - PB) return;
+        g.append('line').attr('x1', PL).attr('x2', MW - PR).attr('y1', y).attr('y2', y)
+          .attr('stroke', ACC2).attr('stroke-width', 2).attr('stroke-dasharray', '6 5').attr('stroke-opacity', 0.7);
+        if (y - lastY >= 16) {
+          g.append('text').attr('x', MW - PR - 2).attr('y', y - 5).attr('class', 'map-fair-label').attr('text-anchor', 'end')
+            .text(`справедливый спред · ${tier}`);
+          lastY = y;
+        }
+      });
+    }
+  }
+
+  function drawLabels(on) {
+    const g = svg.select('.map-labels');
+    g.selectAll('*').remove();
+    const S = ctl.state;
+    const shown = new Set();
+    if (S.layout === 'A' && axis !== 'curve') {
+      // the most liquid bonds in view get a name, like the reference's liq > 800 rule
+      BONDS.filter(b => on.has(b.secid) && base.has(b.secid))
+        .filter(b => {
+          const x = transform.applyX(base.get(b.secid)[0]), y = transform.applyY(base.get(b.secid)[1]);
+          return x >= PL && x <= MW - PR - 40 && y >= PT && y <= H - PB;
+        })
+        .sort((a, b) => (b.vol || 0) - (a.vol || 0)).slice(0, 8)
+        .forEach(b => shown.add(b.secid));
+    }
+    if (S.sel && base.has(S.sel)) shown.add(S.sel);
+    shown.forEach(id => {
+      const b = BOND_BY_SECID.get(id), p = base.get(id);
+      const sel = id === S.sel;
+      g.append('text')
+        .attr('x', transform.applyX(p[0]) + rScale(b.vol || 0) + (sel ? 3.5 : 0) + 5)
+        .attr('y', transform.applyY(p[1]) + 3.5)
+        .attr('class', 'map-dot-label').attr('fill-opacity', sel ? 0.9 : 0.42)
+        .text(b.t);
+    });
+  }
+
+  function drawBrush(count) {
+    const br = drag ? norm(drag) : ctl.state.brush;
+    const rect = svg.select('.map-brush'), text = svg.select('.map-brush-count');
+    if (!br) { rect.attr('display', 'none'); text.attr('display', 'none'); return; }
+    const x0 = transform.applyX(br.x0), x1 = transform.applyX(br.x1);
+    const y0 = transform.applyY(br.y0), y1 = transform.applyY(br.y1);
+    rect.attr('display', null).attr('x', x0).attr('y', y0).attr('width', Math.max(0, x1 - x0)).attr('height', Math.max(0, y1 - y0));
+    text.attr('display', null).attr('x', x0 + 8).attr('y', y0 - 6 < 14 ? y1 + 16 : y0 - 7);
+    if (count != null) text.text(`${fmtNum(count, 0)} ${plural(count, ['бумага', 'бумаги', 'бумаг'])} в выделении`);
+  }
+
+  // ── tooltip ───────────────────────────────────────────────────────────
+  function showTip(e, b) {
+    if (drag) return;
+    tip.innerHTML = `
+      <div class="map-tip-title">${escapeHtml(b.t)}</div>
+      <div class="map-tip-sub">${escapeHtml(b.n)}${b.rating ? ' · ' + escapeHtml(b.rating) : ''}</div>
+      <div class="map-tip-row"><span>YTM ${fmtPct(b.ytm, 1)}</span><span>AEY ${fmtPct(b.aey, 1)}</span></div>
+      <div class="map-tip-row"><span>G-спред ${b.gs != null ? fmtBpSigned(b.gs) + ' б.п.' : DASH}</span><span>дюр. ${b.dur != null ? fmtNum(b.dur, 1) + ' г.' : DASH}</span></div>`;
+    tip.hidden = false;
+    moveTip(e);
+  }
+  function moveTip(e) {
+    if (tip.hidden) return;
+    const r = root.getBoundingClientRect();
+    let x = e.clientX - r.left + 14, y = e.clientY - r.top + 14;
+    if (x + tip.offsetWidth > r.width) x = e.clientX - r.left - 14 - tip.offsetWidth;
+    if (y + tip.offsetHeight > r.height) y = e.clientY - r.top - 14 - tip.offsetHeight;
+    tip.style.left = Math.max(0, x) + 'px';
+    tip.style.top = Math.max(0, y) + 'px';
+  }
+  function hideTip() { if (tip) tip.hidden = true; }
+
+  function resetZoom() {
+    if (svg && zoom) svg.transition().duration(250).call(zoom.transform, d3.zoomIdentity);
+  }
+
+  return {
+    mount,
+    rebuild(animate) { rebuild(animate); },
+    refresh,
+    inBrush: b => (hasD3() ? inBrush(b) : true),
+    isDragging: () => !!drag,
+    plottedCount: () => base.size,
+    offAxisCount: () => (hasD3() ? offAxisCount() : 0),
+    title: a => AXES[a].title,
+    resetZoom,
+    colors: { ACC, ACC2, GREY, MUTED },
+  };
+})();
+</script>
+<script>// Разбор бумаги -- the detailOpen drawer of bond-lab-design-reference.html,
+// opened from a map point or a screener row. Section order, radii and copy
+// follow the reference; every number comes from dashboard_data.json.
+//
+// Where the reference's mock data has no real counterpart the section says
+// so instead of showing a plausible number:
+//   "IRR с выживаемостью"  -> доходность при выживании, from the pipeline's
+//        own aey_risk_decomposition (rated bonds only).
+//   "шесть опор"           -> the four pillars compute/pillars.py actually
+//        scores (leverage, liquidity, refinancing, operations); the other
+//        six_pillars fields are raw ratios, not scores.
+//   "три агентства"        -> issuers.ratings_all, however many it carries.
+// An unrated bond has no model PD, so the credit-adjusted blocks are
+// replaced by one line explaining why, never by an estimate.
+
+const DET_INK = '#201e1d';
+const DET_ACC = '#c67139';
+const DET_ACC2 = '#7a8a5e';
+const DET_GREY = '#8a8478';
+const SURV_YEARS = 5;
+
+function detCard(title, bodyHtml, extra) {
+  return `<section class="det-card${extra && extra.cls ? ' ' + extra.cls : ''}">
+    <div class="det-card-head"><div class="det-card-title">${escapeHtml(title)}</div>${extra && extra.aside ? `<div class="det-card-aside">${extra.aside}</div>` : ''}</div>
+    ${bodyHtml}
+  </section>`;
+}
+
+function detTile(kicker, value, cls) {
+  return `<div class="det-tile${cls ? ' ' + cls : ''}"><div class="det-tile-k">${escapeHtml(kicker)}</div><div class="det-tile-v">${value}</div></div>`;
+}
+
+// ── "Из чего собран AEY" ────────────────────────────────────────────────
+// Three bars, exactly the reference's waterfall, over the pipeline's own
+// decomposition: EV = Rs − PD × (Rs − Rd).
+function detWaterfall(d) {
+  const W = 460, LX = 150, RG = 76, PW = W - LX - RG;
+  const rs = d.return_if_survive_pct, rd = d.return_if_default_pct;
+  const pd = d.p_default_pct / 100, ev = d.expected_value_pct;
+  const loss = rs - ev;
+  const max = Math.max(rs, ev, 1);
+  const xs = v => Math.max(0, v) / max * PW;
+  const rows = [
+    ['Доходность при выживании', rs, DET_ACC, LX, xs(rs)],
+    ['− потери от дефолта', -loss, DET_GREY, LX + xs(Math.max(0, ev)), xs(loss)],
+    ['AEY с учётом дефолта', ev, DET_ACC2, LX, xs(ev)],
+  ];
+  const bars = rows.map(([label, v, fill, x, w], i) => {
+    const y = i * 32 + 4;
+    return `<rect x="${x.toFixed(1)}" y="${y}" width="${Math.max(1, w).toFixed(1)}" height="20" rx="7" fill="${fill}"></rect>
+      <text x="${LX - 10}" y="${y + 14.5}" class="wf-label" text-anchor="end">${escapeHtml(label)}</text>
+      <text x="${W}" y="${y + 14.5}" class="wf-value" text-anchor="end">${v < 0 ? '−' : ''}${fmtPct(Math.abs(v), 1)}</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} 100" width="100%" class="det-svg">${bars}</svg>`;
+}
+
+// ── "Выживаемость по годам" ─────────────────────────────────────────────
+// S(k) = (1 − PD)^k at the rating's annual PD from DATA.pd_by_rating. The
+// assumption (flat PD, no rating migration) is printed under the chart --
+// it is the pipeline's own model, not an extrapolation invented here.
+function detSurvival(b) {
+  const pd = b.pdRating;
+  if (pd == null || !isFinite(pd)) return null;
+  const n = Math.max(2, Math.min(SURV_YEARS, Math.ceil(b.m || SURV_YEARS)));
+  const surv = [];
+  let s = 1;
+  for (let k = 0; k < n; k++) { s *= (1 - pd / 100); surv.push(s * 100); }
+  const W = 460, H = 124;
+  const lo = Math.min(90, Math.floor(Math.min.apply(null, surv) / 10) * 10);
+  const x = i => 58 + (n === 1 ? 0.5 : i / (n - 1)) * (W - 78);
+  const y = v => 16 + (1 - (v - lo) / (100 - lo)) * (H - 44);
+  const k = [];
+  for (let v = 100; v >= lo; v -= Math.max(2, Math.round((100 - lo) / 4))) {
+    k.push(`<line x1="36" x2="${W - 8}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${DET_INK}" stroke-opacity="0.07"></line>
+      <text x="32" y="${(y(v) + 3.5).toFixed(1)}" class="det-tick" text-anchor="end">${fmtNum(v, 0)}%</text>`);
+  }
+  let d = `M${x(0).toFixed(1)},${y(surv[0]).toFixed(1)}`;
+  for (let i = 1; i < n; i++) {
+    const cx = (x(i - 1) + x(i)) / 2;
+    d += ` C${cx.toFixed(1)},${y(surv[i - 1]).toFixed(1)} ${cx.toFixed(1)},${y(surv[i]).toFixed(1)} ${x(i).toFixed(1)},${y(surv[i]).toFixed(1)}`;
+  }
+  k.push(`<path d="${d} L${x(n - 1).toFixed(1)},${H - 24} L${x(0).toFixed(1)},${H - 24} Z" fill="${DET_ACC2}" fill-opacity="0.14"></path>`);
+  k.push(`<path d="${d}" fill="none" stroke="${DET_ACC2}" stroke-width="2.6" stroke-linecap="round"></path>`);
+  surv.forEach((v, i) => {
+    k.push(`<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.6" fill="#f5ead8" stroke="${DET_ACC2}" stroke-width="2.2"></circle>
+      <text x="${x(i).toFixed(1)}" y="${H - 8}" class="det-tick" text-anchor="middle">${i + 1} г.</text>
+      <text x="${x(i).toFixed(1)}" y="${(y(v) - 9).toFixed(1)}" class="det-point" text-anchor="middle">${fmtNum(v, 1)}%</text>`);
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" class="det-svg">${k.join('')}</svg>`;
+}
+
+// ── sections ────────────────────────────────────────────────────────────
+function detAeySection(b) {
+  const d = b.decomposition;
+  if (!d) {
+    return detCard('Из чего собран AEY', `<div class="det-note">У бумаги нет рейтинга, поэтому модельной вероятности дефолта для неё нет и кредитная поправка не считается. YTM показан как есть: ${fmtPct(b.ytm, 2)}${b.aeyBase != null ? `, AEY до поправки на кредит — ${fmtPct(b.aeyBase, 2)}` : ''}. Пустое поле здесь означает отсутствие данных, а не ноль риска.</div>`);
+  }
+  const meta = DATA.pd_table_meta || {};
+  const note = `Годовая вероятность дефолта ${fmtPct(b.pdRating, 2)} по рейтингу ${escapeHtml(b.rating || '')} при возврате ${fmtPct((meta.recovery_rate || 0) * 100, 1)} номинала даёт ${fmtPct(d.p_default_pct, 1)} шанс потерять ${fmtPct(Math.abs(d.return_if_default_pct), 1)} на горизонте бумаги. Именно это вычитается из доходности при выживании — сравнивать бумаги имеет смысл только после вычета.`;
+  return detCard('Из чего собран AEY', detWaterfall(d) + `<div class="det-note">${note}</div>`);
+}
+
+function detSurvivalSection(b) {
+  const svg = detSurvival(b);
+  if (!svg) return '';
+  const meta = DATA.pd_table_meta || {};
+  return detCard('Выживаемость по годам', svg + `<div class="det-note">Постоянная годовая вероятность дефолта ${fmtPct(b.pdRating, 2)} из таблицы ${escapeHtml(meta.source || 'PD')} от ${fmtDate(meta.dated)}, без миграции рейтинга. Это допущение модели, а не прогноз по конкретному эмитенту.</div>`, {
+    aside: `<span class="det-card-aside-v">${b.aey != null ? 'AEY ' + fmtPct(b.aey, 2) : ''}</span>`,
+  });
+}
+
+function detPillarsSection(b) {
+  const iss = b.issuer;
+  const sp = iss && iss.six_pillars;
+  if (!sp) {
+    const why = b.passiveIssuer
+      ? 'Эмитент есть в базе, но не стоит под активным мониторингом, поэтому отчётность по РСБУ для него не разбиралась.'
+      : 'Эмитента нет в базе мониторинга, отчётность по РСБУ для него не разбиралась.';
+    return detCard('Скоринг РСБУ', `<div class="det-note">${escapeHtml(why)} Балл не показан, потому что его не существует, а не потому что он низкий.</div>`);
+  }
+  const rows = PILLARS.map(([key, name, rawFmt]) => {
+    const v = sp[key];
+    if (v == null) return '';
+    const s = v / 10;
+    const cls = s >= 7 ? 'is-good' : s >= 4 ? 'is-mid' : 'is-bad';
+    const raw = rawFmt(sp);
+    return `<div class="det-pillar">
+      <div class="det-pillar-head">
+        <div class="det-pillar-name">${escapeHtml(name)}</div>
+        <div class="det-pillar-raw">${raw ? escapeHtml(raw) : ''}</div>
+        <div class="det-pillar-v ${cls}">${fmtNum(s, 1)}</div>
+      </div>
+      <div class="det-pillar-track"><div class="det-pillar-fill ${cls}" style="width:${s * 10}%"></div></div>
+    </div>`;
+  }).join('');
+  const total = b.score;
+  const cls = total == null ? '' : total >= 7 ? 'is-good' : total >= 4 ? 'is-mid' : 'is-bad';
+  return detCard('Скоринг РСБУ', `<div class="det-pillars">${rows}</div>
+    <div class="det-note">Правила зашиты в код и покрыты тестами: одинаковая отчётность всегда даёт одинаковый балл. Отраслевые пороги отличаются для банков, лизинга и девелопмента. Отчётность от ${escapeHtml(fmtDate(iss.pillars_date))}.</div>`, {
+    aside: `<span class="det-card-aside-v ${cls}">${total == null ? DASH : fmtNum(total, 1) + ' / 10'}</span>`,
+  });
+}
+
+function detRatingsSection(b) {
+  const iss = b.issuer || b.passiveIssuer;
+  const all = (iss && iss.ratings_all) || [];
+  if (!all.length) {
+    return detCard('Разрешение рейтингов', `<div class="det-note">${b.rating
+      ? `У бумаги рейтинг ${escapeHtml(b.rating)}, но лента рейтинговых действий по эмитенту в выгрузке отсутствует — показывать нечего, кроме итогового значения.`
+      : 'Ни одно агентство не присваивало рейтинг этому эмитенту. Без рейтинга нет модельной PD, поэтому справедливый спред и AEY после потерь для бумаги не считаются.'}</div>`);
+  }
+  const winnerAgency = (iss.rating_detail && iss.rating_detail.agency) || null;
+  const rows = all.map(a => {
+    const win = a.agency === winnerAgency && a.is_current;
+    return `<div class="det-rating${win ? ' is-win' : ''}">
+      <div class="det-rating-ag">${escapeHtml(a.agency || DASH)}</div>
+      <div class="det-rating-grade">${escapeHtml(a.rating || DASH)}</div>
+      <div class="det-rating-date">присвоен ${escapeHtml(fmtDate(a.rated_on))}${a.outlook ? ' · ' + escapeHtml(a.outlook) : ''}</div>
+      <div class="det-rating-mark">${win ? 'принят' : a.is_current ? 'ниже по приоритету' : 'не действует'}</div>
+    </div>`;
+  }).join('');
+  const stale = iss.rating_detail && iss.rating_detail.is_stale;
+  return detCard('Разрешение рейтингов', `<div class="det-ratings">${rows}</div>
+    <div class="det-note">Приоритет фиксирован: АКРА выше Эксперт РА, дальше НКР и НРА, ручная правка — только с обоснованием в журнале. Итоговый рейтинг бумаги: ${escapeHtml(b.rating || DASH)}.${stale ? ' Рейтинг помечен как устаревший — требует проверки.' : ''}</div>`);
+}
+
+function detGapSection(b) {
+  const band = gapBand(b);
+  if (band == null) {
+    return detCard('G-спред против кривой ОФЗ', `<div class="det-gap-row">
+        <div><div class="det-gap-v">${b.gs == null ? DASH : fmtBpSigned(b.gs) + ' б.п.'}</div><div class="det-gap-k">рыночный спред</div></div>
+      </div>
+      <div class="det-note">Справедливый спред считается от рейтинга (PD × LGD). У бумаги рейтинга нет, поэтому разрыв не вычисляется — это не «спред справедливый», а «сравнивать не с чем».</div>`, { cls: 'det-gap det-gap-none' });
+  }
+  const cls = band === 'above' ? 'det-gap-up' : band === 'below' ? 'det-gap-down' : 'det-gap-fair';
+  const note = band === 'above'
+    ? `Рынок платит на ${fmtBpSigned(b.gap)} б.п. больше, чем требует кредитное качество по модели. Проверьте ленту событий: разрыв такого размера обычно означает либо неучтённую новость, либо реальную недооценку.`
+    : band === 'below'
+      ? `Спред на ${fmtNum(Math.abs(Math.round(b.gap)), 0)} б.п. ниже модельного. За тот же кредитный риск платят меньше рынка — держать можно, добирать смысла нет.`
+      : `Спред в пределах модели (±${fmtNum(FAIR_BAND_BP, 0)} б.п.): бумага оценена справедливо, доход придёт от купона и сползания по кривой, а не от переоценки.`;
+  return detCard('G-спред против кривой ОФЗ', `<div class="det-gap-row">
+      <div><div class="det-gap-v">${fmtBpSigned(b.gs)} б.п.</div><div class="det-gap-k">рыночный спред</div></div>
+      <div><div class="det-gap-v is-dim">${fmtBpSigned(b.fair)} б.п.</div><div class="det-gap-k">справедливый по модели</div></div>
+      <div class="det-gap-spacer"></div>
+      <div class="det-gap-right"><div class="det-gap-v">${fmtBpSigned(b.gap)} б.п.</div><div class="det-gap-k">разрыв</div></div>
+    </div>
+    <div class="det-note is-strong">${escapeHtml(note)}</div>`, { cls: `det-gap ${cls}` });
+}
+
+const DET_SEVERITY = {
+  critical: ['Критическое', 'ev-hot'],
+  high: ['Существенное', 'ev-hot'],
+  medium: ['Заметное', 'ev-mid'],
+  low: ['Фоновое', 'ev-calm'],
+  noise: ['Рутина', 'ev-calm'],
+};
+
+function detEventsSection(b) {
+  const iss = b.issuer || b.passiveIssuer;
+  const events = ((iss && iss.events) || []).slice().sort((x, y) => String(y.occurred).localeCompare(String(x.occurred))).slice(0, 6);
+  const flags = b.flagsToday || [];
+  const flagHtml = flags.map(f => `<div class="det-event">
+      <span class="det-event-cls ev-hot">детектор</span>
+      <div class="det-event-body"><div class="det-event-text">${escapeHtml(f.detail || f.signal || '')}</div>
+      <div class="det-event-meta">сегодня · ${escapeHtml(f.detector || '')}</div></div>
+    </div>`).join('');
+  if (!events.length && !flags.length) {
+    return detCard('События по эмитенту', `<div class="det-note">Классификатор не нашёл событий по этому эмитенту. Отсутствие событий — это отсутствие событий, а не признак качества.</div>`);
+  }
+  const rows = events.map(e => {
+    const [label, cls] = DET_SEVERITY[e.severity] || ['Событие', 'ev-calm'];
+    return `<div class="det-event">
+      <span class="det-event-cls ${cls}">${escapeHtml(label)}</span>
+      <div class="det-event-body">
+        <div class="det-event-text">${escapeHtml(e.summary || '')}</div>
+        <div class="det-event-meta">${escapeHtml(fmtDate(e.occurred))} · ${escapeHtml(e.category || '')} · ${escapeHtml(e.source || '')}</div>
+      </div>
+    </div>`;
+  }).join('');
+  return detCard('События по эмитенту', `<div class="det-events">${flagHtml}${rows}</div>`);
+}
+
+// ── entry point ─────────────────────────────────────────────────────────
+function bondDetail(b) {
+  const picked = BASKET.has(b.secid);
+  const subParts = [b.n];
+  if (b.sectorLabel) subParts.push(b.sectorLabel);
+  if (b.matDate) subParts.push(`погашение ${fmtDate(b.matDate)}`);
+  if (b.offerDate) subParts.push(`оферта ${fmtDate(b.offerDate)}`);
+  subParts.push(`оборот ${fmtRub(b.vol)} за сессию`);
+
+  const tiles = `<div class="det-tiles">
+    ${detTile('AEY', fmtPct(b.aey, 1), 'is-green')}
+    ${detTile('YTM', fmtPct(b.ytm, 1))}
+    ${detTile('При выживании', b.decomposition ? fmtPct(b.decomposition.return_if_survive_pct, 1) : DASH)}
+  </div>`;
+
+  const facts = `<div class="det-facts">
+    <div><span>Дюрация</span><b>${b.dur == null ? DASH : fmtNum(b.dur, 2) + ' г.'}</b></div>
+    <div><span>Купон</span><b>${b.coupon == null ? DASH : fmtPct(b.coupon, 2)}${b.couponType === 'floater' ? ' · плавающий' : ''}</b></div>
+    <div><span>Цена</span><b>${b.price == null ? DASH : fmtNum(b.price, 2) + '%'}</b></div>
+    <div><span>Сделок</span><b>${fmtNum(b.trades, 0)}</b></div>
+  </div>`;
+
+  const flags = b.flags.length
+    ? `<div class="det-flags">${b.flags.map(f => `<span class="det-flag">${escapeHtml(f)}</span>`).join('')}</div>`
+    : '';
+
+  const priceWarn = b.yieldSource && b.yieldSource !== 'moex'
+    ? `<div class="det-warn">Доходность посчитана не по обычной рыночной цене (${escapeHtml(b.yieldSource)}) — число показано, но сравнивать его с остальной вселенной напрямую нельзя.</div>`
+    : '';
+
+  const bodyHtml = [
+    tiles, facts, flags, priceWarn,
+    detAeySection(b),
+    detSurvivalSection(b),
+    detPillarsSection(b),
+    detRatingsSection(b),
+    detGapSection(b),
+    detEventsSection(b),
+    `<div class="det-actions">
+      <button type="button" class="pill-outline" id="termDetailPick" data-detail-action="pick" data-secid="${escapeHtml(b.secid)}">${picked ? 'Убрать из корзины' : 'Добавить в корзину'}</button>
+      <button type="button" class="pill-primary" data-detail-action="similar" data-secid="${escapeHtml(b.secid)}">Показать похожие на карте</button>
+    </div>`,
+  ].join('');
+
+  return { title: b.t, sub: subParts.join(' · '), bodyHtml };
+}
+</script>
+<script>// Карта и скринер -- the isTerminal page of bond-lab-design-reference.html.
+//
+// One screener, not two. The old dashboard had a Рынок screener and a
+// Вотчлист screener side by side, each with its own filters, columns and
+// selection; this page replaces both. "Наблюдение" is now a flag on a bond
+// (in_watchlist) and therefore just another chip in this screener's filter
+// row -- there is no second copy of the screener behind a second tab.
+//
+// Layout, copy, spacing and colours follow the reference. What is NOT from
+// the reference is anything numeric: its `bonds` array is mock data, and its
+// thresholds (±60 б.п. fair band, 500 млн ₽ liquidity floor, AEY > 18%) sit
+// outside the real distribution. Real thresholds live in src/bonds.js.
+//
+// State lives here; the map (src/pages/terminal-map.js) is a view over it
+// and calls back through the `ctl` object at the bottom of this file.
+
+const SCREENER_PAGE = 250;          // rows revealed at a time (universe is ~1200 bonds)
+const SIMILAR_MIN_SCORE = 6;        // "Балл ≥ 6" chip
+
+const TERM_CHIPS = [
+  // [label, predicate]. Counts on the real universe are in the comment so a
+  // chip that stops matching anything is easy to spot.
+  ['Все', () => true],                                                        // 1191
+  ['Наблюдение', b => b.watch],                                               // 312
+  ['Недооценённые', b => gapBand(b) === 'above'],                             // 225
+  // yield_zone is the pipeline's own verdict on whether a high yield is an
+  // opportunity or distress (compute's yield-inflection table), so it is the
+  // chip that separates the two -- not an AEY threshold, which cannot.
+  ['Зелёная зона', b => b.yieldZone === 'green'],                              // 180
+  [`Балл ≥ ${SIMILAR_MIN_SCORE}`, b => b.score != null && b.score >= SIMILAR_MIN_SCORE], // 51
+  ['Ликвидные', b => b.vol != null && b.vol >= LIQUID_VOLUME_RUB],            // 83
+  ['Лизинг', b => b.sector === 'leasing'],                                    // 47
+  ['Недвижимость', b => b.sector === 'real_estate'],                          // 43
+  ['Диверсифицированный холдинг', b => b.sector === 'holding_diversified'],   // 40
+];
+
+// [label, sort key, alignment]. Reference colDef, with its mock-only
+// columns mapped onto real fields.
+const TERM_COLS = [
+  ['Бумага', 't', 'left'],
+  ['Срок', 'm', 'right'],
+  ['YTM', 'ytm', 'right'],
+  ['AEY', 'aey', 'right'],
+  ['G-спред', 'gs', 'right'],
+  ['Δ к fair', 'gap', 'right'],
+  ['Рейтинг', 'rating', 'center'],
+  ['Балл', 'score', 'right'],
+  ['Флаг', null, 'right'],
+];
+
+const TERM_SORT_KEYS = {
+  t: b => b.t, m: b => b.m, ytm: b => b.ytm, aey: b => b.aey,
+  gs: b => b.gs, gap: b => b.gap, score: b => b.score,
+  rating: b => { const i = (DATA.rating_order || []).indexOf(b.rating); return i < 0 ? null : -i; },
+};
+
+const TERM_AXES = [
+  ['spread', 'G-спред / дюрация'],
+  ['aey', 'AEY / кредитный балл'],
+  ['curve', 'Кривая ОФЗ'],
+];
+
+const TERM_LAYOUT_NOTE = {
+  A: 'A: карта и таблица делят экран пополам. Рамка на карте и строка в таблице всегда рядом — удобно сравнивать глазами, но таблица узкая.',
+  B: 'B: карта сжата в полосу-фильтр над таблицей. Выделение задаётся быстро, зато на таблицу уходит вся ширина — читаются все колонки сразу.',
+};
+
+const TERM_LEGEND = [
+  ['#c67139', 'спред выше справедливого'],
+  ['#7a8a5e', 'в пределах модели'],
+  ['#8a8478', 'спред ниже справедливого'],
+  ['#c0b6a5', 'без рейтинга — справедливый спред не считается'],
+];
+
+const S = {
+  layout: 'A',
+  axis: 'spread',
+  filter: 'Все',
+  custom: null,     // ad-hoc chip from "Показать похожие на карте": { label, test }
+  sort: 'aey',
+  dir: -1,
+  brush: null,      // unzoomed plot coords, owned by the map
+  sel: null,        // secid of the bond whose drawer is open
+  shown: SCREENER_PAGE,
+  zoomed: false,
+};
+
+let el = null;                 // page container
+let visibleCache = null;       // invalidated by anything that changes the row set
+
+function termFilterFn() {
+  if (S.custom && S.filter === S.custom.label) return S.custom.test;
+  const chip = TERM_CHIPS.find(c => c[0] === S.filter) || TERM_CHIPS[0];
+  return chip[1];
+}
+
+// "Показать похожие на карте": the nearest real peer group the data can
+// define -- sector, else rating class, else the same issuer. Never a made-up
+// similarity score.
+function termSimilar(b) {
+  if (b.sector) return { label: b.sectorLabel || b.sector, test: x => x.sector === b.sector };
+  if (b.ratingClass) return { label: `Рейтинг ${b.ratingClass}`, test: x => x.ratingClass === b.ratingClass };
+  return { label: b.n, test: x => x.inn === b.inn };
+}
+
+// Bonds passing the chip AND the map's frame. The map is the other half of
+// the filter, which is why it is one function and not two.
+function termVisible() {
+  if (visibleCache) return visibleCache;
+  const pass = termFilterFn();
+  visibleCache = BONDS.filter(b => pass(b) && TerminalMap.inBrush(b));
+  const key = TERM_SORT_KEYS[S.sort] || TERM_SORT_KEYS.aey;
+  // nulls always sink, whichever way the column is sorted -- "no value" is
+  // not "worst value", it just cannot be ranked.
+  visibleCache.sort((a, b) => {
+    const x = key(a), y = key(b);
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    if (typeof x === 'string') return x.localeCompare(y, 'ru') * S.dir;
+    return (x > y ? 1 : x < y ? -1 : 0) * S.dir;
+  });
+  return visibleCache;
+}
+
+function termInvalidate() { visibleCache = null; }
+
+// ── rendering ───────────────────────────────────────────────────────────
+function termShellHtml() {
+  const seg = on => `class="seg-btn${on ? ' is-on' : ''}"`;
+  return `<div class="page-terminal">
+
+    <div class="term-toolbar">
+      <div class="seg-group">
+        <button type="button" data-layout-btn="A" ${seg(S.layout === 'A')}>Раскладка A · сплит</button>
+        <button type="button" data-layout-btn="B" ${seg(S.layout === 'B')}>Раскладка B · полоса</button>
+      </div>
+      <div class="term-layout-note" id="termLayoutNote"></div>
+      <div class="term-axis-pills" id="termAxisPills">
+        ${TERM_AXES.map(([k, label]) =>
+          `<button type="button" class="axis-pill" data-axis="${k}">${escapeHtml(label)}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="term-split" id="termSplit">
+
+      <section class="term-card term-map-card">
+        <div class="term-card-head">
+          <div class="term-card-title" id="termMapTitle"></div>
+          <div class="term-card-hint">Протяните рамку по карте — скринер справа отфильтруется на лету. Клик по точке открывает разбор бумаги. Колесо — зум, Shift+перетаскивание — сдвиг.</div>
+          <button type="button" class="chip-clear" id="termClearBrush" hidden>Сбросить выделение</button>
+          <button type="button" class="chip-clear" id="termResetZoom" hidden>Сбросить зум</button>
+        </div>
+        <div class="map-root" id="termMapRoot"></div>
+        <div class="map-legend">
+          ${TERM_LEGEND.map(([c, t]) =>
+            `<div class="map-legend-item"><span class="map-legend-dot" style="background:${c}"></span><span>${escapeHtml(t)}</span></div>`).join('')}
+          <div class="map-legend-item"><span>размер точки — оборот за сессию</span></div>
+        </div>
+        <div class="map-note" id="termMapNote"></div>
+      </section>
+
+      <section class="term-card term-screener-card">
+        <div class="term-card-head term-screener-head">
+          <div class="term-card-title">Скринер</div>
+          <div class="term-card-hint" id="termScreenerCount"></div>
+        </div>
+        <div class="term-chips" id="termChips"></div>
+        <div class="screener-scroll" id="termScroll">
+          <table class="screener">
+            <thead><tr id="termHead"></tr></thead>
+            <tbody id="termBody"></tbody>
+          </table>
+          <div class="screener-more" id="termMore" hidden></div>
+          <div class="screener-empty" id="termEmpty" hidden>Под выделение ничего не попало. Растяните рамку на карте шире или сбросьте выделение.</div>
+        </div>
+      </section>
+    </div>
+
+    <div class="basket-bar" id="termBasket" hidden></div>
+  </div>`;
+}
+
+function termRenderChips() {
+  const chips = TERM_CHIPS.map(c => c[0]);
+  const custom = S.custom && !chips.includes(S.custom.label) ? S.custom.label : null;
+  document.getElementById('termChips').innerHTML =
+    (custom ? `<button type="button" class="chip is-custom${S.filter === custom ? ' is-on' : ''}" data-chip="${escapeHtml(custom)}">${escapeHtml(custom)}</button>` : '')
+    + chips.map(c => `<button type="button" class="chip${S.filter === c ? ' is-on' : ''}" data-chip="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join('');
+}
+
+function termRenderHead() {
+  document.getElementById('termHead').innerHTML = TERM_COLS.map(([label, key, align]) => {
+    const on = key && S.sort === key;
+    const arrow = on ? (S.dir < 0 ? ' ↓' : ' ↑') : '';
+    const flag = label === 'Флаг' ? ' c-flag' : '';
+    return `<th class="al-${align}${flag}${key ? ' is-sortable' : ''}${on ? ' is-sorted' : ''}"${key ? ` data-sort="${key}"` : ''}>${escapeHtml(label)}${arrow}</th>`;
+  }).join('');
+}
+
+function termRowHtml(b) {
+  const band = gapBand(b);
+  const gapCls = band === 'above' ? 'v-up' : band === 'below' ? 'v-down' : band === 'fair' ? 'v-fair' : '';
+  // AEY is coloured by the pipeline's own yield zone, not by a magnitude
+  // threshold: a 300% AEY on a negative-EV bond must not read as the best row.
+  const aeyCls = b.aey == null ? '' : b.yieldZone === 'green' ? 'v-fair' : b.yieldZone === 'negative_ev' ? 'v-down' : 'v-caution';
+  const rc = b.ratingClass;
+  const ratCls = rc == null ? 'rat-none' : ['AAA', 'AA', 'A'].includes(rc) ? 'rat-high' : ['BBB', 'BB'].includes(rc) ? 'rat-mid' : 'rat-low';
+  const picked = BASKET.has(b.secid);
+  const sc = b.score;
+  return `<tr data-secid="${escapeHtml(b.secid)}"${S.sel === b.secid ? ' class="is-sel"' : ''}>
+    <td class="al-left c-name">
+      <div class="c-name-row">
+        <button type="button" class="pick${picked ? ' is-on' : ''}" data-pick="${escapeHtml(b.secid)}" aria-label="${picked ? 'Убрать из корзины' : 'Добавить в корзину'}">${picked ? '✓' : '+'}</button>
+        <div class="c-name-text">
+          <div class="c-ticker">${escapeHtml(b.t)}</div>
+          <div class="c-issuer">${escapeHtml(b.n)}</div>
+        </div>
+      </div>
+    </td>
+    <td class="al-right dim">${b.m == null ? DASH : fmtNum(b.m, 1) + ' г.'}</td>
+    <td class="al-right dim">${fmtPct(b.ytm, 1)}</td>
+    <td class="al-right c-aey ${aeyCls}">${fmtPct(b.aey, 1)}</td>
+    <td class="al-right dim">${b.gs == null ? DASH : fmtBpSigned(b.gs)}</td>
+    <td class="al-right ${gapCls}">${b.gap == null ? DASH : fmtBpSigned(b.gap)}</td>
+    <td class="al-center"><span class="rat ${ratCls}">${b.rating ? escapeHtml(b.rating) : 'без рейтинга'}</span></td>
+    <td class="al-right">${sc == null ? `<span class="dim">${DASH}</span>` : `<div class="score">
+        <div class="score-track"><div class="score-fill${sc >= 7 ? ' is-good' : sc >= 4 ? ' is-mid' : ' is-bad'}" style="width:${sc * 10}%"></div></div>
+        <span class="score-num">${fmtNum(sc, 1)}</span>
+      </div>`}</td>
+    <td class="al-right c-flag">${escapeHtml(b.flags[0] || '')}</td>
+  </tr>`;
+}
+
+function termRenderRows() {
+  const vis = termVisible();
+  const rows = vis.slice(0, S.shown);
+  document.getElementById('termBody').innerHTML = rows.map(termRowHtml).join('');
+  const more = document.getElementById('termMore');
+  const rest = vis.length - rows.length;
+  more.hidden = rest <= 0;
+  if (rest > 0) more.innerHTML = `<button type="button" class="pill-outline" id="termMoreBtn">Показать ещё ${fmtNum(Math.min(rest, SCREENER_PAGE), 0)} · осталось ${fmtNum(rest, 0)}</button>`;
+  document.getElementById('termEmpty').hidden = vis.length !== 0;
+
+  const scope = S.brush ? ' · по выделению' : '';
+  document.getElementById('termScreenerCount').textContent =
+    `${fmtNum(vis.length, 0)} из ${fmtNum(BONDS.length, 0)} ${plural(BONDS.length, ['бумаги', 'бумаг', 'бумаг'])}${scope}`;
+}
+
+function termRenderBasket() {
+  const bar = document.getElementById('termBasket');
+  const ids = BASKET.ids();
+  bar.hidden = ids.length === 0;
+  if (!ids.length) return;
+  const bs = ids.map(id => BOND_BY_SECID.get(id)).filter(Boolean);
+  const avg = f => { const v = bs.map(f).filter(x => x != null && isFinite(x)); return v.length ? v.reduce((a, c) => a + c, 0) / v.length : null; };
+  const mins = bs.map(b => b.score).filter(x => x != null);
+  bar.innerHTML = `
+    <div class="basket-main">
+      <div class="basket-kicker">Отобрано в корзину</div>
+      <div class="basket-names">${escapeHtml(bs.map(b => b.t).join(' · '))}</div>
+    </div>
+    <div class="basket-stats">
+      <div><span>AEY</span> <b>${fmtPct(avg(b => b.aey), 1)}</b></div>
+      <div><span>Дюрация</span> <b>${avg(b => b.dur) == null ? DASH : fmtNum(avg(b => b.dur), 1) + ' г.'}</b></div>
+      <div><span>Мин. балл</span> <b>${mins.length ? fmtNum(Math.min.apply(null, mins), 1) : DASH}</b></div>
+    </div>
+    <div class="basket-actions">
+      <button type="button" class="basket-clear" id="termBasketClear">Очистить</button>
+      <button type="button" class="basket-build" id="termBasketBuild">Собрать портфель</button>
+    </div>`;
+}
+
+function termRenderChrome() {
+  document.getElementById('termLayoutNote').textContent = TERM_LAYOUT_NOTE[S.layout];
+  document.querySelectorAll('[data-layout-btn]').forEach(b => b.classList.toggle('is-on', b.dataset.layoutBtn === S.layout));
+  document.querySelectorAll('[data-axis]').forEach(b => b.classList.toggle('is-on', b.dataset.axis === S.axis));
+  termRenderChips();
+  document.getElementById('termSplit').dataset.layout = S.layout;
+  document.getElementById('termMapTitle').textContent = TerminalMap.title(S.axis);
+  document.getElementById('termClearBrush').hidden = !S.brush;
+  document.getElementById('termResetZoom').hidden = !S.zoomed;
+
+  const off = TerminalMap.offAxisCount();
+  const plotted = TerminalMap.plottedCount();
+  const parts = [`На карте ${fmtNum(plotted, 0)} из ${fmtNum(BONDS.length, 0)} ${plural(BONDS.length, ['бумаги', 'бумаг', 'бумаг'])}`];
+  if (off) parts.push(`${fmtNum(off, 0)} за пределами осей (экстремальная доходность или дюрация длиннее 8 лет) — они остаются в скринере`);
+  if (S.axis === 'aey') parts.push('балл есть только у эмитентов под мониторингом, остальные на этой оси не показываются');
+  document.getElementById('termMapNote').textContent = parts.join(' · ') + '.';
+}
+
+// Everything except the map's own geometry.
+function termRefresh({ rows = true, chrome = true } = {}) {
+  termInvalidate();
+  if (chrome) termRenderChrome();
+  if (rows) { termRenderHead(); termRenderRows(); }
+  termRenderBasket();
+  TerminalMap.refresh();
+}
+
+// ── controller handed to the map ────────────────────────────────────────
+const ctl = {
+  state: S,
+  visibleIds() { return termVisible().map(b => b.secid); },
+  setBrush(br) {
+    S.brush = br;
+    S.shown = SCREENER_PAGE;
+    termRefresh();
+  },
+  onBrushDrag() {
+    // live filtering while the frame is being dragged
+    S.shown = SCREENER_PAGE;
+    termInvalidate();
+    termRenderRows();
+    TerminalMap.refresh();
+  },
+  onZoom(zoomed) {
+    if (zoomed === S.zoomed) return;
+    S.zoomed = zoomed;
+    document.getElementById('termResetZoom').hidden = !zoomed;
+  },
+  // the map re-laid itself out (container width changed); the frame was
+  // rescaled with it, so only the readouts need refreshing
+  onResize() { termRefresh(); },
+  onOpen(secid) { termOpenBond(secid); },
+  onTogglePick(secid) { BASKET.toggle(secid); },
+};
+
+// ── bond drawer ─────────────────────────────────────────────────────────
+function termOpenBond(secid) {
+  const b = BOND_BY_SECID.get(secid);
+  if (!b) return;
+  S.sel = secid;
+  openDetail(Object.assign(bondDetail(b), {
+    onClose() { S.sel = null; termRefresh({ chrome: false }); },
+  }));
+  termRefresh({ chrome: false });
+}
+
+// ── wiring ──────────────────────────────────────────────────────────────
+function termOnClick(e) {
+  const t = e.target;
+
+  // NB: [data-layout-btn], not [data-layout] -- #termSplit carries
+  // data-layout for CSS and would swallow every click inside the split.
+  const lay = t.closest('[data-layout-btn]');
+  if (lay) { S.layout = lay.dataset.layoutBtn; S.brush = null; termRenderChrome(); TerminalMap.rebuild(false); termRefresh(); return; }
+
+  const ax = t.closest('[data-axis]');
+  if (ax) { S.axis = ax.dataset.axis; S.brush = null; S.zoomed = false; TerminalMap.rebuild(true); termRefresh(); return; }
+
+  const chip = t.closest('[data-chip]');
+  if (chip) { S.filter = chip.dataset.chip; S.shown = SCREENER_PAGE; termRefresh(); return; }
+
+  if (t.closest('#termClearBrush')) { S.brush = null; S.shown = SCREENER_PAGE; TerminalMap.refresh(); termRefresh(); return; }
+  if (t.closest('#termResetZoom')) { TerminalMap.resetZoom(); return; }
+  if (t.closest('#termMoreBtn')) { S.shown += SCREENER_PAGE; termRenderRows(); return; }
+
+  const th = t.closest('th[data-sort]');
+  if (th) {
+    const k = th.dataset.sort;
+    S.dir = S.sort === k ? -S.dir : (k === 't' ? 1 : -1);
+    S.sort = k;
+    S.shown = SCREENER_PAGE;
+    termInvalidate(); termRenderHead(); termRenderRows();
+    return;
+  }
+
+  const pick = t.closest('[data-pick]');
+  if (pick) { e.stopPropagation(); BASKET.toggle(pick.dataset.pick); return; }
+
+  if (t.closest('#termBasketClear')) { BASKET.clear(); return; }
+  if (t.closest('#termBasketBuild')) { goPage('portfolio'); return; }
+
+  const detailAct = t.closest('[data-detail-action]');
+  if (detailAct) {
+    const b = BOND_BY_SECID.get(detailAct.dataset.secid);
+    if (!b) return;
+    if (detailAct.dataset.detailAction === 'pick') BASKET.toggle(b.secid);
+    else {
+      S.custom = termSimilar(b);
+      S.filter = S.custom.label;
+      S.brush = null;
+      S.shown = SCREENER_PAGE;
+      closeDetail();   // onClose clears S.sel and refreshes
+      termRefresh();
+    }
+    return;
+  }
+
+  const row = t.closest('tr[data-secid]');
+  if (row) termOpenBond(row.dataset.secid);
+}
+
+PAGES.terminal = {
+  render(container) {
+    el = container;
+    el.innerHTML = termShellHtml();
+    el.addEventListener('click', termOnClick);
+    // the drawer lives in the app shell, outside this page's container
+    document.getElementById('detail').addEventListener('click', termOnClick);
+    TerminalMap.mount(document.getElementById('termMapRoot'), ctl);
+    BASKET.onChange(() => {
+      termRenderBasket();
+      el.querySelectorAll('[data-pick]').forEach(btn => {
+        const on = BASKET.has(btn.dataset.pick);
+        btn.classList.toggle('is-on', on);
+        btn.textContent = on ? '✓' : '+';
+      });
+      const cta = document.getElementById('termDetailPick');
+      if (cta) cta.textContent = BASKET.has(cta.dataset.secid) ? 'Убрать из корзины' : 'Добавить в корзину';
+      TerminalMap.refresh();
+    });
+    termRefresh();
+  },
+};
+</script>
+<script>// Pages not rebuilt yet (redesign stage 3). Each keeps the page
 // container and title the reference uses, and says plainly that nothing is
 // built -- no placeholder numbers. Replace an entry with a real page file.
 
@@ -761,18 +2314,6 @@ function pendingPage(container, { title, stage, heading, body, items }) {
     },
   };
 }
-
-PAGES.terminal = pendingPage('page-terminal', {
-  title: null, stage: 2, // reference terminal page has no title row
-  heading: 'Карта и скринер пока не перенесены в новый дизайн',
-  body: 'Страница появится на втором этапе. Данных здесь нет намеренно — никаких заглушек вместо реальных бумаг.',
-  items: [
-    'карта спредов на D3 с выделением области рамкой',
-    'скринер, который фильтруется по выделению на карте',
-    'отметка бумаг для наблюдения прямо в строке скринера',
-    'разбор бумаги в боковой панели',
-  ],
-});
 
 PAGES.portfolio = pendingPage('page-wide', {
   title: 'Портфель', stage: 3,
@@ -864,15 +2405,27 @@ function goPage(id) {
   window.scrollTo(0, 0);
 }
 
-// ── bond detail drawer (filled by stage 2's screener/map) ────────────────
-function openDetail({ title, sub, bodyHtml }) {
+// ── bond detail drawer ───────────────────────────────────────────────────
+// Content comes from src/pages/bond-detail.js; onClose lets the page that
+// opened the drawer drop its selection (the map highlights the selected
+// bond, so the two must not drift apart).
+let detailOnClose = null;
+
+function openDetail({ title, sub, bodyHtml, onClose }) {
   document.getElementById('detailTitle').textContent = title || '';
   document.getElementById('detailSub').textContent = sub || '';
   document.getElementById('detailBody').innerHTML = bodyHtml || '';
   document.getElementById('detail').hidden = false;
+  document.querySelector('.detail-panel').scrollTop = 0;
+  detailOnClose = onClose || null;
 }
 function closeDetail() {
-  document.getElementById('detail').hidden = true;
+  const el = document.getElementById('detail');
+  const was = !el.hidden;
+  el.hidden = true;
+  const cb = detailOnClose;
+  detailOnClose = null;
+  if (was && cb) cb();
 }
 
 // ── wiring ──────────────────────────────────────────────────────────────

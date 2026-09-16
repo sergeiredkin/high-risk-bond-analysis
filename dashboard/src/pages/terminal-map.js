@@ -23,7 +23,13 @@
 //     points, and the gesture is bound on the <svg> itself.
 
 const TerminalMap = (() => {
-  const MW = 760, PL = 54, PR = 26, PT = 28, PB = 30;
+  const PL = 54, PR = 26, PT = 28, PB = 30;
+  // The viewBox is sized to the container so one SVG unit is one CSS pixel:
+  // a fixed 760-unit viewBox would magnify every label when the card is
+  // wider (layout B is full-width), which the reference's own 760 assumes
+  // away because its map never leaves the split.
+  const MW_MIN = 520, MW_MAX = 1800;
+  let MW = 760;
   const INK = '#201e1d', BG = '#f5ead8', ACC = '#c67139', ACC2 = '#7a8a5e', GREY = '#8a8478', MUTED = '#c0b6a5';
   const DUR_MAX = 8;             // modified duration axis, years
   const AXES = {
@@ -43,11 +49,50 @@ const TerminalMap = (() => {
   let rScale = null;
   let pending = 0;
 
+  // ОФЗ curve. DATA.rf_curve keeps one bond per 0.1-year bucket ("last one
+  // wins" in the exporter), so a bond carrying a fallback rf_rate makes the
+  // published curve zigzag. Rebuilt here as the median of every bond's own
+  // rf_rate_pct per bucket, and drawn only while a bucket holds enough bonds
+  // for that median to mean anything -- the thin long end is left undrawn
+  // rather than smoothed over. Bucketed by modified duration, not tenor, so
+  // the curve lands on the same axis the bonds are plotted against.
+  const CURVE_MIN_PER_TENOR = 8;
+  const RF_CURVE = (() => {
+    const buckets = new Map();
+    BONDS.forEach(b => {
+      const t = b.dur, r = b.raw.rf_rate_pct;
+      if (t == null || r == null || t > DUR_MAX) return;
+      const k = Math.round(t * 10) / 10;
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(r);
+    });
+    const out = [];
+    [...buckets.keys()].sort((a, b) => a - b).forEach(k => {
+      const v = buckets.get(k);
+      if (v.length < CURVE_MIN_PER_TENOR) return;
+      if (out.length && k - out[out.length - 1][0] > 0.45) return;   // stop at the first real gap
+      v.sort((a, b) => a - b);
+      out.push([k, v.length % 2 ? v[v.length >> 1] : (v[(v.length >> 1) - 1] + v[v.length >> 1]) / 2]);
+    });
+    return out;
+  })();
+
   const hasD3 = () => typeof d3 !== 'undefined';
   const plotW = () => MW - PL - PR;
   const durT = d => Math.log(d + 0.5);
 
   function mapHeight(layout) { return layout === 'A' ? 430 : 230; }
+  function measureWidth() {
+    const w = root ? Math.round(root.clientWidth) : 0;
+    return w ? Math.max(MW_MIN, Math.min(MW_MAX, w)) : MW;
+  }
+  // x = PL + t·(MW − PL − PR): re-express a frame drawn at one width in the
+  // coordinates of another, so a resize keeps the same bonds selected.
+  function rescaleBrush(br, oldMW, newMW) {
+    const o = oldMW - PL - PR, n = newMW - PL - PR;
+    const f = x => PL + (x - PL) / o * n;
+    return { x0: f(br.x0), x1: f(br.x1), y0: br.y0, y1: br.y1 };
+  }
 
   // ── geometry ──────────────────────────────────────────────────────────
   function buildScales() {
@@ -104,14 +149,28 @@ const TerminalMap = (() => {
       .domain([0, d3.quantile(BONDS.map(b => b.vol || 0).sort(d3.ascending), 0.98) || 1])
       .range([3, 9]).clamp(true);
     rebuild(false);
+    if (typeof ResizeObserver === 'function') {
+      let raf = 0;
+      new ResizeObserver(() => {
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          if (!root.clientWidth || measureWidth() === MW) return;   // hidden page, or nothing to do
+          rebuild(false);
+          ctl.onResize();
+        });
+      }).observe(root);
+    }
   }
 
   function rebuild(animate) {
     if (!hasD3() || !root) return;
-    const newH = mapHeight(ctl.state.layout);
-    const layoutChanged = newH !== H || !svg;
+    const newH = mapHeight(ctl.state.layout), newMW = measureWidth();
+    const layoutChanged = newH !== H || newMW !== MW || !svg;
     const prevPos = animate && !layoutChanged ? new Map(base) : null;
+    if (newMW !== MW && ctl.state.brush) ctl.state.brush = rescaleBrush(ctl.state.brush, MW, newMW);
     H = newH;
+    MW = newMW;
     axis = ctl.state.axis;
     drag = null;
     buildScales();
@@ -119,6 +178,8 @@ const TerminalMap = (() => {
     transform = d3.zoomIdentity;
     zoom.extent([[PL, PT], [MW - PR, H - PB]]).translateExtent([[PL, PT], [MW - PR, H - PB]]);
     svg.property('__zoom', d3.zoomIdentity);
+    drawGrid();
+    drawOverlay();
     drawDots(prevPos);
     refresh();
   }
@@ -171,7 +232,9 @@ const TerminalMap = (() => {
     if (e.target.closest && e.target.closest('.map-dot')) return;
     e.preventDefault(); // also suppresses the compatibility mousedown, so d3.zoom does not pan
     const [x, y] = svgPoint(e);
-    svg.node().setPointerCapture(e.pointerId);
+    // capture can be refused (pointer already gone); the gesture still ends
+    // on pointerup/cancel, so a failure here must not abort the drag
+    try { svg.node().setPointerCapture(e.pointerId); } catch (err) { /* no capture */ }
     drag = { x0: x, y0: y, x1: x, y1: y, id: e.pointerId };
     hideTip();
   }
@@ -185,7 +248,7 @@ const TerminalMap = (() => {
     if (!drag || e.pointerId !== drag.id) return;
     const d = drag;
     drag = null;
-    if (svg.node().hasPointerCapture(e.pointerId)) svg.node().releasePointerCapture(e.pointerId);
+    try { if (svg.node().hasPointerCapture(e.pointerId)) svg.node().releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
     const n = norm(d);
     // a click (or a tiny wiggle) on empty plot clears the frame, as in the reference
     const tooSmall = (n.x1 - n.x0) * transform.k < 8 || (n.y1 - n.y0) * transform.k < 8;
@@ -296,8 +359,7 @@ const TerminalMap = (() => {
     g.selectAll('*').remove();
     const xs = transform.rescaleX(xBase), ys = transform.rescaleY(yBase);
     if (axis === 'curve') {
-      const pts = (DATA.rf_curve || []).filter(p => p.tenor_yrs <= DUR_MAX && p.rf_pct != null)
-        .map(p => [xs(durT(p.tenor_yrs)), ys(p.rf_pct)]);
+      const pts = RF_CURVE.map(([t, r]) => [xs(durT(t)), ys(r)]);
       if (pts.length < 2) return;
       const line = d3.line().curve(d3.curveMonotoneX);
       const bottom = ys(AXES.curve.y[0]);
@@ -306,8 +368,9 @@ const TerminalMap = (() => {
       g.append('path').attr('d', line(pts)).attr('fill', 'none').attr('stroke', ACC)
         .attr('stroke-width', 2.75).attr('stroke-linecap', 'round');
       const end = pts[pts.length - 1];
-      g.append('text').attr('x', Math.min(end[0], MW - PR)).attr('y', end[1] - 10).attr('class', 'map-curve-label')
-        .attr('text-anchor', 'end').text('кривая ОФЗ');
+      g.append('text').attr('x', Math.min(end[0] + 8, MW - PR)).attr('y', end[1] - 12).attr('class', 'map-curve-label')
+        .attr('text-anchor', end[0] + 8 > MW - PR - 70 ? 'end' : 'start')
+        .text(`кривая ОФЗ · до ${fmtNum(RF_CURVE[RF_CURVE.length - 1][0], 1)} г.`);
     } else if (axis === 'spread') {
       // Fair spread is a function of the rating, not of duration
       // (PD × LGD per notch, DATA.fair_value_bp_by_tier), so it is drawn as
@@ -319,7 +382,7 @@ const TerminalMap = (() => {
         if (y < PT || y > H - PB) return;
         g.append('line').attr('x1', PL).attr('x2', MW - PR).attr('y1', y).attr('y2', y)
           .attr('stroke', ACC2).attr('stroke-width', 2).attr('stroke-dasharray', '6 5').attr('stroke-opacity', 0.7);
-        if (y - lastY >= 12) {
+        if (y - lastY >= 16) {
           g.append('text').attr('x', MW - PR - 2).attr('y', y - 5).attr('class', 'map-fair-label').attr('text-anchor', 'end')
             .text(`справедливый спред · ${tier}`);
           lastY = y;
@@ -392,15 +455,9 @@ const TerminalMap = (() => {
     if (svg && zoom) svg.transition().duration(250).call(zoom.transform, d3.zoomIdentity);
   }
 
-  function afterRebuild() {
-    if (!hasD3() || !svg) return;
-    drawGrid();
-    drawOverlay();
-  }
-
   return {
     mount,
-    rebuild(animate) { rebuild(animate); afterRebuild(); },
+    rebuild(animate) { rebuild(animate); },
     refresh,
     inBrush: b => (hasD3() ? inBrush(b) : true),
     isDragging: () => !!drag,

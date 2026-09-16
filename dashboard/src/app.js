@@ -66,15 +66,27 @@ function goPage(id) {
   window.scrollTo(0, 0);
 }
 
-// ── bond detail drawer (filled by stage 2's screener/map) ────────────────
-function openDetail({ title, sub, bodyHtml }) {
+// ── bond detail drawer ───────────────────────────────────────────────────
+// Content comes from src/pages/bond-detail.js; onClose lets the page that
+// opened the drawer drop its selection (the map highlights the selected
+// bond, so the two must not drift apart).
+let detailOnClose = null;
+
+function openDetail({ title, sub, bodyHtml, onClose }) {
   document.getElementById('detailTitle').textContent = title || '';
   document.getElementById('detailSub').textContent = sub || '';
   document.getElementById('detailBody').innerHTML = bodyHtml || '';
   document.getElementById('detail').hidden = false;
+  document.querySelector('.detail-panel').scrollTop = 0;
+  detailOnClose = onClose || null;
 }
 function closeDetail() {
-  document.getElementById('detail').hidden = true;
+  const el = document.getElementById('detail');
+  const was = !el.hidden;
+  el.hidden = true;
+  const cb = detailOnClose;
+  detailOnClose = null;
+  if (was && cb) cb();
 }
 
 // ── wiring ──────────────────────────────────────────────────────────────

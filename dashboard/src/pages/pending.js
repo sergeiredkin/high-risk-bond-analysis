@@ -1,4 +1,4 @@
-// Pages not rebuilt yet (redesign stages 2 and 3). Each keeps the page
+// Pages not rebuilt yet (redesign stage 3). Each keeps the page
 // container and title the reference uses, and says plainly that nothing is
 // built -- no placeholder numbers. Replace an entry with a real page file.
 
@@ -20,18 +20,6 @@ function pendingPage(container, { title, stage, heading, body, items }) {
     },
   };
 }
-
-PAGES.terminal = pendingPage('page-terminal', {
-  title: null, stage: 2, // reference terminal page has no title row
-  heading: 'Карта и скринер пока не перенесены в новый дизайн',
-  body: 'Страница появится на втором этапе. Данных здесь нет намеренно — никаких заглушек вместо реальных бумаг.',
-  items: [
-    'карта спредов на D3 с выделением области рамкой',
-    'скринер, который фильтруется по выделению на карте',
-    'отметка бумаг для наблюдения прямо в строке скринера',
-    'разбор бумаги в боковой панели',
-  ],
-});
 
 PAGES.portfolio = pendingPage('page-wide', {
   title: 'Портфель', stage: 3,

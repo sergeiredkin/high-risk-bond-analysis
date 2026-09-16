@@ -12,14 +12,19 @@
     src/base.css           verbatim page-level rules from the reference
     src/app.css            shell + page layout transcribed from the reference
     src/core.js            DATA, formatting helpers, tiny DOM helpers
+    src/bonds.js           the bond model every page reads (real data only)
     src/app.js             header readouts, page router, detail drawer
     src/pages/*.js         one file per page (pending.js: pages not rebuilt yet)
+  D3 is the one external script (the market map); everything else, data
+  included, is inlined. Without it the map says so and the screener still
+  works -- see TerminalMap.mount().
   scripts/build_dashboard.py inlines every INCLUDE marker and embeds
   data/dashboard_data.json, emitting one self-contained dashboard/index.html.
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;600;700&family=Rubik:wght@700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <style>/*__INCLUDE:src/design-system.css__*/</style>
 <style>/*__INCLUDE:src/base.css__*/</style>
 <style>/*__INCLUDE:src/app.css__*/</style>
@@ -81,9 +86,13 @@
 
 <script id="dashboard-data" type="application/json">/*__DASHBOARD_DATA__*/</script>
 <script>/*__INCLUDE:src/core.js__*/</script>
+<script>/*__INCLUDE:src/bonds.js__*/</script>
 <script>/*__INCLUDE:src/pages/overview.js__*/</script>
 <!-- Обзор "Рынок сегодня" band: an addition beyond the design reference; delete this line and the file to remove it. -->
 <script>/*__INCLUDE:src/pages/overview-market-band.js__*/</script>
+<script>/*__INCLUDE:src/pages/terminal-map.js__*/</script>
+<script>/*__INCLUDE:src/pages/bond-detail.js__*/</script>
+<script>/*__INCLUDE:src/pages/terminal.js__*/</script>
 <script>/*__INCLUDE:src/pages/pending.js__*/</script>
 <script>/*__INCLUDE:src/app.js__*/</script>
 </body>

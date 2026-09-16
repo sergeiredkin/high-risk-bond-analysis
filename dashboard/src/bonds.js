@@ -11,6 +11,7 @@
 //   fair         implied_fair_spread_bp  PD × LGD for the rating (compute/default_probs.py)
 //   gap          mispricing_bp           gs − fair; null when the signal is excluded
 //   score        mean of the issuer's four РСБУ pillar scores (compute/pillars.py), 0–10
+//   pdRating     pd_rating × 100         annual PD in percent (export gives a fraction)
 //   watch        in_watchlist            the "наблюдение" flag on a bond
 
 // Bands and thresholds. Chosen for this data, not copied from the design's
@@ -82,7 +83,11 @@ const BONDS = (() => {
       ytm: b.ytm_pct, aeyBase: b.aey_base_pct, aey: b.aey_base_risk_adj_pct,
       gs: b.g_spread_bp, fair: b.implied_fair_spread_bp, gap,
       rating: b.rating, ratingClass: ratingClass(b.rating),
-      pdRating: b.pd_rating, decomposition: b.aey_risk_decomposition,
+      // pd_rating is exported as a fraction (0.0598); DATA.pd_by_rating is the
+      // same number in percent (5.98). Kept in percent here, like every other
+      // rate on the page.
+      pdRating: b.pd_rating == null ? null : b.pd_rating * 100,
+      decomposition: b.aey_risk_decomposition,
       score: pillarScore(iss && iss.six_pillars),
       vol: b.volume, trades: b.num_trades, coupon: b.coupon_pct, couponType: b.coupon_type,
       price: b.last_pct, yieldSource: b.yield_source, yieldZone: b.yield_zone,
@@ -97,8 +102,14 @@ const BONDS = (() => {
 
 const BOND_BY_SECID = new Map(BONDS.map(b => [b.secid, b]));
 
+// Short, highest-priority-first. The first one is what the screener's Флаг
+// column shows, so the zone verdict leads: a bond can carry a 300% AEY and
+// still be one the model says to stay away from, and the number alone does
+// not say that.
 function bondFlags(b) {
   const f = [];
+  if (b.yieldZone === 'negative_ev') f.push('красная зона');
+  else if (b.yieldZone === 'caution') f.push('жёлтая зона');
   if (b.watch) f.push('наблюдение');
   if (b.recentSerious.length || b.flagsToday.length) f.push('событие');
   if (b.gap != null && b.gap > CANDIDATE_GAP_BP && b.yieldZone === 'green') f.push('кандидат');
