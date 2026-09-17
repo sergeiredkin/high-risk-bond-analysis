@@ -437,6 +437,9 @@ def fetch_meeting(meeting_date: str, is_anchor: bool) -> dict[str, Any]:
         "meeting_date": meeting_date,
         "is_anchor": 1 if is_anchor else 0,
         "fetched_on": date.today().isoformat(),
+        # doc_type -> URL of every document found; not cbr_meeting columns,
+        # store_meeting() files them into cbr_document.
+        "document_urls": {},
     }
 
     # 1. Press release -- stop here if it's not up yet.
@@ -451,6 +454,7 @@ def fetch_meeting(meeting_date: str, is_anchor: bool) -> dict[str, Any]:
     if not text:
         return out
     out["press_release_text"] = text
+    out["document_urls"]["press_release"] = urls["press_release_url"]
     before, after, change = extract_rate_decision(text)
     out["rate_before"], out["rate_after"], out["rate_change_bp"] = before, after, change
 
@@ -467,6 +471,8 @@ def fetch_meeting(meeting_date: str, is_anchor: bool) -> dict[str, Any]:
                 forecast_text = _pdf_to_text(content)
                 if forecast_text:
                     out["forecast_summary"] = forecast_text[:4000]
+                    out["forecast_text"] = forecast_text  # full text: the «остаток года» footnote
+                    out["document_urls"]["forecast"] = forecast_url
                     out.update(extract_forecast_ranges(forecast_text))
             except requests.RequestException:
                 pass
@@ -493,6 +499,7 @@ def fetch_meeting(meeting_date: str, is_anchor: bool) -> dict[str, Any]:
     if not speech_text:
         return out
     out["nabiullina_speech_text"] = speech_text
+    out["document_urls"]["statement"] = speech_url
 
     # 3. Резюме обсуждения -- stop here if not published yet (~2 weeks lag).
     if not urls.get("resume_url"):
@@ -506,6 +513,7 @@ def fetch_meeting(meeting_date: str, is_anchor: bool) -> dict[str, Any]:
     if not resume_text:
         return out
     out["resume_text"] = resume_text
+    out["document_urls"]["summary"] = urls["resume_url"]
 
     # Комментарий к прогнозу -- anchor-only, same ~2-week timing as резюме,
     # not part of the spec's numbered priority chain so fetched independent
@@ -523,6 +531,7 @@ def fetch_meeting(meeting_date: str, is_anchor: bool) -> dict[str, Any]:
                 comment_text = _html_to_text(chtml)[:8000]
             if comment_text:
                 out["comment_text"] = comment_text
+                out["document_urls"]["comment"] = comment_url
         except requests.RequestException:
             pass
 
@@ -699,10 +708,36 @@ def store_meeting(con, result: dict[str, Any]) -> dict[str, Any]:
     db.init_cbr(con)
     db.init_cbr_diff(con)
     db.upsert_cbr_meeting(con, **result)
+    _store_documents(con, result)
     diff = compute_diff(con, result["meeting_date"])
     if diff:
         db.upsert_cbr_meeting_diff(con, **diff)
     return diff
+
+
+def _store_documents(con, result: dict[str, Any]) -> None:
+    """File the documents a fetch found into cbr_document, and a forecast's
+    key-rate ranges into rate_expectation -- so an anchor meeting's forecast
+    joins the expectations history the same day, not at the next
+    `hybond expectations` run. Summary bodies are left to that run:
+    _html_to_text() stops before the options it needs."""
+    urls = result.get("document_urls") or {}
+    if not urls:
+        return
+    from . import expectations  # lazy: expectations imports this module
+    db.init_rates(con)
+    meeting = result["meeting_date"]
+    fetched = result.get("fetched_on")
+    texts = {"press_release": result.get("press_release_text"),
+             "statement": result.get("nabiullina_speech_text")}
+    for kind, url in urls.items():
+        if url:
+            db.upsert_cbr_document(con, meeting_date=meeting, doc_type=kind, url=url,
+                                   published=meeting if kind in ("press_release", "statement", "forecast") else None,
+                                   text=texts.get(kind), fetched_on=fetched)
+    if urls.get("forecast") and result.get("forecast_text"):
+        expectations.store_forecast_text(con, meeting, meeting, urls["forecast"], result["forecast_text"])
+    con.commit()
 
 
 # --- schedule: the CBR calendar ----------------------------------------------
@@ -733,7 +768,7 @@ def parse_calendar(html: str) -> list[dict]:
         text = html_mod.unescape(_TAG_RE.sub(" ", block)).replace("\xa0", " ")
         links = {html_mod.unescape(t).replace("\xa0", " ").strip(): u for u, t in _HREF_RE.findall(block)}
 
-        def link(prefix: str) -> str | None:
+        def link(prefix: str, links: dict[str, str] = links) -> str | None:
             for label, u in links.items():
                 if label.startswith(prefix):
                     return u if u.startswith("http") else BASE + u

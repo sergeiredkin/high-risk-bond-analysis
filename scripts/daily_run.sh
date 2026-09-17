@@ -145,6 +145,16 @@ echo "=== CBR catch-up ===" >> "$LOG"
 PYTHONPATH=src python -m hybond cbr --catch-up >> "$LOG" 2>&1 \
     || echo "cbr catch-up failed (non-fatal)" >> "$LOG"
 
+# Key-rate expectations (Ставка и ОФЗ page, 2026-09-17): CBR forecasts,
+# ОНЕГДКП scenarios, the macro survey, decision documents, the daily key rate
+# and the meeting calendar -- each from the official cbr.ru page it is updated
+# on, each stored with its history. Cheap when nothing is new (the survey
+# workbook and forecast PDFs are only downloaded when a new one appears).
+# Network step, non-fatal; every source fails independently.
+echo "=== Rate expectations ===" >> "$LOG"
+PYTHONPATH=src python -m hybond expectations >> "$LOG" 2>&1 \
+    || echo "expectations step failed (non-fatal)" >> "$LOG"
+
 # Slice 2: change detection + factlists
 PYTHONPATH=src python -m hybond diff --factlist-dir data/factlists >> "$LOG" 2>&1
 

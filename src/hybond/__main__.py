@@ -626,9 +626,46 @@ def cmd_ofz(_args) -> int:
     print(f"MOEX-yield proxy (floater/linker, no convexity): {r['moex_proxy_yield_count']} bonds")
     scen = r["rate_scenarios"]
     fallback_tag = " [FALLBACK — no CBR meeting analysis available]" if scen.get("is_fallback") else ""
-    print(f"CBR rate scenarios: base={scen.get('base')} stress={scen.get('stress')} "
-          f"bull={scen.get('bull')}{fallback_tag}")
+    print(f"CBR rate scenarios ({scen.get('scenario_source')}): base={scen.get('base')} "
+          f"stress={scen.get('stress')} bull={scen.get('bull')} risky={scen.get('risky')}{fallback_tag}")
     return 0
+
+
+def cmd_expectations(args) -> int:
+    """`hybond expectations`: refresh what the CBR and the surveyed analysts
+    expect for the key rate (forecasts, ОНЕГДКП scenarios, macro survey,
+    decision documents, daily key rate, calendar). --list prints what the
+    store holds instead of fetching."""
+    from . import expectations
+    from .store import db
+
+    if args.list:
+        con = db.connect()
+        db.init_db(con)
+        db.init_rates(con)
+        for source in ("cbr_forecast", "ondkp", "survey"):
+            versions = db.rate_expectation_versions(con, source)
+            span = f"{versions[0][1]} … {versions[-1][1]}" if versions else "—"
+            print(f"{source:<13} {len(versions):>3} publications  {span}")
+        docs = db.cbr_documents(con)
+        print(f"{'documents':<13} {len(docs):>3} ({sum(1 for d in docs if d['text'])} with text)")
+        kr = db.latest_key_rate(con)
+        print(f"{'key_rate':<13} latest {kr[0]} {kr[1]:.2f}%" if kr else f"{'key_rate':<13} —")
+        for source, row in sorted(db.expectation_sources(con).items()):
+            state = f"error at {row['last_error_at']}: {row['last_error']}" if row["last_error"] else f"ok {row['last_ok']}"
+            print(f"  {source:<12} {row['page_url'] or '':<55} {state}")
+        con.close()
+        return 0
+
+    report = expectations.run_expectations(backfill=args.backfill)
+    failed = 0
+    for name, r in report.items():
+        if r["ok"]:
+            print(f"{name:<10} ok     {r['result']}")
+        else:
+            failed += 1
+            print(f"{name:<10} FAILED {r['error']}")
+    return 1 if failed == len(report) else 0
 
 
 def cmd_bonds(args) -> int:
@@ -1672,6 +1709,14 @@ def main(argv=None) -> int:
     pu.set_defaults(func=cmd_universe)
     po = sub.add_parser("ofz", help="OFZ (government bond) universe: real MOEX data + carry/roll-down projection")
     po.set_defaults(func=cmd_ofz)
+    pex = sub.add_parser("expectations",
+                         help="CBR key-rate expectations with history: forecasts, ОНЕГДКП scenarios, "
+                              "macro survey, decision documents, daily key rate, calendar")
+    pex.add_argument("--backfill", action="store_true",
+                     help="download full histories (key rate since 2013, last three ОНЕГДКП editions, "
+                          "every document body)")
+    pex.add_argument("--list", action="store_true", help="show what the store holds; no network")
+    pex.set_defaults(func=cmd_expectations)
     pb = sub.add_parser("bonds", help="Slice 1: all outstanding MOEX series for one issuer by ИНН")
     pb.add_argument("inn")
     pb.set_defaults(func=cmd_bonds)
