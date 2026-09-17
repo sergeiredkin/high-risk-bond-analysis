@@ -1,13 +1,23 @@
 """Portfolio scenario layer: per-bond Adjusted Expected Yield (AEY) under
-three CBR rate-path scenarios (base/stress/bull), and the live rate-scenario
-loader that drives it.
+the CBR's own rate scenarios, and the live rate-scenario loader that drives
+it.
 
-Rate deltas are computed fresh from the most recent cbr_meeting's own
-rate_after/rate_2026_mid/rate_2027_mid/rate_2029_mid columns, never from
-analysis_json's static aey_delta_rate_* fields -- those were seeded from a
-user-authored draft and have since drifted from the corrected forecast
-ranges (see export_dashboard_data.py's cbr_export docstring for the same
-caveat about analysis_json's other fields).
+Scenarios (captain's Q1, 2026-09-17) come from what the CBR publishes, all
+as the average key rate for the year after the current one, minus the
+current key rate:
+
+  base   -- the latest Среднесрочный прогноз (anchor meeting)
+  stress -- ОНЕГДКП «Проинфляционный»
+  bull   -- ОНЕГДКП «Дезинфляционный»
+  risky  -- ОНЕГДКП «Рисковый», kept out of stress so a tail scenario does
+            not recolour the whole market (its own aey_risky column)
+  analysts -- the macro-survey median, for display only (no AEY column)
+
+These need `hybond expectations` to have stored the publications. Until it
+has, get_rate_scenarios() falls back to the older derivation from the latest
+analysed cbr_meeting row -- whose "stress" (the 2026 calendar-year average's
+upper edge minus spot) was an artefact, not a hike -- and, failing that, to
+FALLBACK_SCENARIOS. `scenario_source` says which one a caller got.
 """
 from __future__ import annotations
 
@@ -43,9 +53,9 @@ def _is_commodity_linked(secid: str, short_name: str | None) -> bool:
 
 
 FALLBACK_SCENARIOS = {
-    "base": -0.010, "stress": 0.015, "bull": -0.020,
+    "base": -0.010, "stress": 0.015, "bull": -0.020, "risky": None, "analysts": None,
     "source_date": "fallback", "cbr_2026": "?", "cbr_2027": "?", "cbr_2029": "?",
-    "current_rate": None, "is_fallback": True,
+    "current_rate": None, "is_fallback": True, "scenario_source": "fallback",
 }
 
 
@@ -64,10 +74,84 @@ def _range_high(s: str | None) -> float | None:
         return None
 
 
-def get_rate_scenarios(con) -> dict:
-    """Load current rate-path deltas (decimal, annual) for the AEY overlay
-    from the most recent cbr_meeting row with a completed analysis
-    (analysis_json IS NOT NULL).
+SCENARIO_LABELS_RU = {
+    "base": "Базовый", "stress": "Проинфляционный", "bull": "Дезинфляционный",
+    "risky": "Рисковый", "analysts": "Аналитики",
+}
+
+
+def _mid(lo: float | None, hi: float | None) -> float | None:
+    return None if lo is None or hi is None else (lo + hi) / 2.0
+
+
+def current_key_rate(con) -> tuple[str | None, float | None]:
+    """(as-of date, percent): the CBR daily key-rate series when stored,
+    else the latest decided meeting's rate_after."""
+    db.init_rates(con)
+    daily = db.latest_key_rate(con)
+    row = con.execute("SELECT meeting_date, rate_after FROM cbr_meeting WHERE rate_after IS NOT NULL "
+                      "ORDER BY meeting_date DESC LIMIT 1").fetchone()
+    if daily and (not row or daily[0] >= row["meeting_date"]):
+        return daily
+    return (row["meeting_date"], row["rate_after"]) if row else (None, None)
+
+
+def latest_publication(con, source: str, scenario: str, year: int, period: str = "year") -> dict | None:
+    """The newest stored publication version (by published date) of
+    `source` that carries `scenario` for `year`: {lo, hi, mid, edition,
+    published, status, url}."""
+    db.init_rates(con)
+    row = con.execute(
+        "SELECT * FROM rate_expectation WHERE source=? AND scenario=? AND year=? AND period=? "
+        "ORDER BY published DESC, status ASC LIMIT 1", (source, scenario, year, period)).fetchone()
+    if not row:
+        return None
+    return {"lo": row["lo"], "hi": row["hi"], "mid": _mid(row["lo"], row["hi"]), "edition": row["edition"],
+            "published": row["published"], "status": row["status"], "url": row["url"]}
+
+
+def _publication_scenarios(con, today: date) -> dict | None:
+    """get_rate_scenarios() from stored CBR publications, or None when the
+    current rate, the base forecast or any ОНЕГДКП alternative for the
+    horizon year is missing (a partial set would mix sources silently)."""
+    as_of, current = current_key_rate(con)
+    if current is None:
+        return None
+    year = today.year + 1
+    base = latest_publication(con, "cbr_forecast", "base", year)
+    alts = {key: latest_publication(con, "ondkp", name, year)
+            for key, name in (("stress", "proinflation"), ("bull", "disinflation"), ("risky", "risk"))}
+    if base is None or any(v is None for v in alts.values()):
+        return None
+    analysts = latest_publication(con, "survey", "median", year)
+    levels = {"base": base, **alts, "analysts": analysts}
+    delta = {k: (v["mid"] - current) / 100.0 if v else None for k, v in levels.items()}
+
+    def forecast_str(y: int) -> str | None:
+        from .cbr_tracker import format_rate_range
+        r = latest_publication(con, "cbr_forecast", "base", y)
+        return format_rate_range((r["lo"], r["hi"])) if r else None
+
+    return {
+        "base": delta["base"], "stress": delta["stress"], "bull": delta["bull"],
+        "risky": delta["risky"], "analysts": delta["analysts"],
+        "source_date": base["edition"],
+        "scenario_source": "cbr_publications",
+        "horizon_year": year,
+        "levels": levels,
+        "cbr_2026": forecast_str(2026), "cbr_2027": forecast_str(2027), "cbr_2029": forecast_str(2029),
+        "current_rate": current, "current_rate_date": as_of,
+        "is_fallback": False,
+    }
+
+
+def get_rate_scenarios(con, today: date | None = None) -> dict:
+    """Current rate-path deltas (decimal) for the AEY overlay.
+
+    First choice: the CBR's own publications (see the module docstring and
+    _publication_scenarios()). Otherwise the older derivation below, from
+    the most recent cbr_meeting row with a completed analysis
+    (analysis_json IS NOT NULL):
 
     base   = 2027 forecast midpoint - current key rate (central case)
     bull   = 2029 forecast midpoint - current key rate (cutting cycle runs
@@ -79,7 +163,14 @@ def get_rate_scenarios(con) -> dict:
     is_fallback=True, when no meeting has both a completed analysis and all
     three forecast columns populated -- callers must surface that flag
     rather than silently treating a fallback delta as a real one.
+
+    Every return carries `scenario_source` ('cbr_publications' |
+    'cbr_meeting' | 'fallback') and `risky` (None outside the first).
     """
+    published = _publication_scenarios(con, today or date.today())
+    if published:
+        return published
+
     row = con.execute(
         "SELECT meeting_date, rate_after, rate_2026_mid, rate_2027_mid, rate_2029_mid "
         "FROM cbr_meeting WHERE analysis_json IS NOT NULL "
@@ -102,6 +193,8 @@ def get_rate_scenarios(con) -> dict:
                 "cbr_2029": row["rate_2029_mid"],
                 "current_rate": current,
                 "is_fallback": False,
+                "scenario_source": "cbr_meeting",
+                "risky": None, "analysts": None,
             }
 
     return dict(FALLBACK_SCENARIOS)

@@ -50,6 +50,7 @@ codebase rather than inventing a separate estimate just for OFZ.
 """
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 
 from .compute import bondmath, cashflows, ofz_carry
@@ -153,6 +154,7 @@ def run_ofz(snap_date: date | None = None) -> dict:
         convexity = None
         ytm = None
         yield_source = "moex"
+        cashflows_json = None
 
         if instrument_type in ("ПД", "АД"):
             bz = sources.fetch_bondization(secid)
@@ -174,6 +176,9 @@ def run_ofz(snap_date: date | None = None) -> dict:
                         convexity = bondmath.convexity(ytm, pairs)
                         yield_source = "computed"
                         computed_count += 1
+                        # the exact schedule the YTM was solved on, for
+                        # ofz_carry.horizon_return() at export time
+                        cashflows_json = json.dumps([[round(t, 6), round(a, 4)] for t, a in pairs])
                     except (ValueError, ZeroDivisionError):
                         pass
 
@@ -194,7 +199,7 @@ def run_ofz(snap_date: date | None = None) -> dict:
             accrued_int_pct=None, dirty_price_pct=dirty_pct, ytm=ytm,
             mod_dur=mod_dur, convexity=convexity, tenor_yrs=round(tenor_yrs, 3),
             volume=q.get("VALTODAY"), num_trades=q.get("NUMTRADES"),
-            yield_source=yield_source,
+            yield_source=yield_source, cashflows_json=cashflows_json,
         )
         stored += 1
 
@@ -217,6 +222,51 @@ def run_ofz(snap_date: date | None = None) -> dict:
 
 
 MIN_TENOR_FOR_PROJECTION_YEARS = 1.0
+
+# Scenario keys the horizon returns are computed for, in page order.
+RETURN_SCENARIOS = ("base", "stress", "bull", "risky", "analysts")
+
+
+def is_benchmark(row) -> bool:
+    """Whether an OFZ issue can stand as the nominal sovereign benchmark for
+    a corporate bond: a fixed schedule (ПД/АД) with a YTM solved on its own
+    cash flows. ОФЗ-ИН (the yield is real, on an indexed principal) and
+    ОФЗ-ПК (the coupon path is unknown; MOEX reports no YIELD for most) never
+    qualify -- the old dashboard picked 52002 as the benchmark at duration
+    ~1.7 and printed floaters' YTM as 0.0."""
+    return (row["instrument_type"] in ("ПД", "АД") and row["yield_source"] == "computed"
+            and row["ytm"] is not None and row["ytm"] > 0 and row["mod_dur"] is not None)
+
+
+def horizon_returns_for_snapshot(con, snap_date: str, scenarios: dict) -> dict[str, dict]:
+    """secid -> {scenario: [horizon result, ...]} from each benchmark-grade
+    issue's stored cash flows (ofz_carry.horizon_return), under every
+    scenario in RETURN_SCENARIOS that `scenarios` carries a delta for, with
+    the same GRADUATED_SHIFT taper the old carry model used (the parallel
+    shift itself is unchanged -- plan finding O5). A horizon on or after the
+    issue's last cash flow is {'horizon_years': h, 'matured': True}, never a
+    number. Rows without cash flows (floaters, linkers, snapshots written
+    before the column existed) are absent."""
+    out: dict[str, dict] = {}
+    for r in db.ofz_snapshot_rows(con, snap_date):
+        if not is_benchmark(r) or not r["cashflows_json"] or not r["dirty_price_pct"]:
+            continue
+        pairs = [(float(t), float(a)) for t, a in json.loads(r["cashflows_json"])]
+        face = r["face_value"] or 1000.0
+        price = r["dirty_price_pct"] / 100.0 * face
+        by_scenario = {}
+        for key in RETURN_SCENARIOS:
+            total = scenarios.get(key)
+            if total is None:
+                continue
+            by_scenario[key] = [
+                ofz_carry.horizon_return(cashflows=pairs, dirty_price=price, ytm=r["ytm"],
+                                         delta_y=total * ofz_carry.GRADUATED_SHIFT[h], horizon_years=h)
+                or {"horizon_years": h, "matured": True}
+                for h in ofz_carry.HORIZONS_YEARS
+            ]
+        out[r["secid"]] = by_scenario
+    return out
 
 
 def carry_rolldown_for_snapshot(con, snap_date: str, scenarios: dict) -> list[dict]:

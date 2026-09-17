@@ -34,6 +34,8 @@ invented; this module takes the delta as a real parameter instead).
 """
 from __future__ import annotations
 
+from . import bondmath
+
 HORIZONS_YEARS = (1, 2, 3)
 
 # Fraction of the "eventual total" yield shift assumed realized by each
@@ -127,3 +129,50 @@ def project_all_horizons(
         )
         for h in HORIZONS_YEARS
     ]
+
+
+def horizon_return(
+    *, cashflows: list[tuple[float, float]], dirty_price: float, ytm: float,
+    delta_y: float, horizon_years: float,
+) -> dict | None:
+    """Holding-period return to `horizon_years` priced off the bond's own
+    cash flows -- the model the Ставка и ОФЗ page uses in place of
+    project_horizon() above.
+
+    project_horizon() takes coupon/price as income and applies only the
+    scenario shift to the body, so a discount issue's accretion to par is
+    missing (ОФЗ 26232, 6% coupon at 92.31, YTM 15.9%, showed 7.5% for a
+    year) and it happily projects "3 years" for an issue that matures in one.
+    Here:
+
+      received  = every flow (coupon, amortisation, redemption) at t <= H
+      P_H(y)    = the remaining flows (t > H) discounted to H at yield y
+      total     = (received + P_H(ytm + delta_y) - P0) / P0
+
+    split into cash received, pull to par ((P_H(ytm) - P0) / P0: what the
+    unchanged yield alone earns on top of the cash) and repricing
+    ((P_H(ytm + delta_y) - P_H(ytm)) / P0). Flows are not reinvested.
+
+    cashflows: (years_from_valuation, amount) pairs in the price's units;
+    dirty_price: P0 in the same units; ytm and delta_y: decimals. Returns
+    None when the last flow falls on or before the horizon (the issue has
+    matured by then -- there is no horizon price to speak of)."""
+    if dirty_price <= 0:
+        raise ValueError("dirty_price must be positive")
+    if horizon_years <= 0:
+        raise ValueError("horizon_years must be positive")
+    if not cashflows or max(t for t, _ in cashflows) <= horizon_years:
+        return None
+    received = sum(a for t, a in cashflows if t <= horizon_years)
+    remaining = [(t - horizon_years, a) for t, a in cashflows if t > horizon_years]
+    p_const = bondmath.price_from_ytm(ytm, remaining)
+    p_shift = bondmath.price_from_ytm(ytm + delta_y, remaining)
+    pct = 100.0 / dirty_price
+    return {
+        "horizon_years": horizon_years,
+        "delta_y_applied": delta_y,
+        "cash_received_pct": round(received * pct, 3),
+        "pull_to_par_pct": round((p_const - dirty_price) * pct, 3),
+        "repricing_pct": round((p_shift - p_const) * pct, 3),
+        "total_return_pct": round((received + p_shift - dirty_price) * pct, 3),
+    }

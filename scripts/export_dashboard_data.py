@@ -894,6 +894,9 @@ def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str]) ->
             "aey_stress_pct": (round(r["aey_stress"] * 100, 2)
                                 if r["aey_stress"] is not None else None),
             "aey_bull_pct": round(r["aey_bull"] * 100, 2) if r["aey_bull"] is not None else None,
+            # ОНЕГДКП «Рисковый» (captain's Q1): its own column, not the stress
+            "aey_risky_pct": (round(r["aey_risky"] * 100, 2)
+                               if "aey_risky" in r.keys() and r["aey_risky"] is not None else None),
             "aey_base_risk_adj_pct": (round(r["aey_base_risk_adj"] * 100, 2)
                                        if r["aey_base_risk_adj"] is not None else None),
             "aey_risk_decomposition": _aey_risk_decomposition_pct(r["aey_base"], rating),
@@ -1015,6 +1018,10 @@ def ofz_bundle(con, scenarios: dict) -> dict:
         p["secid"]: p["projections"]
         for p in ofz_pipeline.carry_rolldown_for_snapshot(con, snap_date, scenarios)
     }
+    # Ставка и ОФЗ page (2026-09-17): horizon returns priced off each issue's
+    # own cash flows (ofz_carry.horizon_return). Additive -- carry_rolldown
+    # above stays exactly as the legacy dashboard reads it.
+    returns_by_secid = ofz_pipeline.horizon_returns_for_snapshot(con, snap_date, scenarios)
 
     bonds = []
     for r in rows:
@@ -1029,6 +1036,8 @@ def ofz_bundle(con, scenarios: dict) -> dict:
             "tenor_yrs": r["tenor_yrs"], "volume": r["volume"], "num_trades": r["num_trades"],
             "yield_source": r["yield_source"],
             "carry_rolldown": projections_by_secid.get(r["secid"]),  # None if excluded (near-maturity/no coupon)
+            "benchmark": ofz_pipeline.is_benchmark(r),
+            "returns": returns_by_secid.get(r["secid"]),
         })
 
     return {
@@ -1048,6 +1057,9 @@ def ofz_bundle(con, scenarios: dict) -> dict:
             "cbr_2029": scenarios.get("cbr_2029"),
         },
         "is_fallback": scenarios.get("is_fallback"),
+        # bp deltas every `returns` entry was computed under, per scenario key
+        "scenario_deltas_bp": {k: (round(scenarios[k] * 10000) if scenarios.get(k) is not None else None)
+                               for k in ofz_pipeline.RETURN_SCENARIOS},
         "min_tenor_for_projection_years": ofz_pipeline.MIN_TENOR_FOR_PROJECTION_YEARS,
         "graduated_shift": ofz_pipeline.ofz_carry.GRADUATED_SHIFT,
     }
@@ -1331,6 +1343,10 @@ def _aey_source_note(scenarios: dict) -> str:
         return ("AEY рассчитан по консервативным значениям по умолчанию "
                  "(нет данных последнего заседания ЦБ)")
     d = scenarios["source_date"]
+    if scenarios.get("scenario_source") == "cbr_publications":
+        return (f"AEY рассчитан по прогнозу ЦБ от {d[8:10]}.{d[5:7]}.{d[0:4]} (база) и сценариям "
+                f"ОНЕГДКП на {scenarios.get('horizon_year')} г. (стресс — Проинфляционный, "
+                f"бычий — Дезинфляционный)")
     return f"AEY рассчитан по данным заседания ЦБ от {d[8:10]}.{d[5:7]}.{d[0:4]}"
 
 
@@ -1482,6 +1498,237 @@ def cbr_export(con, scenarios: dict) -> dict:
     }
 
 
+# ---- Ставка и ОФЗ page (plan rev 2, approved 2026-09-17) --------------------
+
+EXPECTATION_SOURCE_NAMES = {
+    "ondkp": "Сценарии ЦБ · ОНЕГДКП",
+    "cbr_forecast": "Прогноз ЦБ · опорные заседания",
+    "survey": "Макроопрос · аналитики",
+    "documents": "Решения, заявления, резюме",
+    "calendar": "Календарь заседаний",
+    "key_rate": "Ключевая ставка по дням",
+}
+SCENARIO_ORDER = ("base", "disinflation", "proinflation", "risk")
+# The page's scenario pills, in order, and which pipeline scenario key each is.
+PAGE_SCENARIOS = (
+    ("base", "Базовый", "cbr_forecast"),
+    ("bull", "Дезинфляционный", "ondkp"),
+    ("stress", "Проинфляционный", "ondkp"),
+    ("risky", "Рисковый", "ondkp"),
+    ("analysts", "Аналитики", "survey"),
+)
+EXPECTATION_HISTORY_FROM = "2024-01-01"
+
+
+def _rng(lo, hi) -> list[float] | None:
+    return None if lo is None or hi is None else [round(lo, 2), round(hi, 2)]
+
+
+def expectations_export(con, scenarios: dict) -> dict:
+    """DATA.expectations: what the CBR and the surveyed analysts expect for
+    the key rate, with history (hybond expectations -> rate_expectation,
+    cbr_document, key_rate_daily, cbr_schedule). Every publication carries
+    the official URL it was read from; `sources` carries each source's page
+    and the date of its last good fetch, so the page shows how fresh each
+    one is instead of going blank when a fetch fails.
+
+    Survey history is trimmed to the years from (current year - 1) on --
+    older years are finished and nothing on the page plots them."""
+    from hybond import cbr_tracker, expectations
+
+    db.init_rates(con)
+    db.init_cbr(con)
+    today = date.today()
+    min_year = today.year - 1
+
+    forecasts: dict[tuple, dict] = {}
+    for r in db.rate_expectations(con, "cbr_forecast"):
+        f = forecasts.setdefault((r["edition"], r["published"]), {
+            "meeting_date": r["edition"], "published": r["published"], "url": r["url"],
+            "years": {}, "rest": None})
+        if r["period"] == "rest_of_year":
+            f["rest"] = {"year": r["year"], "lo": r["lo"], "hi": r["hi"], "ytd_avg": r["ytd_avg"],
+                         "rest_from": r["rest_from"]}
+        else:
+            f["years"][str(r["year"])] = _rng(r["lo"], r["hi"])
+
+    ondkp: dict[tuple, dict] = {}
+    for r in db.rate_expectations(con, "ondkp"):
+        e = ondkp.setdefault((r["edition"], r["published"], r["status"]), {
+            "edition": r["edition"], "published": r["published"], "status": r["status"], "url": r["url"],
+            "scenarios": {k: {} for k in SCENARIO_ORDER}})
+        e["scenarios"].setdefault(r["scenario"], {})[str(r["year"])] = _rng(r["lo"], r["hi"])
+
+    surveys: dict[str, dict] = {}
+    survey_url = None
+    for r in db.rate_expectations(con, "survey"):
+        survey_url = r["url"] or survey_url
+        if r["year"] < min_year:
+            continue
+        sv = surveys.setdefault(r["edition"], {"period": r["edition"], "years": {}})
+        sv["years"].setdefault(str(r["year"]), {})[r["scenario"]] = round(r["lo"], 3)
+
+    docs = db.cbr_documents(con)
+    by_meeting: dict[str, dict[str, dict]] = defaultdict(dict)
+    for d in docs:
+        by_meeting[d["meeting_date"]][d["doc_type"]] = d
+    decisions, summaries = [], []
+    for meeting, kinds in sorted(by_meeting.items(), reverse=True):
+        if meeting < EXPECTATION_HISTORY_FROM:
+            continue
+        pr = kinds.get("press_release")
+        if pr:
+            row = db.get_cbr_meeting(con, meeting)
+            before, after, change = cbr_tracker.extract_rate_decision(pr["title"] or "")
+            if after is None and pr["text"]:
+                before, after, change = cbr_tracker.extract_rate_decision(pr["text"])
+            if after is None and row is not None:
+                after, change = row["rate_after"], row["rate_change_bp"]
+            decisions.append({
+                "date": meeting, "rate": after, "change_bp": change, "title": pr["title"],
+                "signal": expectations.extract_signal(pr["text"]),
+                "url": pr["url"], "statement_url": (kinds.get("statement") or {}).get("url"),
+                "forecast_url": (kinds.get("forecast") or {}).get("url"),
+            })
+        sm = kinds.get("summary")
+        if sm:
+            parts = expectations.extract_summary_options(sm["text"])
+            summaries.append({"meeting_date": meeting, "published": sm["published"], "url": sm["url"],
+                              "options": parts["options"], "positions": parts["positions"]})
+
+    steps = db.key_rate_steps(con, since=EXPECTATION_HISTORY_FROM)
+
+    stored_sources = db.expectation_sources(con)
+    sources = []
+    for key, name in EXPECTATION_SOURCE_NAMES.items():
+        row = stored_sources.get(key, {})
+        sources.append({"key": key, "name": name,
+                        "page_url": row.get("page_url") or expectations.SOURCE_PAGES.get(key),
+                        "last_published": row.get("last_published"), "last_ok": row.get("last_ok"),
+                        "last_error": row.get("last_error"), "last_error_at": row.get("last_error_at")})
+
+    levels = scenarios.get("levels") or {}
+    page_scenarios = []
+    for key, label, source in PAGE_SCENARIOS:
+        lv = levels.get(key)
+        page_scenarios.append({
+            "key": key, "label": label, "source": source,
+            "range": _rng(lv["lo"], lv["hi"]) if lv else None,
+            "delta_bp": round(scenarios[key] * 10000) if scenarios.get(key) is not None else None,
+            "published": lv["published"] if lv else None,
+            "edition": lv["edition"] if lv else None,
+            "status": lv["status"] if lv else None,
+            "url": lv["url"] if lv else None,
+        })
+
+    return {
+        "as_of": today.isoformat(),
+        "scenario_source": scenarios.get("scenario_source"),
+        "horizon_year": scenarios.get("horizon_year"),
+        "current_rate": scenarios.get("current_rate"),
+        "current_rate_date": scenarios.get("current_rate_date"),
+        "scenarios": page_scenarios,
+        "key_rate_steps": [[d, r] for d, r in steps],
+        "forecasts": sorted(forecasts.values(), key=lambda f: f["published"]),
+        "ondkp": sorted(ondkp.values(), key=lambda e: e["published"]),
+        "surveys": sorted((s for s in surveys.values() if s["years"]), key=lambda s: s["period"]),
+        "survey_url": survey_url,
+        "decisions": decisions,
+        "summaries": summaries,
+        "schedule": [m for m in cbr_tracker.get_schedule(con) if m["date"] >= f"{today.year}-01-01"],
+        "sources": sources,
+    }
+
+
+def zcyc_export(con) -> dict:
+    """DATA.zcyc: the latest stored CBR zero-coupon curve, rates in percent."""
+    db.init_rates(con)
+    latest = db.latest_zcyc_snapshot(con)
+    if not latest:
+        return {"snap_date": None, "points": []}
+    snap, pts = latest
+    return {"snap_date": snap, "points": [[t, round(r * 100, 3)] for t, r in pts]}
+
+
+OFZ_DURATION_MATCH_MAX_DIFF_YEARS = 2.0  # same limit the old dashboard's premium used
+OFZ_BENCHMARK_MIN_TENOR_YEARS = 1.0
+
+
+def rates_premium_export(con, scenarios: dict, portfolios: list[dict], ofz_bonds: list[dict]) -> dict:
+    """DATA.rates_premium: each preset portfolio's AEY after credit losses
+    against the nearest-duration nominal OFZ, per scenario, with ONE formula
+    on both legs -- portfolio.bond_aey() (YTM minus modified duration times
+    the scenario shift), PD-weighted through pd_adjusted_aey() for the
+    corporate leg only.
+
+    The old «Премия к ОФЗ» subtracted an OFZ carry-per-year number (coupon /
+    price with 40% of the shift and no pull to par) from a corporate AEY with
+    the full shift applied at once, which overstated the premium by a median
+    10.8 p.p. across green-zone bonds (plan finding P1).
+
+    Positions resolve against the latest universe_snapshot, the same rows the
+    Портфель page reads. The OFZ leg is a benchmark-grade issue (ПД/АД, YTM
+    solved on its cash flows, at least a year to maturity) within
+    OFZ_DURATION_MATCH_MAX_DIFF_YEARS of the portfolio's weighted duration;
+    beyond that the comparison is not made."""
+    snap = db.latest_universe_snap_date(con)
+    rows = {r["secid"]: r for r in db.universe_snapshot_rows(con, snap)} if snap else {}
+    candidates = [o for o in ofz_bonds if o.get("benchmark") and (o.get("tenor_yrs") or 0) >= OFZ_BENCHMARK_MIN_TENOR_YEARS]
+    keys = [k for k, _, _ in PAGE_SCENARIOS if scenarios.get(k) is not None]
+    out = []
+    for pf in portfolios:
+        positions = (pf.get("allocation") or {}).get("bonds") or []
+        dur_num = dur_den = 0.0
+        covered = 0
+        aey_sums = {k: [0.0, 0.0] for k in keys}
+        for pos in positions:
+            r = rows.get(pos.get("isin"))
+            w = pos.get("weight") or 0
+            if r is None or not w:
+                continue
+            mdur = r["duration_moex"] / 365.0 if r["duration_moex"] else None
+            if mdur is not None:
+                dur_num += mdur * w
+                dur_den += w
+            if r["signal_excluded"] or r["ytm"] is None or mdur is None or not r["rating"]:
+                continue
+            ok = False
+            for k in keys:
+                a = portfolio.pd_adjusted_aey(portfolio.bond_aey(r["ytm"], mdur, scenarios[k]), r["rating"], con=con)
+                if a is not None:
+                    aey_sums[k][0] += a * w
+                    aey_sums[k][1] += w
+                    ok = True
+            covered += 1 if ok else 0
+        avg_dur = dur_num / dur_den if dur_den else None
+        bench = None
+        if avg_dur is not None and candidates:
+            best = min(candidates, key=lambda o: abs(o["mod_dur"] - avg_dur))
+            if abs(best["mod_dur"] - avg_dur) <= OFZ_DURATION_MATCH_MAX_DIFF_YEARS:
+                bench = best
+        by_scenario = {}
+        for k in keys:
+            num, den = aey_sums[k]
+            pf_aey = num / den * 100 if den else None
+            ofz_aey = (portfolio.bond_aey(bench["ytm_pct"] / 100, bench["mod_dur"], scenarios[k]) * 100
+                       if bench else None)
+            by_scenario[k] = {
+                "pf_aey_pct": round(pf_aey, 2) if pf_aey is not None else None,
+                "ofz_aey_pct": round(ofz_aey, 2) if ofz_aey is not None else None,
+                "premium_pp": round(pf_aey - ofz_aey, 2) if pf_aey is not None and ofz_aey is not None else None,
+            }
+        out.append({
+            "id": pf["id"], "name": pf["name"], "preset_type": pf["preset_type"],
+            "positions": len(positions), "covered": covered,
+            "avg_mod_dur": round(avg_dur, 2) if avg_dur is not None else None,
+            "ofz": ({"secid": bench["secid"], "short_name": bench["short_name"], "ytm_pct": bench["ytm_pct"],
+                     "mod_dur": bench["mod_dur"], "mat_date": bench["mat_date"]} if bench else None),
+            "by_scenario": by_scenario,
+        })
+    return {"match_max_diff_years": OFZ_DURATION_MATCH_MAX_DIFF_YEARS, "universe_snap_date": snap,
+            "portfolios": out}
+
+
 def company_scan_history_export(con) -> list[dict]:
     """Latest company_scan_result row per ИНН (src/hybond/company_scan_pipeline.py,
     `hybond scan-company`/`scan-candidates`) -- lets the dashboard's
@@ -1584,6 +1831,9 @@ def main() -> None:
     portfolio_freshness = portfolio_data_freshness(con)
     portfolio_allocation = export_portfolio_allocation(con)
     all_active_portfolios = export_all_active_portfolios(con)
+    expectations_data = expectations_export(con, scenarios)
+    zcyc = zcyc_export(con)
+    rates_premium = rates_premium_export(con, scenarios, all_active_portfolios, ofz["bonds"])
     pd_table_date_iso = db.latest_pd_table_date(con)
     pd_table_date = (pd_import.format_report_date(pd_table_date_iso)
                       if pd_table_date_iso else None)
@@ -1791,6 +2041,10 @@ def main() -> None:
             "full_threshold_pct": db.PLACEMENT_FULL_THRESHOLD_PCT,
         },
         "cbr": cbr,
+        # Ставка и ОФЗ page (plan rev 2, 2026-09-17) -- additive keys only.
+        "expectations": expectations_data,
+        "zcyc": zcyc,
+        "rates_premium": rates_premium,
         "data_notes": notes,
         "known_issuers": known_issuers,
         "company_scan_history": company_scan_history,

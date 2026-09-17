@@ -254,6 +254,10 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
     db.init_universe(con)
     db.init_rating(con)
     db.init_cbr(con)
+    db.init_rates(con)
+    # Keep the day's CBR zero-coupon curve (Ставка и ОФЗ page): it was
+    # fetched every run but only survived as each bond's interpolated rf_rate.
+    db.replace_zcyc_snapshot(con, snap_date.isoformat(), curve)
 
     scenarios = portfolio.get_rate_scenarios(con)
     emitent_map = _load_emitent_map(con, snap_date, refresh_emitent_map)
@@ -377,11 +381,13 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
         # zero-yield-degenerate) shouldn't get a duration-adjusted scenario
         # number built on top of that unreliable ytm either.
         if signal_excluded:
-            aey_base = aey_stress = aey_bull = aey_base_risk_adj = None
+            aey_base = aey_stress = aey_bull = aey_risky = aey_base_risk_adj = None
         else:
             aey_base = portfolio.bond_aey(ytm, mdur_yrs, scenarios["base"])
             aey_stress = portfolio.bond_aey(ytm, mdur_yrs, scenarios["stress"])
             aey_bull = portfolio.bond_aey(ytm, mdur_yrs, scenarios["bull"])
+            aey_risky = (portfolio.bond_aey(ytm, mdur_yrs, scenarios["risky"])
+                         if scenarios.get("risky") is not None else None)
             aey_base_risk_adj = portfolio.pd_adjusted_aey(aey_base, rating, con=con)
 
         in_wl = 1 if emitent_inn in watchlist_inns else 0
@@ -407,7 +413,7 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
             in_watchlist=in_wl, signal_excluded=1 if signal_excluded else 0,
             mod_dur=mdur_yrs, aey_base=aey_base, aey_stress=aey_stress, aey_bull=aey_bull,
             aey_base_risk_adj=aey_base_risk_adj, vdo_scope=1 if vdo_scope else 0,
-            coupon_period=m.get("COUPONPERIOD"),
+            coupon_period=m.get("COUPONPERIOD"), aey_risky=aey_risky,
         )
         n_priced += 1
         top_rows.append({
