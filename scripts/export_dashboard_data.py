@@ -1523,7 +1523,7 @@ PAGE_SCENARIOS = (
     ("risky", "Рисковый", "ondkp"),
     ("analysts", "Аналитики", "survey"),
 )
-EXPECTATION_HISTORY_FROM = "2024-01-01"
+EXPECTATION_HISTORY_YEARS = 2   # decisions/summaries/key-rate steps: this year and the two before
 
 
 def _rng(lo, hi) -> list[float] | None:
@@ -1546,6 +1546,7 @@ def expectations_export(con, scenarios: dict) -> dict:
     db.init_cbr(con)
     today = date.today()
     min_year = today.year - 1
+    history_from = f"{today.year - EXPECTATION_HISTORY_YEARS}-01-01"
 
     forecasts: dict[tuple, dict] = {}
     for r in db.rate_expectations(con, "cbr_forecast"):
@@ -1580,7 +1581,7 @@ def expectations_export(con, scenarios: dict) -> dict:
         by_meeting[d["meeting_date"]][d["doc_type"]] = d
     decisions, summaries = [], []
     for meeting, kinds in sorted(by_meeting.items(), reverse=True):
-        if meeting < EXPECTATION_HISTORY_FROM:
+        if meeting < history_from:
             continue
         pr = kinds.get("press_release")
         if pr:
@@ -1602,7 +1603,7 @@ def expectations_export(con, scenarios: dict) -> dict:
             summaries.append({"meeting_date": meeting, "published": sm["published"], "url": sm["url"],
                               "options": parts["options"], "positions": parts["positions"]})
 
-    steps = db.key_rate_steps(con, since=EXPECTATION_HISTORY_FROM)
+    steps = db.key_rate_steps(con, since=history_from)
 
     stored_sources = db.expectation_sources(con)
     sources = []

@@ -85,13 +85,15 @@ def _mid(lo: float | None, hi: float | None) -> float | None:
 
 
 def current_key_rate(con) -> tuple[str | None, float | None]:
-    """(as-of date, percent): the CBR daily key-rate series when stored,
-    else the latest decided meeting's rate_after."""
+    """(as-of date, percent): the latest decision's rate_after, unless the
+    CBR daily key-rate series has a strictly later date. On a decision day
+    the daily series still shows the old rate (the new one applies from the
+    next working day); for forward-looking scenarios the decision is current."""
     daily = db.latest_key_rate(con) if db.has_table(con, "key_rate_daily") else None
     row = (con.execute("SELECT meeting_date, rate_after FROM cbr_meeting WHERE rate_after IS NOT NULL "
                        "ORDER BY meeting_date DESC LIMIT 1").fetchone()
            if db.has_table(con, "cbr_meeting") else None)
-    if daily and (not row or daily[0] >= row["meeting_date"]):
+    if daily and (not row or daily[0] > row["meeting_date"]):
         return daily
     return (row["meeting_date"], row["rate_after"]) if row else (None, None)
 

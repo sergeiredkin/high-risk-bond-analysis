@@ -894,14 +894,20 @@ def check_and_fetch_today() -> dict | None:
 # every cron slot forever.
 CATCH_UP_MEETING_DAYS = 60
 CATCH_UP_DOCUMENT_DAYS = 30
+# The CBR calendar: «Предполагаемое время публикации пресс-релиза — 13:30 по
+# московскому времени». After this (machine-local, MSK) a meeting held today
+# counts as due, so the afternoon cron slot stores the decision before the
+# universe run recomputes AEY -- not a slot later.
+RELEASE_TIME_MSK = (13, 45)
 
 
-def missed_meetings(con, today: date) -> list[dict]:
+def missed_meetings(con, today: date, now: datetime | None = None) -> list[dict]:
     """Scheduled meetings the store is missing something for, as
     [{date, anchor, missing}] with missing in decision/resume/comment:
 
-      decision -- the meeting is past (within CATCH_UP_MEETING_DAYS) and
-                  cbr_meeting has no rate_after for it;
+      decision -- the meeting is past (within CATCH_UP_MEETING_DAYS), or is
+                  today and RELEASE_TIME_MSK has passed (`now`, default the
+                  machine clock), and cbr_meeting has no rate_after for it;
       resume   -- its résumé date is past (within CATCH_UP_DOCUMENT_DAYS)
                   and resume_text is empty;
       comment  -- an anchor meeting 14+ days past (within the same window)
@@ -911,6 +917,8 @@ def missed_meetings(con, today: date) -> list[dict]:
     the machine was off (5-13 Sep 2026 lost the 11.09 decision) is never
     revisited without this."""
     db.init_cbr(con)
+    now = now or datetime.now()
+    released_today = (now.hour, now.minute) >= RELEASE_TIME_MSK
     out = []
     for m in get_schedule(con):
         md = date.fromisoformat(m["date"])
@@ -919,7 +927,8 @@ def missed_meetings(con, today: date) -> list[dict]:
         row = db.get_cbr_meeting(con, m["date"])
         row = dict(row) if row else {}
         missing = None
-        if row.get("rate_after") is None and (today - md).days <= CATCH_UP_MEETING_DAYS and md < today:
+        if (row.get("rate_after") is None and (today - md).days <= CATCH_UP_MEETING_DAYS
+                and (md < today or released_today)):
             missing = "decision"
         elif (m["resume_date"] and not row.get("resume_text")
               and 0 <= (today - date.fromisoformat(m["resume_date"])).days <= CATCH_UP_DOCUMENT_DAYS):
@@ -932,7 +941,7 @@ def missed_meetings(con, today: date) -> list[dict]:
     return out
 
 
-def catch_up_missed_meetings(today: date | None = None) -> list[dict]:
+def catch_up_missed_meetings(today: date | None = None, now: datetime | None = None) -> list[dict]:
     """Re-fetch every meeting missed_meetings() reports and store what the
     CBR has published by now. Logs CBR_STALE when a past decision's press
     release still cannot be found. Returns [{date, missing, found}]."""
@@ -940,7 +949,7 @@ def catch_up_missed_meetings(today: date | None = None) -> list[dict]:
     con = db.connect()
     db.init_db(con)
     try:
-        todo = missed_meetings(con, today)
+        todo = missed_meetings(con, today, now)
         report = []
         for m in todo:
             result = fetch_meeting(m["date"], m["anchor"])

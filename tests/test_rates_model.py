@@ -353,3 +353,13 @@ def test_reading_scenarios_writes_no_schema(tmp_path):
     assert not db.has_table(con, "rate_expectation")
     assert not db.has_table(con, "cbr_schedule")
     con.close()
+
+
+def test_a_decision_is_the_current_rate_on_its_own_day(tmp_path):
+    """The daily key-rate table still shows the old rate on decision day (the
+    new one applies from the next working day); scenarios must use the decision."""
+    con = _con(tmp_path)
+    db.upsert_cbr_meeting(con, meeting_date="2026-10-23", rate_after=13.5)
+    db.upsert_key_rates(con, [("2026-10-23", 14.0)])
+    assert portfolio.current_key_rate(con) == ("2026-10-23", 13.5)
+    con.close()
