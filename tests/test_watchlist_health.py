@@ -455,12 +455,16 @@ def test_daily_run_sh_contains_scan_watchlist_health():
     assert text.index("hybond universe") < text.index("hybond scan-watchlist-health")
 
 
-def test_daily_run_sh_contains_backfill_ratings():
+def test_daily_run_sh_refreshes_moex_ratings_before_universe_and_no_nkr_scrape():
     text = (Path(__file__).resolve().parents[1] / "scripts" / "daily_run.sh").read_text()
-    assert "hybond backfill-ratings --agency nkr" in text
+    # НКР's terms forbid automated collection; MOEX ЦКИ replaced the scrape
+    assert "backfill-ratings" not in text
     assert (text.index("python -m hybond run >>")
-            < text.index("python -m hybond backfill-ratings")
+            < text.index("python -m hybond refresh-ratings")
             < text.index("python -m hybond universe"))
+    # network step: must not abort the run under `set -e`
+    step = text[text.index("python -m hybond refresh-ratings"):]
+    assert step.split("\n")[1].strip().startswith("|| echo")
 
 
 def test_daily_run_sh_contains_scan_universe_health():

@@ -84,6 +84,9 @@ Full list (27 subcommands; `hybond <cmd> --help` for exact flags):
 hybond selftest                     confirm MOEX/CBR reachability
 hybond run [--watchlist watchlist.json] [--out data/report.json]
                                      Slice 1: prices, YTM, G-spread, maturity wall
+hybond refresh-ratings [--ttl-hours H] [--max-calls N]
+                                     agency ratings from MOEX ISS ЦКИ (free, keyed by
+                                     emitent_id/ISIN), incremental; resolved by ratings.py
 hybond universe [--refresh-emitent-map]
                                      full MOEX universe screen: G-spread, mispricing,
                                      AEY scenarios, rating join (not just the watchlist)

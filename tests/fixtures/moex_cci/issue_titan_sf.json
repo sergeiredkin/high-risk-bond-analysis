@@ -1,0 +1,24 @@
+{
+ "cci_rating_securities": {
+  "columns": [
+   "agency_id",
+   "agency_name_short_ru",
+   "rating_book_id",
+   "rating_level_id",
+   "rating_date",
+   "rating_publicate_date",
+   "rating_level_name_short_ru"
+  ],
+  "data": [
+   [
+    3,
+    "АКРА",
+    2,
+    24,
+    "2026-01-21 00:00:00",
+    "2026-01-21 00:00:00",
+    "AAA(ru.sf)"
+   ]
+  ]
+ }
+}

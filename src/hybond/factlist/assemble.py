@@ -76,6 +76,7 @@ def build_factlist(
     engine's Flag objects for this issuer, already dict-ified."""
     from ..compute import default_probs
     from ..store import db
+    from .. import ratings
 
     db.init_rating(con)  # idempotent; guards ad-hoc callers that skip it
 
@@ -123,11 +124,11 @@ def build_factlist(
     six_pillars_delta = _pillars_delta(con, issuer_id)
 
     # Default Probability Layer (see DEFAULT_PROB_FEATURE.md). Rating comes
-    # from the `rating` table (db.current_rating) -- the same source of
+    # from ratings.resolve() (issuer level) -- the same source of
     # truth pipeline.py's spread screen uses, not six_pillars (which never
     # carried a rating field; that was a dead path).
     default_prob_1yr = implied_fair = misprice = None
-    rating = db.current_rating(con, issuer_id)
+    rating = ratings.resolved_grade(con, issuer_id)
     if rating:
         probs = default_probs.lookup(rating)
         default_prob_1yr = probs["yr1"] if probs else None

@@ -270,6 +270,8 @@ button { font-family: inherit; }
 .rat-mid { background: var(--color-neutral-200); color: var(--color-neutral-800); }
 .rat-low { background: var(--color-accent-200); color: var(--color-accent-900); }
 .rat-none { background: transparent; color: var(--color-neutral-500); padding-inline: 0; }
+.rat-split { margin-left: 3px; opacity: .7; }
+.rat.is-stale { opacity: .6; }
 .score { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .score-track { width: 34px; height: 5px; border-radius: 999px; background: var(--color-neutral-200); overflow: hidden; }
 .score-fill { height: 100%; }

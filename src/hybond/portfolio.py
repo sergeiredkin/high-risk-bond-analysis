@@ -20,7 +20,7 @@ from datetime import date, timedelta
 
 from .cbr_tracker import _midpoint
 from .compute import default_probs
-from . import pd_import
+from . import pd_import, ratings
 from .store import db
 
 logger = logging.getLogger(__name__)
@@ -1076,7 +1076,7 @@ def monitor_portfolios(con: sqlite3.Connection) -> dict[int, list[dict]]:
             current_health = ((issuer_row.get("health_status") if issuer_row else None)
                                or "green").lower()
             saved_health = (flags.get("health_at_save") or "green").lower()
-            rating = db.current_rating(con, issuer_id)
+            rating = ratings.resolved_grade(con, issuer_id, secid)
 
             spread_row = _latest_spread_row(con, secid)
             current_g_spread = spread_row["g_spread_bp"] if spread_row else None

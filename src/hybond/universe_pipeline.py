@@ -1,6 +1,6 @@
 """Universe pipeline: pull the FULL MOEX corporate-bond universe (not just
 the watchlist), screen it down to tradeable RUB corporate paper, compute a
-G-spread proxy for every bond, join against our own `rating` table, and store
+G-spread proxy for every bond, resolve its rating (ratings.py), and store
 one row per bond per day in `universe_snapshot`. This is the raw material
 for the screener dashboard tab and for spotting mispriced names outside the
 current 20-issuer watchlist.
@@ -46,7 +46,7 @@ from datetime import date, datetime, timedelta
 from .compute import bondmath, default_probs, inflection
 from .health import log_health
 from .ingest import sources
-from . import portfolio
+from . import portfolio, ratings
 from .store import db
 
 FACEUNIT_ALLOWED = "SUR"
@@ -224,20 +224,43 @@ def compute_vdo_scope(*, rating: str | None, g_spread_bp: float | None,
     return True
 
 
-def _load_emitent_map(con, snap_date: date, force_refresh: bool) -> dict:
-    """Cached SECID -> {emitent_inn, emitent_title}, re-paginated only when
-    empty, stale (>EMITENT_MAP_MAX_AGE_DAYS), or force_refresh is set."""
+# New placements missing from the weekly emitent_map cache are looked up one
+# secid at a time (report bucket F, 2026-09-17: 3 bonds). Capped so a broken
+# cache can never turn into hundreds of per-secid calls -- a cache that far
+# off is the weekly refresh's job.
+MAX_MISSING_SECID_LOOKUPS = 30
+
+
+def load_emitent_map(con, snap_date: date, force_refresh: bool) -> dict:
+    """Cached SECID -> {emitent_inn, emitent_title, emitent_id, isin},
+    re-paginated only when empty, stale (>EMITENT_MAP_MAX_AGE_DAYS), written
+    before emitent_id was kept (one-time migration), or force_refresh is set."""
     db.init_emitent_map(con)
     fetched_on = db.emitent_map_fetched_on(con)
     stale = True
     if fetched_on:
         age = (snap_date - datetime.strptime(fetched_on, "%Y-%m-%d").date()).days
         stale = age > EMITENT_MAP_MAX_AGE_DAYS
-    if force_refresh or stale or not fetched_on:
+    if force_refresh or stale or not fetched_on or not db.emitent_map_has_ids(con):
         rows = sources.fetch_emitent_map()
         db.replace_emitent_map(con, rows, snap_date.isoformat())
         return rows
     return db.get_emitent_map(con)
+
+
+def fill_missing_emitents(con, emitent_map: dict, secids, snap_date: date) -> int:
+    """Look up secids a populated cache doesn't know yet (new placements).
+    Skipped for an empty cache -- that is a failed bulk fetch, not a gap."""
+    if not emitent_map:
+        return 0
+    missing = sorted({s for s in secids if s not in emitent_map})[:MAX_MISSING_SECID_LOOKUPS]
+    if not missing:
+        return 0
+    found = sources.fetch_emitent_rows_for_secids(missing)
+    if found:
+        db.upsert_emitent_map_rows(con, found, snap_date.isoformat())
+        emitent_map.update(found)
+    return len(found)
 
 
 def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = False) -> dict:
@@ -256,7 +279,7 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
     db.init_cbr(con)
 
     scenarios = portfolio.get_rate_scenarios(con)
-    emitent_map = _load_emitent_map(con, snap_date, refresh_emitent_map)
+    emitent_map = load_emitent_map(con, snap_date, refresh_emitent_map)
 
     # Match by emitent_inn against issuer, not by secid against bond -- an
     # issuer we track is "in the watchlist" for every series it has
@@ -285,6 +308,7 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
                 con, secid, sd, liquidity_since):
             continue
         screened_rows.append((secid, m, q))
+    fill_missing_emitents(con, emitent_map, (r[0] for r in screened_rows), snap_date)
 
     n_priced = 0
     n_rated = 0
@@ -330,7 +354,10 @@ def run_universe(snap_date: date | None = None, refresh_emitent_map: bool = Fals
         emitent_inn = emit.get("emitent_inn")
         emitent_title = emit.get("emitent_title") or m.get("SECNAME")
 
-        rating = db.current_rating(con, emitent_inn) if emitent_inn else None
+        # ratings.py: issue-level before issuer-level, most conservative
+        # live national grade across agencies, 'D' for a default (no PD).
+        rating = ratings.resolve(con, inn=emitent_inn, secid=emit.get("isin") or secid,
+                                 emitent_id=emit.get("emitent_id"), as_of=snap_date)["grade"]
         implied_fair = default_probs.implied_fair_spread_bp(rating) if rating else None
         misprice = (gsp - implied_fair) if implied_fair is not None else None
         if rating:

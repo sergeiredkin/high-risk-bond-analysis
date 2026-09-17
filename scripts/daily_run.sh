@@ -36,14 +36,19 @@ PYTHONPATH=src python -m hybond run >> "$LOG" 2>&1
 echo "=== Portfolio monitoring ===" >> "$LOG"
 PYTHONPATH=src python -m hybond portfolio-monitor >> "$LOG" 2>&1
 
-# Rating backfill (NKR history) -- only agency supported today. Read-heavy
-# per-issuer scrape over tier=1/2 issuers, no dependency on today's universe
-# snapshot, so it can run anywhere before `hybond universe`; placed here so
-# any newly-backfilled rating is available to today's universe/promote/
-# health-scan steps below rather than only from tomorrow's run.
-echo "=== Rating backfill ===" >> "$LOG"
-PYTHONPATH=src python -m hybond backfill-ratings --agency nkr >> "$LOG" 2>&1
-echo "Rating backfill exit: $?" >> "$LOG"
+# Agency ratings from MOEX ISS ЦКИ (2026-09-17, replaces the НКР history
+# scrape that ran here -- ratings.ru's terms forbid automated collection).
+# Free anonymous endpoints keyed by emitent_id/ISIN; see
+# src/hybond/ratings_pipeline.py for the incremental workload (~570 calls,
+# ~5 min, only on the first run of the day -- the 13:00/19:00 runs find every
+# target fresh and make almost no calls). Right before `hybond universe` so
+# today's screen/promote/health steps resolve today's ratings. Network step,
+# so non-fatal like scrape/market-notes below: a failed or blocked refresh
+# keeps yesterday's ratings (flagged stale after 3 days) and logs a
+# MOEX_RATINGS_* health code instead of aborting the run.
+echo "=== Ratings refresh (MOEX ЦКИ) ===" >> "$LOG"
+PYTHONPATH=src python -m hybond refresh-ratings >> "$LOG" 2>&1 \
+    || echo "refresh-ratings step failed (non-fatal)" >> "$LOG"
 
 # Universe snapshot: full MOEX corporate-bond screen + G-spread + mispricing.
 # The SECID->ИНН emitent map is cached (emitent_map table) and only

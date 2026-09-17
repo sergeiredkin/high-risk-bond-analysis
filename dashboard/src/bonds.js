@@ -13,6 +13,9 @@
 //   score        mean of the issuer's four РСБУ pillar scores (compute/pillars.py), 0–10
 //   pdRating     pd_rating × 100         annual PD in percent (export gives a fraction)
 //   watch        in_watchlist            the "наблюдение" flag on a bond
+//   rating*      rating_agencies / rating_split / rating_defaulted / ...
+//                src/hybond/ratings.py: MOEX ЦКИ agency ratings, issue before
+//                issuer, the lowest live national grade across agencies
 
 // Bands and thresholds. Chosen for this data, not copied from the design's
 // mock numbers (its ±60 б.п. band and 500 млн ₽ liquidity cut sit outside
@@ -49,7 +52,8 @@ function shortIssuerName(title) {
 }
 
 function ratingClass(r) {
-  // 'ruBBB+' -> 'BBB'; CC/C fold into CCC like the old map's rating tiers
+  // 'ruBBB+' -> 'BBB'; CC/C fold into CCC like the old map's rating tiers;
+  // 'D' (a resolved default) stays 'D'
   if (!r) return null;
   const core = r.replace(/^ru/i, '').replace(/[+-]$/, '').split('.')[0];
   return core === 'CC' || core === 'C' ? 'CCC' : core;
@@ -83,6 +87,11 @@ const BONDS = (() => {
       ytm: b.ytm_pct, aeyBase: b.aey_base_pct, aey: b.aey_base_risk_adj_pct,
       gs: b.g_spread_bp, fair: b.implied_fair_spread_bp, gap,
       rating: b.rating, ratingClass: ratingClass(b.rating),
+      ratingAgencies: b.rating_agencies || [], ratingLevel: b.rating_level || null,
+      ratingSplit: b.rating_split === true, ratingDefaulted: b.rating_defaulted === true,
+      ratingWithdrawnOn: b.rating_withdrawn_on || null, ratingSf: b.rating_sf || null,
+      ratingStale: b.rating_stale === true, ratingLastSeen: b.rating_last_seen || null,
+      ratingSource: b.rating_source || null,
       // pd_rating is exported as a fraction (0.0598); DATA.pd_by_rating is the
       // same number in percent (5.98). Kept in percent here, like every other
       // rate on the page.
@@ -108,6 +117,7 @@ const BOND_BY_SECID = new Map(BONDS.map(b => [b.secid, b]));
 // not say that.
 function bondFlags(b) {
   const f = [];
+  if (b.ratingDefaulted) f.push('дефолт');
   if (b.yieldZone === 'negative_ev') f.push('красная зона');
   else if (b.yieldZone === 'caution') f.push('жёлтая зона');
   if (b.watch) f.push('наблюдение');
@@ -116,6 +126,23 @@ function bondFlags(b) {
   if (b.vol != null && b.vol < LOW_LIQ_VOLUME_RUB) f.push('низкая ликв.');
   if (b.yieldSource && b.yieldSource !== 'moex') f.push('цена искажена');
   return f;
+}
+
+// Screener rating cell text: the resolved grade, else why there is none.
+function ratingLabel(b) {
+  if (b.rating) return b.rating;
+  if (b.ratingWithdrawnOn) return 'отозван';
+  if (b.ratingSf) return b.ratingSf;
+  return 'без рейтинга';
+}
+
+// One-line provenance for a title attribute: every agency, its grade, its date.
+function ratingTitle(b) {
+  const lines = b.ratingAgencies.map(a =>
+    `${a.agency}: ${a.status === 'withdrawn' ? 'отозван' : a.grade || a.raw} от ${fmtDate(a.rated_on)}${a.used ? ' — принят' : ''}`);
+  if (b.ratingSplit) lines.push('Агентства расходятся — взят самый низкий');
+  if (b.ratingStale) lines.push(`MOEX не подтверждал с ${fmtDate(b.ratingLastSeen)} — последний известный`);
+  return lines.join('\n');
 }
 
 // 'выше' / 'в модели' / 'ниже' / null (no rating -> no fair spread)

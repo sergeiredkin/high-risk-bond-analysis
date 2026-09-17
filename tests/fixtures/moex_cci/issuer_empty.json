@@ -1,0 +1,28 @@
+{
+ "cci_rating_companies": {
+  "columns": [
+   "agency_id",
+   "agency_name_short_ru",
+   "rating_book_id",
+   "rating_level_id",
+   "rating_date",
+   "rating_publicate_date",
+   "rating_level_name_short_ru"
+  ],
+  "data": []
+ },
+ "cci_rating_companies.cursor": {
+  "columns": [
+   "INDEX",
+   "TOTAL",
+   "PAGESIZE"
+  ],
+  "data": [
+   [
+    0,
+    0,
+    100
+   ]
+  ]
+ }
+}

@@ -1,0 +1,47 @@
+{
+ "cci_rating_companies": {
+  "columns": [
+   "agency_id",
+   "agency_name_short_ru",
+   "rating_book_id",
+   "rating_level_id",
+   "rating_date",
+   "rating_publicate_date",
+   "rating_level_name_short_ru"
+  ],
+  "data": [
+   [
+    4,
+    "Эксперт РА",
+    18,
+    255,
+    "2026-09-14 00:00:00",
+    "2026-09-14 00:00:00",
+    "Отозван"
+   ],
+   [
+    6,
+    "НРА",
+    32,
+    464,
+    "2025-11-21 00:00:00",
+    "2025-11-21 00:00:00",
+    "BB|ru|"
+   ]
+  ]
+ },
+ "cci_rating_companies.cursor": {
+  "columns": [
+   "INDEX",
+   "TOTAL",
+   "PAGESIZE"
+  ],
+  "data": [
+   [
+    0,
+    2,
+    100
+   ]
+  ]
+ }
+}

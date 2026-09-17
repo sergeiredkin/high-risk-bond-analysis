@@ -31,7 +31,8 @@ limitation, not a verified detector, if it ever fires in practice.
 from __future__ import annotations
 
 import json
-from datetime import date
+import sqlite3
+from datetime import date, timedelta
 
 from . import promotion_audit
 from .compute.default_probs import rating_rank
@@ -226,21 +227,33 @@ def fns_account_block_event(con, issuer_id: str, lookback_days: int, today: str 
     return hits
 
 
+def _moex_rating_actions(con, issuer_id: str) -> list[tuple[str, str]]:
+    """(rated_on, grade) for every issuer-level national-scale action MOEX
+    CCI has shown us (store/agency_ratings.py); [] before the store exists."""
+    try:
+        return [(r["rated_on"], r["grade"]) for r in con.execute(
+            "SELECT rated_on, grade FROM agency_rating_history WHERE inn = ? AND isin = '' "
+            "AND scale = 'national' AND grade IS NOT NULL AND rated_on != ''", [issuer_id])]
+    except sqlite3.OperationalError:
+        return []
+
+
 def rating_drop_notches(con, issuer_id: str, today: str | None = None) -> int | None:
     """rank(current rating) - rank(rating as of 90 days ago), positive =
     worse. None when there's no rating row at/before the 90-day cutoff to
-    establish a baseline from."""
+    establish a baseline from. Reads the legacy `rating` table and MOEX CCI
+    rating history together, so a downgrade or default MOEX reports counts
+    the same as a hand-entered one."""
     today = today or date.today().isoformat()
-    current = con.execute(
-        "SELECT rating FROM rating WHERE issuer_id = ? ORDER BY rated_on DESC LIMIT 1",
-        [issuer_id]).fetchone()
-    baseline = con.execute(
-        "SELECT rating FROM rating WHERE issuer_id = ? AND rated_on <= date(?, ?) "
-        "ORDER BY rated_on DESC LIMIT 1",
-        [issuer_id, today, f"-{RATING_LOOKBACK_DAYS} days"]).fetchone()
-    if not current or not baseline:
+    cutoff = (date.fromisoformat(today) - timedelta(days=RATING_LOOKBACK_DAYS)).isoformat()
+    actions = [(r["rated_on"], r["rating"]) for r in con.execute(
+        "SELECT rated_on, rating FROM rating WHERE issuer_id = ?", [issuer_id])]
+    actions += _moex_rating_actions(con, issuer_id)
+    actions.sort()
+    before = [a for a in actions if a[0] <= cutoff]
+    if not actions or not before:
         return None
-    cur_rank, base_rank = rating_rank(current["rating"]), rating_rank(baseline["rating"])
+    cur_rank, base_rank = rating_rank(actions[-1][1]), rating_rank(before[-1][1])
     if cur_rank is None or base_rank is None:
         return None
     return cur_rank - base_rank
