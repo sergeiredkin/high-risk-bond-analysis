@@ -67,16 +67,17 @@ def test_template_includes_both_pages():
 def test_every_route_registers_a_page(template_text):
     # app.js routes on PAGE_IDS and calls PAGES[id].render(); a route with no
     # PAGES entry is a TypeError on navigation, not a blank page.
-    assert "const PAGE_IDS = ['overview', 'terminal', 'portfolio', 'data'];" in template_text
-    for page in ("overview", "terminal", "portfolio", "data"):
+    assert "const PAGE_IDS = ['overview', 'terminal', 'rates', 'portfolio', 'data'];" in template_text
+    for page in ("overview", "terminal", "rates", "portfolio", "data"):
         assert f"PAGES.{page} = " in template_text
+        assert f'id="page-{page}"' in template_text
 
 
 def test_pages_are_still_separate_source_files_not_one_template():
     # The modular layout is the constraint the redesign is built under.
     page_files = sorted(p.name for p in (SRC / "pages").glob("*.js"))
     assert page_files == ["bond-detail.js", "data.js", "overview-market-band.js",
-                          "overview.js", "portfolio.js", "terminal-map.js", "terminal.js"]
+                          "overview.js", "portfolio.js", "rates.js", "terminal-map.js", "terminal.js"]
     # template.html stays a shell: markup + includes, no page logic
     assert len(TEMPLATE.read_text(encoding="utf-8").splitlines()) < 150
 
@@ -194,8 +195,9 @@ def test_watchlist_route_is_absent_from_the_dashboard_source():
     assert offenders == []
     template = TEMPLATE.read_text(encoding="utf-8")
     assert 'data-page="watchlist"' not in template
-    # the nav is the route list; four buttons, none of them a watchlist
-    assert template.count("topnav-btn") == 4
+    # the nav is the route list; five buttons (Ставка и ОФЗ is the fifth,
+    # plan rev 2, 2026-09-17), none of them a watchlist
+    assert template.count("topnav-btn") == 5
 
 
 def test_ticker_watching_survives_as_a_per_bond_flag(template_text):
@@ -331,4 +333,79 @@ def test_built_dashboard_embeds_the_pages_it_claims_to():
     assert "__INCLUDE" not in text          # every marker was substituted
     assert "PAGES.portfolio = {" in text
     assert "PAGES.data = {" in text
+    assert "PAGES.rates = {" in text
     assert "Ещё не собрано" not in text     # no placeholder page left
+
+
+# ---- Ставка и ОФЗ (plan rev 2, approved 2026-09-17) -------------------------
+
+def _code_lines(path):
+    return _strip_comments(path.read_text(encoding="utf-8"))
+
+
+def test_rates_page_is_wired_between_the_screener_and_the_portfolio():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    assert "__INCLUDE:src/pages/rates.js__" in template
+    nav = [line.split('data-page="')[1].split('"')[0] for line in template.splitlines()
+           if 'class="topnav-btn"' in line]
+    assert nav == ["overview", "terminal", "rates", "portfolio", "data"]
+    # rates.js uses the drawer helpers from bond-detail.js, so it must load after it
+    assert template.index("src/pages/bond-detail.js") < template.index("src/pages/rates.js")
+
+
+def test_key_rate_readout_links_to_the_rates_page():
+    """The «Ключевая ЦБ» readout is a page link, the way the health chip is."""
+    import re
+    template = TEMPLATE.read_text(encoding="utf-8")
+    tag = re.search(r'<button[^>]*id="cbrChip"[^>]*>', template).group(0)
+    assert 'data-page="rates"' in tag
+    health = re.search(r'<button[^>]*id="healthChip"[^>]*>', template).group(0)
+    assert 'data-page="data"' in health
+
+
+def test_rates_page_introduces_no_new_css_component():
+    """Visually identical to the other pages (captain's D1): every class the
+    page renders already exists in the design system or app.css."""
+    import re
+    css = "".join((SRC / name).read_text(encoding="utf-8") for name in ("design-system.css", "base.css", "app.css"))
+    js = (SRC / "pages" / "rates.js").read_text(encoding="utf-8")
+    classes = set()
+    for attr in re.findall(r'class="([^"$]*)"', js):
+        classes.update(c for c in attr.split() if c)
+    missing = sorted(c for c in classes if not re.search(r"\." + re.escape(c) + r"(?![\w-])", css))
+    assert classes and missing == [], missing
+
+
+def test_dashboard_fetches_nothing_at_runtime():
+    # D3 of the plan: the old «Обновить котировки (MOEX, сейчас)» browser
+    # fetch is not carried over; everything comes from the embedded export.
+    for path in sorted(SRC.rglob("*.js")):
+        code = _code_lines(path)
+        assert "fetch(" not in code and "XMLHttpRequest" not in code, path.name
+
+
+def test_no_scenario_delta_is_extrapolated_as_a_slope():
+    """Regression, plan finding S1: the Портфель tracker drew
+    rate_scenarios.base_annual_bp (a level difference) as a slope per year and
+    printed «база ЦБ 13,0%» for 18.12.2026, a number the CBR never published."""
+    for path in sorted(SRC.rglob("*.js")):
+        assert "_annual_bp" not in _code_lines(path), path.name
+    pf = (SRC / "pages" / "portfolio.js").read_text(encoding="utf-8")
+    assert "DATA.expectations" in pf and "f.rest" in pf
+
+
+def test_rates_page_taper_matches_the_model():
+    """The OFZ curve's dashed shift must use the very taper the returns were
+    computed with, not a copy that can drift."""
+    from hybond.compute import ofz_carry
+    js = (SRC / "pages" / "rates.js").read_text(encoding="utf-8")
+    line = next(ln for ln in js.splitlines() if ln.startswith("const RT_SHIFT"))
+    for h, frac in ofz_carry.GRADUATED_SHIFT.items():
+        assert f"{h}: {frac:.2f}" in line
+
+
+def test_rates_page_reads_thresholds_from_the_export():
+    js = _code_lines(SRC / "pages" / "rates.js")
+    assert "RT_OFZ.max_curve_gap_bp" in js                   # ofz_pipeline.MAX_CURVE_GAP_BP
+    assert "match_max_diff_years" in js                      # the premium's duration-match limit
+    assert "pd_rating" not in js and "aey_base\b" not in js  # premium comes computed, not re-derived

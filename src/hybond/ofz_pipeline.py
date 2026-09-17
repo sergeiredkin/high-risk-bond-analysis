@@ -227,18 +227,40 @@ MIN_TENOR_FOR_PROJECTION_YEARS = 1.0
 RETURN_SCENARIOS = ("base", "stress", "bull", "risky", "analysts")
 
 
-def is_benchmark(row) -> bool:
+# A nominal OFZ's YTM should sit close to the CBR's own zero-coupon curve at
+# its tenor. On 2026-09-17 every fixed-schedule issue priced on its cash flows
+# was within -128..+294 б.п. of it -- except ОФЗ 46012 at -1 385 б.п., whose
+# MOEX schedule lists remaining coupons of 1.16 and 13.02 ₽ against a 105%
+# price. A gap this wide means the schedule or the price is wrong, not that
+# the government pays 1.6%.
+MAX_CURVE_GAP_BP = 500
+
+
+def curve_gap_bp(row, curve: list[tuple[float, float]] | None) -> float | None:
+    """(YTM - CBR zero curve at the issue's tenor) in basis points; None
+    without a curve, a YTM or a tenor."""
+    if not curve or row["ytm"] is None or row["tenor_yrs"] is None:
+        return None
+    return (row["ytm"] - bondmath.interp_curve(row["tenor_yrs"], curve)) * 10000
+
+
+def is_benchmark(row, curve: list[tuple[float, float]] | None = None) -> bool:
     """Whether an OFZ issue can stand as the nominal sovereign benchmark for
     a corporate bond: a fixed schedule (ПД/АД) with a YTM solved on its own
     cash flows. ОФЗ-ИН (the yield is real, on an indexed principal) and
     ОФЗ-ПК (the coupon path is unknown; MOEX reports no YIELD for most) never
     qualify -- the old dashboard picked 52002 as the benchmark at duration
-    ~1.7 and printed floaters' YTM as 0.0."""
-    return (row["instrument_type"] in ("ПД", "АД") and row["yield_source"] == "computed"
-            and row["ytm"] is not None and row["ytm"] > 0 and row["mod_dur"] is not None)
+    ~1.7 and printed floaters' YTM as 0.0. With the day's zero curve given,
+    an issue more than MAX_CURVE_GAP_BP away from it does not qualify either."""
+    if not (row["instrument_type"] in ("ПД", "АД") and row["yield_source"] == "computed"
+            and row["ytm"] is not None and row["ytm"] > 0 and row["mod_dur"] is not None):
+        return False
+    gap = curve_gap_bp(row, curve)
+    return gap is None or abs(gap) <= MAX_CURVE_GAP_BP
 
 
-def horizon_returns_for_snapshot(con, snap_date: str, scenarios: dict) -> dict[str, dict]:
+def horizon_returns_for_snapshot(con, snap_date: str, scenarios: dict,
+                                 curve: list[tuple[float, float]] | None = None) -> dict[str, dict]:
     """secid -> {scenario: [horizon result, ...]} from each benchmark-grade
     issue's stored cash flows (ofz_carry.horizon_return), under every
     scenario in RETURN_SCENARIOS that `scenarios` carries a delta for, with
@@ -249,7 +271,7 @@ def horizon_returns_for_snapshot(con, snap_date: str, scenarios: dict) -> dict[s
     before the column existed) are absent."""
     out: dict[str, dict] = {}
     for r in db.ofz_snapshot_rows(con, snap_date):
-        if not is_benchmark(r) or not r["cashflows_json"] or not r["dirty_price_pct"]:
+        if not is_benchmark(r, curve) or not r["cashflows_json"] or not r["dirty_price_pct"]:
             continue
         pairs = [(float(t), float(a)) for t, a in json.loads(r["cashflows_json"])]
         face = r["face_value"] or 1000.0

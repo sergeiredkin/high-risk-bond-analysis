@@ -42,7 +42,10 @@ hybond/
                                  -> real-issuer path (company-scan promotions)
     company_scan_pipeline.py    ad hoc due-diligence scans on issuers not yet
                                  on the watchlist (company_scan_result table)
-    cbr_tracker.py               CBR key-rate meeting tracker
+    cbr_tracker.py               CBR key-rate meeting tracker; meeting schedule from the
+                                 CBR calendar (cbr_schedule), missed-meeting catch-up
+    expectations.py              CBR forecasts, ОНЕГДКП scenarios, macro survey, decision
+                                 documents, daily key rate -- with history (hybond expectations)
     discover.py                  MOEX-vs-watchlist.json coverage diff (kept
                                  deliberately independent of the tier system)
     ofz_pipeline.py               OFZ (government bond) universe
@@ -152,7 +155,7 @@ becomes a real watchlist entry via `hybond promote --inn INN --name NAME`
 
 | Time | Job | Purpose |
 |---|---|---|
-| 05:00, 10:00, 16:00 Mon–Fri | `daily_run.sh` | prices/spreads, universe screen, promote report, scrape, market-notes, CBR check, diff/factlists, dashboard rebuild |
+| 05:00, 10:00, 16:00 Mon–Fri | `daily_run.sh` | prices/spreads, universe screen, OFZ snapshot, promote report, scrape, market-notes, CBR check + catch-up, rate expectations, diff/factlists, dashboard rebuild |
 | `:15` hourly, Mon–Fri | `hourly_filings.sh` | scrape + market-notes + `auto-classify --limit 30` |
 | `*/30 * * * *` | `rebuild_dashboard.sh` (project root) | classification-aware dashboard rebuild — see section 6 |
 | 06:47 daily | `cbonds_sample.sh` | Cbonds sample data |

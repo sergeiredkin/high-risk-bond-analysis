@@ -1021,7 +1021,10 @@ def ofz_bundle(con, scenarios: dict) -> dict:
     # Ставка и ОФЗ page (2026-09-17): horizon returns priced off each issue's
     # own cash flows (ofz_carry.horizon_return). Additive -- carry_rolldown
     # above stays exactly as the legacy dashboard reads it.
-    returns_by_secid = ofz_pipeline.horizon_returns_for_snapshot(con, snap_date, scenarios)
+    db.init_rates(con)
+    zc = db.latest_zcyc_snapshot(con)
+    curve = zc[1] if zc else None
+    returns_by_secid = ofz_pipeline.horizon_returns_for_snapshot(con, snap_date, scenarios, curve)
 
     bonds = []
     for r in rows:
@@ -1036,7 +1039,9 @@ def ofz_bundle(con, scenarios: dict) -> dict:
             "tenor_yrs": r["tenor_yrs"], "volume": r["volume"], "num_trades": r["num_trades"],
             "yield_source": r["yield_source"],
             "carry_rolldown": projections_by_secid.get(r["secid"]),  # None if excluded (near-maturity/no coupon)
-            "benchmark": ofz_pipeline.is_benchmark(r),
+            "benchmark": ofz_pipeline.is_benchmark(r, curve),
+            "curve_gap_bp": (round(ofz_pipeline.curve_gap_bp(r, curve))
+                             if ofz_pipeline.curve_gap_bp(r, curve) is not None else None),
             "returns": returns_by_secid.get(r["secid"]),
         })
 
@@ -1060,6 +1065,7 @@ def ofz_bundle(con, scenarios: dict) -> dict:
         # bp deltas every `returns` entry was computed under, per scenario key
         "scenario_deltas_bp": {k: (round(scenarios[k] * 10000) if scenarios.get(k) is not None else None)
                                for k in ofz_pipeline.RETURN_SCENARIOS},
+        "max_curve_gap_bp": ofz_pipeline.MAX_CURVE_GAP_BP,
         "min_tenor_for_projection_years": ofz_pipeline.MIN_TENOR_FOR_PROJECTION_YEARS,
         "graduated_shift": ofz_pipeline.ofz_carry.GRADUATED_SHIFT,
     }

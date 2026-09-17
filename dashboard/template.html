@@ -14,7 +14,8 @@
     src/core.js            DATA, formatting helpers, tiny DOM helpers
     src/bonds.js           the bond model every page reads (real data only)
     src/app.js             header readouts, page router, detail drawer
-    src/pages/*.js         one file per page
+    src/pages/*.js         one file per page (rates.js -- Ставка и ОФЗ -- is
+                           the one page beyond the reference)
   D3 is the one external script (the market map); everything else, data
   included, is inlined. Without it the map says so and the screener still
   works -- see TerminalMap.mount().
@@ -42,6 +43,7 @@
     <nav class="topnav" id="topnav">
       <button type="button" class="topnav-btn" data-page="overview">Обзор</button>
       <button type="button" class="topnav-btn" data-page="terminal">Карта и скринер</button>
+      <button type="button" class="topnav-btn" data-page="rates">Ставка и ОФЗ</button>
       <button type="button" class="topnav-btn" data-page="portfolio">Портфель</button>
       <button type="button" class="topnav-btn" data-page="data">Данные</button>
     </nav>
@@ -49,11 +51,11 @@
     <div class="topbar-spacer"></div>
 
     <div class="topbar-readouts">
-      <div class="readout">
-        <div class="readout-kicker">Ключевая ЦБ</div>
-        <div class="readout-value" id="cbrRate">—</div>
-        <div class="readout-next" id="cbrNext"></div>
-      </div>
+      <button type="button" class="readout readout-link" id="cbrChip" data-page="rates">
+        <span class="readout-kicker">Ключевая ЦБ</span>
+        <span class="readout-value" id="cbrRate">—</span>
+        <span class="readout-next" id="cbrNext"></span>
+      </button>
       <button type="button" class="readout readout-health" id="healthChip" data-page="data">
         <span class="health-dot" id="healthDot"></span>
         <span id="healthLabel">—</span>
@@ -64,6 +66,7 @@
   <main>
     <section class="page" id="page-overview" hidden></section>
     <section class="page" id="page-terminal" hidden></section>
+    <section class="page" id="page-rates" hidden></section>
     <section class="page" id="page-portfolio" hidden></section>
     <section class="page" id="page-data" hidden></section>
   </main>
@@ -93,6 +96,8 @@
 <script>/*__INCLUDE:src/pages/terminal-map.js__*/</script>
 <script>/*__INCLUDE:src/pages/bond-detail.js__*/</script>
 <script>/*__INCLUDE:src/pages/terminal.js__*/</script>
+<!-- Ставка и ОФЗ: a fifth page beyond the design reference, built only from the reference's own components (plan rev 2, 2026-09-17). -->
+<script>/*__INCLUDE:src/pages/rates.js__*/</script>
 <script>/*__INCLUDE:src/pages/portfolio.js__*/</script>
 <script>/*__INCLUDE:src/pages/data.js__*/</script>
 <script>/*__INCLUDE:src/app.js__*/</script>

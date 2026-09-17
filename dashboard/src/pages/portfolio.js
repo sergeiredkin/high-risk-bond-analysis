@@ -183,9 +183,29 @@ function pfCompositionHtml(positions) {
 
 // ── Трекер ставки ЦБ ────────────────────────────────────────────────────
 // Solid line: meetings that actually decided a rate (cbr.meetings, rate_after).
-// Dashed: the forward path implied by cbr.rate_scenarios.base_annual_bp --
-// the pipeline's own base scenario, not a curve fitted here. If there is no
-// scenario the dashed half is simply absent.
+// Dashed: what the CBR itself published for the path ahead -- the rest of
+// this year as the latest forecast's footnote states it («с 27 июля до конца
+// 2026 года … 13,7–14,0%»), then next year's published average. Each is a
+// flat step at the midpoint of its range, labelled with the range.
+//
+// Regression (plan finding S1, 2026-09-17): this used to extrapolate
+// cbr.rate_scenarios.base_annual_bp as a slope per year. That number is a
+// LEVEL difference (next year's average minus today's rate), so the slope
+// printed «база ЦБ 13,0%» for 18.12.2026 -- a figure the CBR never published.
+function pfCbrForward(lastDate) {
+  const exp = DATA.expectations || {};
+  const f = (exp.forecasts || []).slice(-1)[0];
+  if (!f) return [];
+  const year = parseInt(lastDate.slice(0, 4), 10);
+  const out = [];
+  if (f.rest && f.rest.year === year) {
+    out.push({ from: lastDate, to: `${year}-12-31`, range: [f.rest.lo, f.rest.hi], label: `остаток ${year}` });
+  }
+  const next = f.years && f.years[String(year + 1)];
+  if (next) out.push({ from: `${year + 1}-01-01`, to: `${year + 1}-12-31`, range: next, label: String(year + 1) });
+  return out;
+}
+
 function pfCbrChart() {
   const cbr = DATA.cbr || {};
   const hist = (cbr.meetings || []).filter(m => m.is_past && m.rate_after != null)
@@ -193,21 +213,14 @@ function pfCbrChart() {
     .map(m => ({ date: m.date, rate: m.rate_after }));
   if (hist.length < 2) return null;
 
-  const sc = cbr.rate_scenarios || {};
-  const future = (cbr.meetings || []).filter(m => !m.is_past).sort((a, b) => a.date.localeCompare(b.date));
   const last = hist[hist.length - 1];
-  const fwd = [];
-  if (sc.base_annual_bp != null && future.length) {
-    future.forEach(m => {
-      const yrs = (Date.parse(m.date) - Date.parse(last.date)) / (365.25 * 864e5);
-      fwd.push({ date: m.date, rate: last.rate + sc.base_annual_bp / 100 * yrs });
-    });
-  }
+  const fwd = pfCbrForward(last.date);
+  const mid = r => (r[0] + r[1]) / 2;
 
-  const pts = hist.concat(fwd);
   const W = 420, H = 96, PADX = 10, PADT = 14, PADB = 22;
-  const t0 = Date.parse(pts[0].date), t1 = Date.parse(pts[pts.length - 1].date);
-  const rates = pts.map(p => p.rate);
+  const t0 = Date.parse(hist[0].date);
+  const t1 = Date.parse(fwd.length ? fwd[fwd.length - 1].to : last.date);
+  const rates = hist.map(p => p.rate).concat(...fwd.map(s => s.range));
   const lo = Math.min.apply(null, rates), hi = Math.max.apply(null, rates);
   const pad = Math.max(0.4, (hi - lo) * 0.25);
   const x = d => PADX + (t1 === t0 ? 0 : (Date.parse(d) - t0) / (t1 - t0)) * (W - 2 * PADX);
@@ -216,10 +229,17 @@ function pfCbrChart() {
 
   const k = [`<path d="${line(hist)}" fill="none" stroke="#c67139" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"></path>`];
   if (fwd.length) {
-    k.push(`<path d="${line([last].concat(fwd))}" fill="none" stroke="#7a8a5e" stroke-width="2.4"
-      stroke-dasharray="5 5" stroke-linecap="round"></path>`);
-    const f = fwd[fwd.length - 1];
-    k.push(`<text x="${(W - PADX).toFixed(1)}" y="${(y(f.rate) + 16).toFixed(1)}" class="pf-cbr-fwd" text-anchor="end">база ЦБ ${fmtPct(f.rate, 1)}</text>`);
+    let prev = { date: last.date, rate: last.rate };
+    let d = `M${x(prev.date).toFixed(1)},${y(prev.rate).toFixed(1)}`;
+    fwd.forEach(s => {
+      d += ` L${x(s.from).toFixed(1)},${y(prev.rate).toFixed(1)} L${x(s.from).toFixed(1)},${y(mid(s.range)).toFixed(1)} L${x(s.to).toFixed(1)},${y(mid(s.range)).toFixed(1)}`;
+      prev = { date: s.to, rate: mid(s.range) };
+    });
+    k.push(`<path d="${d}" fill="none" stroke="#7a8a5e" stroke-width="2.4" stroke-dasharray="5 5" stroke-linecap="round"></path>`);
+    const endStep = fwd[fwd.length - 1];
+    const rng = endStep.range[0] === endStep.range[1] ? fmtPct(endStep.range[0], 1)
+      : `${fmtNum(endStep.range[0], 1)}–${fmtNum(endStep.range[1], 1)}%`;
+    k.push(`<text x="${(W - PADX).toFixed(1)}" y="${(y(mid(endStep.range)) + 16).toFixed(1)}" class="pf-cbr-fwd" text-anchor="end">ЦБ: ${endStep.label} — ${rng}</text>`);
   }
   k.push(`<circle cx="${x(last.date).toFixed(1)}" cy="${y(last.rate).toFixed(1)}" r="4.5" fill="#c67139" stroke="#f0fae1" stroke-width="2"></circle>`);
   k.push(`<text x="${x(last.date).toFixed(1)}" y="${(y(last.rate) - 10).toFixed(1)}" class="pf-cbr-now" text-anchor="middle">${fmtDayMonth(last.date)}</text>`);
@@ -233,11 +253,13 @@ function pfCbrHtml() {
   const chart = pfCbrChart();
   const diff = (cbr.recent_diffs || [])[0];
   const sc = cbr.rate_scenarios || {};
+  const last = (cbr.meetings || []).filter(m => m.is_past && m.rate_after != null).map(m => m.date).sort().pop();
+  const fwd = last ? pfCbrForward(last) : [];
   let note;
   if (diff) {
     note = diff.note;
-  } else if (sc.base_annual_bp != null) {
-    note = `Базовый сценарий конвейера: ${sc.base_annual_bp > 0 ? '+' : '−'}${Math.abs(sc.base_annual_bp)} б.п. за год.`;
+  } else if (fwd.length) {
+    note = fwd.map(s => `${s.label}: ${fmtNum(s.range[0], 1)}–${fmtNum(s.range[1], 1)}%`).join('; ') + ' — средняя ставка по прогнозу ЦБ.';
   } else {
     note = 'Разбор последнего заседания в выгрузке отсутствует.';
   }
@@ -251,6 +273,7 @@ function pfCbrHtml() {
     </div>
     ${chart || '<div class="pf-cbr-empty">Истории решений ЦБ в выгрузке недостаточно для графика.</div>'}
     <div class="pf-cbr-note">${escapeHtml(note)}</div>
+    <button type="button" class="pf-more" data-page="rates">Сценарии ЦБ и ОФЗ →</button>
   </section>`;
 }
 

@@ -2,13 +2,15 @@
 // Reference mapping: isOverview/isTerminal/isPortfolio/isData -> the
 // visible <section id="page-*">; detailOpen -> #detail not hidden.
 
-const PAGE_IDS = ['overview', 'terminal', 'portfolio', 'data'];
+const PAGE_IDS = ['overview', 'terminal', 'rates', 'portfolio', 'data'];
 
 // ── header: ЦБ key rate + pipeline health ───────────────────────────────
 function renderHeader() {
   const cbr = DATA.cbr || {};
   document.getElementById('cbrRate').textContent = fmtPct(cbr.current_rate);
   document.getElementById('cbrNext').textContent = cbr.next_meeting ? `заседание ${fmtDayMonth(cbr.next_meeting)}` : '';
+  // The key-rate readout opens Ставка и ОФЗ, the way the health chip opens Данные.
+  document.getElementById('cbrChip').title = 'Ставка и ОФЗ: сценарии ЦБ, ожидания аналитиков, доходность ОФЗ';
 
   // DATA.pipeline_health.status is the worst unresolved level (health.summary()).
   const health = DATA.pipeline_health || {};

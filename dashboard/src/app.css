@@ -27,6 +27,13 @@ button { font-family: inherit; }
   color: rgba(245,234,216,.6); font-family: var(--font-heading); font-size: 13.5px; cursor: pointer; transition: all .2s;
 }
 .topnav-btn[aria-current="page"] { background: rgba(255,255,255,.14); color: #f5ead8; }
+/* phones: five routes do not fit beside the brand -- the nav takes its own
+   row and scrolls inside itself instead of widening the page (at 375px the
+   four-route bar already overflowed to 435px) */
+@media (max-width: 640px) {
+  .topnav { flex: 1 1 100%; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .topnav-btn { flex: none; white-space: nowrap; }
+}
 
 .topbar-spacer { flex: 1; min-width: 12px; }
 .topbar-readouts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -38,6 +45,9 @@ button { font-family: inherit; }
 .readout-value { font-family: var(--font-heading); font-size: 15px; }
 .readout-next { font-size: 11px; color: var(--color-accent-300); }
 .readout-health { gap: 8px; border: none; color: #f5ead8; font-size: 11.5px; cursor: pointer; }
+/* the key-rate readout as a page link (Ставка и ОФЗ) -- same pill, button reset only */
+.readout-link { border: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.readout-link:hover { background: rgba(255,255,255,.14); }
 .health-dot {
   width: 7px; height: 7px; border-radius: 999px; background: var(--color-neutral-400);
   animation: breathe 2.4s ease-in-out infinite;
@@ -520,6 +530,9 @@ button { font-family: inherit; }
 .d-src.is-old .d-src-dot { background: var(--color-accent-700); }
 .d-src.is-neutral .d-src-dot { background: var(--color-neutral-400); }
 .d-src-ago { opacity: .5; font-size: 11px; white-space: nowrap; }
+a.d-src { color: inherit; text-decoration: none; }
+a.d-src:hover { background: var(--color-neutral-200); }
+.pf-check-t a { color: inherit; }
 
 .d-policy {
   padding: 20px 22px; border-radius: 30px; background: var(--color-accent-100);

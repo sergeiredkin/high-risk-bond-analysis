@@ -321,3 +321,22 @@ def test_zcyc_export_in_percent(tmp_path):
     con.commit()
     assert zcyc_export(con) == {"snap_date": "2026-09-17", "points": [[0.25, 12.69], [10.0, 16.46]]}
     con.close()
+
+
+def test_an_issue_far_off_the_zero_curve_is_not_a_benchmark(tmp_path):
+    """ОФЗ 46012 on 2026-09-17: MOEX lists remaining coupons of 1.16 and
+    13.02 ₽ against a 105% price, so its cash-flow YTM came out at 1.6%, 1 385
+    б.п. under the CBR zero curve. It must not become anyone's benchmark."""
+    con = _con(tmp_path)
+    _ofz(con, "SU26236RMFS8", ytm=0.1616, tenor_yrs=1.67)
+    _ofz(con, "SU46012RMFS9", instrument_type="АД", ytm=0.0158, tenor_yrs=2.97)
+    con.commit()
+    curve = [(1.0, 0.137), (2.0, 0.1478), (3.0, 0.1545)]
+    rows = {r["secid"]: r for r in db.ofz_snapshot_rows(con, "2026-09-17")}
+    assert ofz_pipeline.is_benchmark(rows["SU26236RMFS8"], curve)
+    assert not ofz_pipeline.is_benchmark(rows["SU46012RMFS9"], curve)
+    assert ofz_pipeline.curve_gap_bp(rows["SU46012RMFS9"], curve) == pytest.approx(-1385, abs=3)
+    assert ofz_pipeline.is_benchmark(rows["SU46012RMFS9"])          # without a curve the guard cannot apply
+    returns = ofz_pipeline.horizon_returns_for_snapshot(con, "2026-09-17", {"base": -0.025}, curve)
+    assert "SU46012RMFS9" not in returns
+    con.close()
