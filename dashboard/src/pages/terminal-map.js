@@ -41,6 +41,7 @@ const TerminalMap = (() => {
   };
 
   let ctl = null;                // controller from terminal.js
+  let resizeHeld = false;        // true while the split animates; one rebuild at the end
   let root = null, svg = null, tip = null;
   let H = 430, axis = 'spread', transform = null, zoom = null;
   let xBase = null, yBase = null;
@@ -155,6 +156,7 @@ const TerminalMap = (() => {
         if (raf) return;
         raf = requestAnimationFrame(() => {
           raf = 0;
+          if (resizeHeld) return;   // the SVG scales with its card meanwhile; the owner rebuilds once
           if (!root.clientWidth || measureWidth() === MW) return;   // hidden page, or nothing to do
           rebuild(false);
           ctl.onResize();
@@ -465,6 +467,33 @@ const TerminalMap = (() => {
     offAxisCount: () => (hasD3() ? offAxisCount() : 0),
     title: a => AXES[a].title,
     resetZoom,
+    // Hold rebuilds while the split's columns animate (enlarge map / table):
+    // the viewBox SVG scales smoothly with its card, and redrawing ~1 000
+    // points every frame would stutter. The caller rebuilds when it ends.
+    // The SVG's height is pinned meanwhile, so the card does not grow with the
+    // viewBox aspect; releaseResize() redraws once at the new width and eases
+    // the height from the pinned value to the new one instead of snapping.
+    holdResize() {
+      resizeHeld = true;
+      if (svg) svg.style('height', `${Math.round(svg.node().getBoundingClientRect().height)}px`);
+    },
+    releaseResize() {
+      resizeHeld = false;
+      if (!svg) return;
+      const from = parseFloat(svg.style('height')) || null;
+      svg.style('height', null);
+      rebuild(false);
+      const node = svg.node();
+      const to = node.getBoundingClientRect().height;
+      if (!from || Math.abs(to - from) < 2) return;
+      node.style.height = `${from}px`;
+      node.getBoundingClientRect();                       // commit the start height
+      node.style.transition = 'height .35s cubic-bezier(.22,1,.36,1)';
+      node.style.height = `${to}px`;
+      const clear = () => { node.style.transition = ''; node.style.height = ''; };
+      node.addEventListener('transitionend', clear, { once: true });
+      setTimeout(clear, 600);
+    },
     colors: { ACC, ACC2, GREY, MUTED },
   };
 })();

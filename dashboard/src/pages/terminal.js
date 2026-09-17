@@ -83,7 +83,10 @@ const S = {
   sel: null,        // secid of the bond whose drawer is open
   shown: SCREENER_PAGE,
   zoomed: false,
+  focus: null,      // layout A only: 'map' | 'screener' enlarged, null = even split
 };
+
+const TERM_FOCUS_MS = 700;      // fallback if transitionend never fires (reduced motion, stacked layout)
 
 let el = null;                 // page container
 let visibleCache = null;       // invalidated by anything that changes the row set
@@ -150,6 +153,7 @@ function termShellHtml() {
           <div class="term-card-hint">Протяните рамку по карте — скринер справа отфильтруется на лету. Клик по точке открывает разбор бумаги. Колесо — зум, Shift+перетаскивание — сдвиг.</div>
           <button type="button" class="chip-clear" id="termClearBrush" hidden>Сбросить выделение</button>
           <button type="button" class="chip-clear" id="termResetZoom" hidden>Сбросить зум</button>
+          <button type="button" class="chip-clear" data-focus-btn="map"></button>
         </div>
         <div class="map-root" id="termMapRoot"></div>
         <div class="map-legend">
@@ -164,6 +168,7 @@ function termShellHtml() {
         <div class="term-card-head term-screener-head">
           <div class="term-card-title">Скринер</div>
           <div class="term-card-hint" id="termScreenerCount"></div>
+          <button type="button" class="chip-clear" data-focus-btn="screener"></button>
         </div>
         <div class="term-chips" id="termChips"></div>
         <div class="screener-scroll" id="termScroll">
@@ -276,7 +281,17 @@ function termRenderChrome() {
   document.querySelectorAll('[data-layout-btn]').forEach(b => b.classList.toggle('is-on', b.dataset.layoutBtn === S.layout));
   document.querySelectorAll('[data-axis]').forEach(b => b.classList.toggle('is-on', b.dataset.axis === S.axis));
   termRenderChips();
-  document.getElementById('termSplit').dataset.layout = S.layout;
+  const split = document.getElementById('termSplit');
+  split.dataset.layout = S.layout;
+  if (S.focus) split.dataset.focus = S.focus; else delete split.dataset.focus;
+  // Enlarge controls: the side-by-side layout only. The enlarged card's own
+  // button returns to the even split; the other card's button swaps.
+  document.querySelectorAll('[data-focus-btn]').forEach(btn => {
+    const which = btn.dataset.focusBtn;
+    btn.hidden = S.layout !== 'A';
+    btn.textContent = S.focus === which ? '⇆ Вернуть сплит' : which === 'map' ? '⤢ Развернуть карту' : '⤢ Развернуть таблицу';
+    btn.setAttribute('aria-pressed', S.focus === which ? 'true' : 'false');
+  });
   document.getElementById('termMapTitle').textContent = TerminalMap.title(S.axis);
   document.getElementById('termClearBrush').hidden = !S.brush;
   document.getElementById('termResetZoom').hidden = !S.zoomed;
@@ -337,6 +352,33 @@ function termOpenBond(secid) {
   termRefresh({ chrome: false });
 }
 
+// Enlarge the map or the table (captain's request, 2026-09-17): the split's
+// columns animate (app.css, the design's .22,1,.36,1 ease), the map's SVG
+// keeps its height while they move, and the map is redrawn at its new width
+// exactly once when the transition ends, easing into its new height -- the
+// frame keeps the same bonds selected (TerminalMap rescales it).
+let termFocusTimer = 0;
+function termSetFocus(next) {
+  if (S.focus === next) return;
+  const split = document.getElementById('termSplit');
+  S.focus = next;
+  TerminalMap.holdResize();
+  let finished = false;
+  const done = () => {
+    if (finished) return;
+    finished = true;
+    split.removeEventListener('transitionend', onEnd);
+    clearTimeout(termFocusTimer);
+    TerminalMap.releaseResize();
+    termRefresh({ rows: false });   // the row set is unchanged; only the map moved
+  };
+  const onEnd = ev => { if (ev.target === split && ev.propertyName === 'grid-template-columns') done(); };
+  split.addEventListener('transitionend', onEnd);
+  clearTimeout(termFocusTimer);
+  termFocusTimer = setTimeout(done, TERM_FOCUS_MS);
+  termRenderChrome();
+}
+
 // ── wiring ──────────────────────────────────────────────────────────────
 function termOnClick(e) {
   const t = e.target;
@@ -344,7 +386,10 @@ function termOnClick(e) {
   // NB: [data-layout-btn], not [data-layout] -- #termSplit carries
   // data-layout for CSS and would swallow every click inside the split.
   const lay = t.closest('[data-layout-btn]');
-  if (lay) { S.layout = lay.dataset.layoutBtn; S.brush = null; termRenderChrome(); TerminalMap.rebuild(false); termRefresh(); return; }
+  if (lay) { S.layout = lay.dataset.layoutBtn; S.brush = null; S.focus = null; termRenderChrome(); TerminalMap.rebuild(false); termRefresh(); return; }
+
+  const focus = t.closest('[data-focus-btn]');
+  if (focus) { termSetFocus(S.focus === focus.dataset.focusBtn ? null : focus.dataset.focusBtn); return; }
 
   const ax = t.closest('[data-axis]');
   if (ax) { S.axis = ax.dataset.axis; S.brush = null; S.zoomed = false; TerminalMap.rebuild(true); termRefresh(); return; }

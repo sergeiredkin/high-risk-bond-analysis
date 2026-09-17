@@ -20,6 +20,16 @@
 // "—" for every live number, with a count in the composition note. It is
 // never back-filled from the stored snapshot -- see the "ничего не
 // выдумываем" rule in core.js.
+//
+// Removing a position (captain's request, 2026-09-17): the "−" on a row, or
+// «Убрать» on a failed check, takes a bond out of the portfolio on this page
+// and every tile, share and check is recomputed over what is left. For a
+// preset the removal is kept in this browser's localStorage under the preset
+// TYPE, so it survives the half-hourly dashboard rebuild and a later rebuild
+// of the preset itself; the pipeline's portfolio in the database is not
+// changed (a static page cannot write to it). For the basket, removing is
+// taking the bond out of the basket. Every removal is listed under the
+// composition and can be undone.
 
 const PF_PALETTE = ['#c67139', '#7a8a5e', '#b2622d', '#8fa073', '#8c491a',
                     '#aebf92', '#d67f48', '#728157', '#f6a06b', '#56633f'];
@@ -35,11 +45,37 @@ const PF = {
   expanded: false,
 };
 
+// Positions the user took out: { 'preset:conservative': [secid, …], basket: [secid, …] }.
+const PF_REMOVED = (() => {
+  const KEY = 'kl.pf.removed';
+  let map = {};
+  try { map = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { map = {}; }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(map)); } catch (e) { /* storage unavailable: removal lasts this session */ } }
+  return {
+    list: key => (key && map[key] ? map[key].slice() : []),
+    add(key, ids) { if (!key) return; map[key] = Array.from(new Set((map[key] || []).concat(ids))); save(); },
+    restore(key, ids) {
+      if (!key || !map[key]) return;
+      map[key] = map[key].filter(id => !ids.includes(id));
+      if (!map[key].length) delete map[key];
+      save();
+    },
+  };
+})();
+
+// Keyed by preset TYPE, not portfolio id: a rebuilt preset gets a new id but is
+// the same portfolio to the person who removed a bond from it.
+function pfRemovalKey() {
+  if (PF.source === 'basket') return 'basket';
+  const cur = pfCurrent();
+  return cur ? `preset:${cur.preset_type || cur.id}` : null;
+}
+
 // ── position model ──────────────────────────────────────────────────────
 // { secid, weight, bond|null, stored|null }. `bond` is the live model row;
 // `stored` is the allocation row a preset carries, kept only for the name
 // of a position that has dropped out of the snapshot.
-function pfPositions() {
+function pfAllPositions() {
   if (PF.source === 'basket') {
     const ids = BASKET.ids();
     const w = ids.length ? 1 / ids.length : 0;
@@ -51,6 +87,24 @@ function pfPositions() {
     secid: b.isin, weight: b.weight,
     bond: BOND_BY_SECID.get(b.isin) || null, stored: b,
   }));
+}
+
+// The positions every tile, share and check is computed over: the preset
+// minus what the user removed (the basket's removals already left the basket).
+function pfPositions() {
+  const removed = PF_REMOVED.list(pfRemovalKey());
+  return pfAllPositions().filter(p => !removed.includes(p.secid));
+}
+
+// The removed positions, for the restore list.
+function pfRemovedPositions() {
+  const key = pfRemovalKey();
+  const removed = PF_REMOVED.list(key);
+  if (PF.source === 'basket') {
+    return removed.filter(id => !BASKET.has(id))
+      .map(id => ({ secid: id, weight: null, bond: BOND_BY_SECID.get(id) || null, stored: null }));
+  }
+  return pfAllPositions().filter(p => removed.includes(p.secid));
 }
 
 function pfCurrent() { return PF_PRESETS.find(p => p.id === PF.source) || null; }
@@ -91,6 +145,7 @@ function pfStats(positions) {
   const inns = new Set(positions.map(p => p.bond && p.bond.inn).filter(Boolean));
   const sectors = new Set(positions.map(p => p.bond && p.bond.sector).filter(Boolean));
   const noData = positions.filter(p => !p.bond).length;
+  const removedN = pfRemovedPositions().length;
 
   const lossNote = aey != null && base != null
     ? `AEY до потерь ${fmtPct(base, 2)} минус ожидаемые потери ${fmtNum(base - aey, 2)} п.п.`
@@ -117,7 +172,8 @@ function pfStats(positions) {
         : 'балл РСБУ считается только для эмитентов под мониторингом' },
     { k: 'Бумаг', v: fmtNum(positions.length, 0),
       note: `${inns.size} ${plural(inns.size, ['эмитент', 'эмитента', 'эмитентов'])} · ${sectors.size} ${plural(sectors.size, ['отрасль', 'отрасли', 'отраслей'])}`
-        + (noData ? ` · ${noData} без котировки` : '') },
+        + (noData ? ` · ${noData} без котировки` : '')
+        + (removedN ? ` · ${removedN} ${plural(removedN, ['убрана', 'убраны', 'убрано'])} вами` : '') },
   ];
 }
 
@@ -164,8 +220,28 @@ function pfCompositionHtml(positions) {
         <div class="pf-row-w">${fmtNum(p.weight / total * 100, 1)}%</div>
         <div class="pf-row-aey">${b && b.aey != null ? `AEY ${fmtPct(b.aey, 1)}` : DASH}</div>
       </div>
+      <button type="button" class="pick" data-pf-remove="${escapeHtml(p.secid)}" title="Убрать из портфеля" aria-label="Убрать ${escapeHtml(pfName(p))} из портфеля">−</button>
     </div>`;
   }).join('');
+
+  const removed = pfRemovedPositions();
+  const removedHtml = removed.length ? `
+    <div class="pf-card-note">Убрано вами: ${fmtNum(removed.length, 0)} ${plural(removed.length, ['позиция', 'позиции', 'позиций'])}. Доли, доходность и проверки выше пересчитаны без ${plural(removed.length, ['неё', 'них', 'них'])}. ${PF.source === 'basket'
+      ? 'Бумаги убраны из корзины.'
+      : 'Хранится в этом браузере и переживает пересборку дашборда; портфель конвейера в базе не меняется.'} «+» возвращает позицию.</div>
+    <div class="pf-rows">${removed.map(p => {
+      const b = p.bond;
+      return `<div class="pf-row" data-pf-dead="1">
+        <div class="pf-row-swatch" style="background:var(--color-neutral-400)"></div>
+        <div class="pf-row-main">
+          <div class="pf-row-t">${escapeHtml(pfName(p))}</div>
+          <div class="pf-row-sub">${escapeHtml(b ? [b.n, b.rating || 'без рейтинга', b.yieldZone === 'negative_ev' ? 'красная зона' : null].filter(Boolean).join(' · ') : 'нет в последнем снимке МосБиржи')}</div>
+        </div>
+        <div class="pf-row-right"><div class="pf-row-aey">убрана</div></div>
+        <button type="button" class="pick" data-pf-restore="${escapeHtml(p.secid)}" title="Вернуть в портфель" aria-label="Вернуть ${escapeHtml(pfName(p))} в портфель">+</button>
+      </div>`;
+    }).join('')}</div>
+    ${removed.length > 1 ? `<button type="button" class="pf-more" data-pf-restore="${escapeHtml(removed.map(p => p.secid).join(','))}">Вернуть все ${fmtNum(removed.length, 0)}</button>` : ''}` : '';
 
   const rest = sorted.length - shown.length;
   const more = rest > 0 || PF.expanded
@@ -178,6 +254,7 @@ function pfCompositionHtml(positions) {
     <div class="pf-bar">${bars}</div>
     <div class="pf-rows">${rows}</div>
     ${more}
+    ${removedHtml}
   </section>`;
 }
 
@@ -330,6 +407,7 @@ function pfChecks(positions) {
   const red = positions.filter(p => p.bond && p.bond.yieldZone === 'negative_ev');
   const caution = positions.filter(p => p.bond && p.bond.yieldZone === 'caution');
   out.push({ g: red.length ? '!' : caution.length ? 'i' : '✓', tone: red.length ? 'warn' : caution.length ? 'neutral' : 'ok',
+    ids: red.map(p => p.secid),
     t: red.length
       ? `${red.length} ${plural(red.length, ['позиция', 'позиции', 'позиций'])} в красной зоне доходности (${red.slice(0, 3).map(p => p.bond.t).join(', ')}) — модель считает ожидаемую доходность отрицательной.`
       : caution.length
@@ -342,6 +420,7 @@ function pfChecks(positions) {
   const evInns = new Set(ev.map(p => p.bond.inn));
   const evNames = Array.from(new Set(ev.map(p => p.bond.n)));
   out.push({ g: ev.length ? '!' : '✓', tone: ev.length ? 'warn' : 'ok',
+    ids: ev.map(p => p.secid),
     t: ev.length
       ? `${evInns.size} ${plural(evInns.size, ['эмитент', 'эмитента', 'эмитентов'])} с серьёзным событием или флагом детектора: ${evNames.slice(0, 3).join(', ')}${evNames.length > 3 ? ' и др' : ''}.`
       : 'Ни у одного эмитента нет серьёзного события за 30 дней и флагов детектора на сегодня.' });
@@ -350,6 +429,7 @@ function pfChecks(positions) {
   const thin = positions.filter(p => p.bond && p.bond.vol != null && p.bond.vol < LOW_LIQ_VOLUME_RUB);
   const noVol = positions.filter(p => !p.bond || p.bond.vol == null);
   out.push({ g: thin.length ? '!' : '✓', tone: thin.length ? 'warn' : 'ok',
+    ids: thin.map(p => p.secid),
     t: (thin.length
       ? `${thin.length} ${plural(thin.length, ['позиция', 'позиции', 'позиций'])} с оборотом ниже ${fmtRub(LOW_LIQ_VOLUME_RUB)} за сессию — выход займёт несколько дней.`
       : `Все позиции с котировкой прошли порог оборота ${fmtRub(LOW_LIQ_VOLUME_RUB)} за сессию.`)
@@ -365,6 +445,7 @@ function pfChecks(positions) {
     });
     const unrated = positions.filter(p => p.bond && !p.bond.rating).length;
     out.push({ g: below.length ? '!' : '✓', tone: below.length ? 'warn' : 'ok',
+      ids: below.map(p => p.secid),
       t: (below.length
         ? `${below.length} ${plural(below.length, ['позиция', 'позиции', 'позиций'])} ниже рейтингового пола пресета ${cons.min_rating}: ${below.slice(0, 3).map(p => p.bond.t).join(', ')}.`
         : `Ни одна позиция не опускается ниже рейтингового пола пресета ${cons.min_rating}.`)
@@ -381,9 +462,14 @@ function pfChecks(positions) {
   return out;
 }
 
+// A failed check that names positions offers to take exactly those out.
 function pfChecksHtml(positions) {
-  const items = pfChecks(positions).map(c =>
-    `<div class="pf-check"><div class="pf-check-g is-${c.tone}">${escapeHtml(c.g)}</div><div class="pf-check-t">${escapeHtml(c.t)}</div></div>`).join('');
+  const items = pfChecks(positions).map(c => {
+    const act = c.ids && c.ids.length
+      ? ` <button type="button" class="chip-clear" data-pf-remove="${escapeHtml(c.ids.join(','))}">Убрать ${fmtNum(c.ids.length, 0)} из портфеля</button>`
+      : '';
+    return `<div class="pf-check"><div class="pf-check-g is-${c.tone}">${escapeHtml(c.g)}</div><div class="pf-check-t">${escapeHtml(c.t)}${act}</div></div>`;
+  }).join('');
   return `<section class="pf-checks">
     <div class="pf-checks-kicker">Проверка портфеля</div>
     ${items}
@@ -433,7 +519,12 @@ function pfRender() {
   if (head) head.innerHTML = pfSourceButtons();
   if (!body) return;
 
-  if (!positions.length) { body.innerHTML = pfEmptyHtml(); return; }
+  if (!positions.length) {
+    // everything removed: keep the restore list reachable instead of an empty page
+    body.innerHTML = pfRemovedPositions().length
+      ? `<div class="pf-split">${pfCompositionHtml(positions)}</div>` : pfEmptyHtml();
+    return;
+  }
 
   body.innerHTML = `
     <div class="stat-grid">
@@ -462,6 +553,25 @@ function pfOnClick(e) {
     return;
   }
   if (e.target.closest('#pfMore')) { PF.expanded = !PF.expanded; pfRender(); return; }
+
+  const rm = e.target.closest('[data-pf-remove]');
+  if (rm) {
+    e.stopPropagation();
+    const ids = rm.dataset.pfRemove.split(',');
+    PF_REMOVED.add(pfRemovalKey(), ids);
+    if (PF.source === 'basket') ids.forEach(id => { if (BASKET.has(id)) BASKET.toggle(id); });  // onChange re-renders
+    pfRender();
+    return;
+  }
+  const back = e.target.closest('[data-pf-restore]');
+  if (back) {
+    e.stopPropagation();
+    const ids = back.dataset.pfRestore.split(',');
+    PF_REMOVED.restore(pfRemovalKey(), ids);
+    if (PF.source === 'basket') ids.forEach(id => { if (!BASKET.has(id) && BOND_BY_SECID.has(id)) BASKET.toggle(id); });
+    pfRender();
+    return;
+  }
 
   const row = e.target.closest('[data-pf-secid]');
   if (row && !row.dataset.pfDead) {

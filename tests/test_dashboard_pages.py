@@ -409,3 +409,41 @@ def test_rates_page_reads_thresholds_from_the_export():
     assert "RT_OFZ.max_curve_gap_bp" in js                   # ofz_pipeline.MAX_CURVE_GAP_BP
     assert "match_max_diff_years" in js                      # the premium's duration-match limit
     assert "pd_rating" not in js and "aey_base\b" not in js  # premium comes computed, not re-derived
+
+
+# ---- captain's review requests, 2026-09-17 ----------------------------------
+
+def test_portfolio_positions_can_be_removed_and_restored():
+    """Remove a bond that no longer meets his criteria, from a row or from a
+    failed check; every tile, share and check is computed over what is left;
+    the removal survives a dashboard rebuild (localStorage) and a rebuilt
+    preset (keyed by preset type, not id); and it can be undone."""
+    pf = (SRC / "pages" / "portfolio.js").read_text(encoding="utf-8")
+    code = _strip_comments(pf)
+    assert "'kl.pf.removed'" in code
+    assert "`preset:${cur.preset_type || cur.id}`" in code
+    # every computation goes through the filtered position list
+    assert "return pfAllPositions().filter(p => !removed.includes(p.secid));" in code
+    assert "const positions = pfPositions();" in code
+    # the controls: per row, per failed check, and the way back
+    assert 'data-pf-remove="${escapeHtml(p.secid)}"' in code
+    assert 'data-pf-remove="${escapeHtml(c.ids.join(\',\'))}"' in code
+    assert 'data-pf-restore="${escapeHtml(p.secid)}"' in code
+    assert "PF_REMOVED.restore(pfRemovalKey(), ids)" in code
+    # still only one stored field read off the allocation (units trap)
+    assert "aey_base" not in code
+
+
+def test_map_and_screener_can_be_enlarged_with_an_animated_split():
+    terminal = _strip_comments((SRC / "pages" / "terminal.js").read_text(encoding="utf-8"))
+    assert 'data-focus-btn="map"' in terminal and 'data-focus-btn="screener"' in terminal
+    assert "⇆ Вернуть сплит" in terminal                          # the way back to the even split
+    assert "S.focus = null;" in terminal                          # a layout switch resets it
+    assert "TerminalMap.holdResize();" in terminal and "TerminalMap.releaseResize();" in terminal
+    css = (SRC / "app.css").read_text(encoding="utf-8")
+    assert "transition: grid-template-columns .5s cubic-bezier(.22,1,.36,1)" in css   # the design's own ease
+    assert '.term-split[data-layout="A"][data-focus="map"]' in css
+    assert '.term-split[data-layout="A"][data-focus="screener"]' in css
+    assert "prefers-reduced-motion" in css
+    tmap = (SRC / "pages" / "terminal-map.js").read_text(encoding="utf-8")
+    assert "if (resizeHeld) return;" in tmap                     # no per-frame redraw during the move

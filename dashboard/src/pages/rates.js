@@ -142,9 +142,13 @@ function rtStats() {
   } else {
     const others = pfs.slice(1).map(o => o.by_scenario[RT.scen] && o.by_scenario[RT.scen].premium_pp != null
       ? `${o.name} ${rtSigned(o.by_scenario[RT.scen].premium_pp, 1)}` : null).filter(Boolean);
+    // Портфель lets him remove positions in this browser; this number is the
+    // pipeline's preset as built, and says so when the two differ.
+    const removedN = typeof PF_REMOVED !== 'undefined' ? PF_REMOVED.list(`preset:${first.preset_type}`).length : 0;
     tiles.push({ k: `Премия к ОФЗ · ${first.name}`, v: `${rtSigned(p.premium_pp, 1)} п.п.`,
       note: `AEY после потерь ${fmtPct(p.pf_aey_pct, 1)} против ${first.ofz.short_name} ${fmtPct(p.ofz_aey_pct, 1)} (дюр. ${fmtNum(first.avg_mod_dur, 1)} и ${fmtNum(first.ofz.mod_dur, 1)} г.)`
-        + (others.length ? ` · ${others.join(' · ')}` : '') });
+        + (others.length ? ` · ${others.join(' · ')}` : '')
+        + (removedN ? ` · пресет как собран конвейером, с ${removedN} ${plural(removedN, ['позицией', 'позициями', 'позициями'])}, убранными вами на «Портфеле»` : '') });
   }
   return `<div class="stat-grid">${tiles.map(t => `<div class="stat${t.green ? ' is-green' : ''}">
       <div class="stat-k">${escapeHtml(t.k)}</div><div class="stat-v">${escapeHtml(t.v)}</div><div class="stat-note">${escapeHtml(t.note)}</div>
