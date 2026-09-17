@@ -534,12 +534,18 @@ def refresh_calendar(con) -> int:
 def run_expectations(backfill: bool = False) -> dict[str, dict[str, Any]]:
     """Refresh every source; one failure never stops the others. Returns
     {source: {ok, result|error}}. `backfill` downloads full histories (key
-    rate since 2013, the last three ОНЕГДКП editions, every document body)."""
+    rate since 2013, the last three ОНЕГДКП editions, every document body);
+    it is switched on automatically while no ОНЕГДКП edition is stored."""
     con = db.connect()
     db.init_db(con)
     db.init_rates(con)
     db.init_cbr(con)
     db.init_pipeline_health(con)
+    # A store that has never held a scenario edition gets the whole history on
+    # its first cron run -- the page is about how expectations moved, and a
+    # first day with only today's numbers would not show that.
+    if not backfill and not db.rate_expectation_versions(con, "ondkp"):
+        backfill = True
     steps = [
         ("calendar", lambda: refresh_calendar(con)),
         ("key_rate", lambda: refresh_key_rate(con, full=backfill)),

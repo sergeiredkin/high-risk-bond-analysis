@@ -63,7 +63,7 @@ from typing import Any
 
 import requests
 
-from .health import log_health
+from .health import log_health, log_health_once_today
 from .store import db
 
 MOEX_STYLE_UA = {"User-Agent": "hybond/0.1 (research)"}
@@ -806,8 +806,7 @@ def get_schedule(con=None) -> list[dict]:
     not have yet -- so a fresh install, or a store that has never fetched
     the calendar, still has the 2026 dates. Oldest first."""
     by_date = {m["date"]: dict(m) for m in CBR_MEETINGS_2026}
-    if con is not None:
-        db.init_rates(con)
+    if con is not None and db.has_table(con, "cbr_schedule"):
         for m in schedule_from_events(db.cbr_schedule_events(con)):
             fallback = by_date.get(m["date"], {})
             by_date[m["date"]] = {"date": m["date"], "anchor": m["anchor"],
@@ -950,8 +949,9 @@ def catch_up_missed_meetings(today: date | None = None) -> list[dict]:
                      "comment": "comment_text"}[m["missing"]]
             found = field in result
             if m["missing"] == "decision" and not found:
-                log_health(con, 'cbr', 'ingest', 'warn', 'CBR_STALE',
-                           f'decision for past meeting {m["date"]} still not found on cbr.ru')
+                # once a day, not once per cron slot, for as long as it stays missing
+                log_health_once_today(con, 'cbr', 'ingest', 'warn', 'CBR_STALE',
+                                      f'decision for past meeting {m["date"]} still not found on cbr.ru')
             report.append({"date": m["date"], "missing": m["missing"], "found": found})
         return report
     finally:

@@ -87,10 +87,10 @@ def _mid(lo: float | None, hi: float | None) -> float | None:
 def current_key_rate(con) -> tuple[str | None, float | None]:
     """(as-of date, percent): the CBR daily key-rate series when stored,
     else the latest decided meeting's rate_after."""
-    db.init_rates(con)
-    daily = db.latest_key_rate(con)
-    row = con.execute("SELECT meeting_date, rate_after FROM cbr_meeting WHERE rate_after IS NOT NULL "
-                      "ORDER BY meeting_date DESC LIMIT 1").fetchone()
+    daily = db.latest_key_rate(con) if db.has_table(con, "key_rate_daily") else None
+    row = (con.execute("SELECT meeting_date, rate_after FROM cbr_meeting WHERE rate_after IS NOT NULL "
+                       "ORDER BY meeting_date DESC LIMIT 1").fetchone()
+           if db.has_table(con, "cbr_meeting") else None)
     if daily and (not row or daily[0] >= row["meeting_date"]):
         return daily
     return (row["meeting_date"], row["rate_after"]) if row else (None, None)
@@ -100,7 +100,8 @@ def latest_publication(con, source: str, scenario: str, year: int, period: str =
     """The newest stored publication version (by published date) of
     `source` that carries `scenario` for `year`: {lo, hi, mid, edition,
     published, status, url}."""
-    db.init_rates(con)
+    if not db.has_table(con, "rate_expectation"):
+        return None
     row = con.execute(
         "SELECT * FROM rate_expectation WHERE source=? AND scenario=? AND year=? AND period=? "
         "ORDER BY published DESC, status ASC LIMIT 1", (source, scenario, year, period)).fetchone()

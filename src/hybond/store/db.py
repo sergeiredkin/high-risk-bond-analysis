@@ -1839,9 +1839,16 @@ CREATE TABLE IF NOT EXISTS zcyc_snapshot (
 
 
 def init_rates(con) -> None:
-    """Create the rates/expectations tables (idempotent)."""
+    """Create the rates/expectations tables (idempotent). executescript()
+    commits any open transaction first -- read paths use has_table() instead."""
     con.executescript(RATES_SCHEMA)
     con.commit()
+
+
+def has_table(con, name: str) -> bool:
+    """Whether `name` exists, without writing schema (and without the
+    implicit COMMIT an executescript() would issue mid-transaction)."""
+    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
 
 def upsert_cbr_schedule_event(con, event_date: str, kind: str, is_anchor: bool = False,

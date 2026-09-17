@@ -313,4 +313,9 @@ def test_daily_run_schedules_ofz_and_the_cbr_catch_up_as_non_fatal_steps():
         at = text.index(step)
         assert "non-fatal" in text[at:at + 160]
     # OFZ runs after the universe screen (which stores the day's zero curve)
-    assert text.index("hybond universe") < text.index("python -m hybond ofz")
+    universe = text.index("python -m hybond universe")
+    assert universe < text.index("python -m hybond ofz")
+    # the publications the universe's AEY scenarios are read from load first
+    assert text.index("python -m hybond expectations") < universe
+    assert text.index("python -m hybond cbr --catch-up") < universe
+    assert "non-fatal" in text[text.index("python -m hybond expectations"):][:160]

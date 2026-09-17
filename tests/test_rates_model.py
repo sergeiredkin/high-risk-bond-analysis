@@ -340,3 +340,16 @@ def test_an_issue_far_off_the_zero_curve_is_not_a_benchmark(tmp_path):
     returns = ofz_pipeline.horizon_returns_for_snapshot(con, "2026-09-17", {"base": -0.025}, curve)
     assert "SU46012RMFS9" not in returns
     con.close()
+
+
+def test_reading_scenarios_writes_no_schema(tmp_path):
+    """get_rate_scenarios() runs inside other pipelines' transactions; an
+    executescript() there would COMMIT their pending writes early."""
+    con = db.connect(tmp_path / "t.sqlite")
+    db.init_cbr(con)
+    portfolio.get_rate_scenarios(con, today=TODAY)
+    from hybond import cbr_tracker
+    cbr_tracker.get_schedule(con)
+    assert not db.has_table(con, "rate_expectation")
+    assert not db.has_table(con, "cbr_schedule")
+    con.close()

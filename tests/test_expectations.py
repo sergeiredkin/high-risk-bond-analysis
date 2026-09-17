@@ -381,3 +381,27 @@ def test_a_meeting_fetch_files_its_documents_and_forecast_the_same_day(tmp_path)
 def test_every_source_page_is_an_official_cbr_url():
     for key, url in expectations.SOURCE_PAGES.items():
         assert url.startswith("https://www.cbr.ru/"), key
+
+
+def test_first_run_on_an_empty_store_loads_the_history(tmp_path, monkeypatch):
+    """No ОНЕГДКП edition stored yet -> the daily run backfills by itself;
+    once one is stored, daily runs stay light."""
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.sqlite")
+    seen = []
+    monkeypatch.setattr(expectations, "refresh_calendar", lambda con: 0)
+    monkeypatch.setattr(expectations, "refresh_key_rate", lambda con, full=False: seen.append(("key_rate", full)) or 0)
+    monkeypatch.setattr(expectations, "refresh_documents", lambda con, bodies=None: seen.append(("bodies", bodies)) or {})
+    monkeypatch.setattr(expectations, "refresh_survey", lambda con, force=False: 0)
+
+    def fake_ondkp(con, editions=1):
+        seen.append(("editions", editions))
+        db.replace_rate_expectations(con, "ondkp", "on_2027_2029", "2026-08-31",
+                                     [{"scenario": "base", "year": 2027, "lo": 10.5, "hi": 12.5}], status="draft")
+        return {}
+    monkeypatch.setattr(expectations, "refresh_ondkp", fake_ondkp)
+
+    expectations.run_expectations()
+    assert seen == [("key_rate", True), ("bodies", None), ("editions", 3)]
+    seen.clear()
+    expectations.run_expectations()
+    assert seen == [("key_rate", False), ("bodies", expectations.DAILY_DOCUMENT_BODIES), ("editions", 1)]

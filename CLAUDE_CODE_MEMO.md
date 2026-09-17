@@ -155,7 +155,7 @@ becomes a real watchlist entry via `hybond promote --inn INN --name NAME`
 
 | Time | Job | Purpose |
 |---|---|---|
-| 05:00, 10:00, 16:00 Mon–Fri | `daily_run.sh` | prices/spreads, universe screen, OFZ snapshot, promote report, scrape, market-notes, CBR check + catch-up, rate expectations, diff/factlists, dashboard rebuild |
+| 05:00, 10:00, 16:00 Mon–Fri | `daily_run.sh` | prices/spreads, rate expectations + CBR catch-up, universe screen, OFZ snapshot, promote report, scrape, market-notes, CBR check, diff/factlists, dashboard rebuild |
 | `:15` hourly, Mon–Fri | `hourly_filings.sh` | scrape + market-notes + `auto-classify --limit 30` |
 | `*/30 * * * *` | `rebuild_dashboard.sh` (project root) | classification-aware dashboard rebuild — see section 6 |
 | 06:47 daily | `cbonds_sample.sh` | Cbonds sample data |

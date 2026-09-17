@@ -110,9 +110,9 @@ function rtStats() {
   const svMed = rtSurveyStat(sv, hy, 'median'), svPrevMed = rtSurveyStat(svPrev, hy, 'median');
   const base = rtScenario('base');
 
-  const decisionNote = lastDecision
-    ? `${fmtDate(lastDecision.date)} — ${lastDecision.change_bp === 0 ? 'сохранить' : lastDecision.change_bp < 0 ? `снизить на ${-lastDecision.change_bp} б.п.` : `повысить на ${lastDecision.change_bp} б.п.`}`
-    : 'решений в выгрузке нет';
+  const step = lastDecision && lastDecision.change_bp;
+  const decisionNote = !lastDecision ? 'решений в выгрузке нет'
+    : `${fmtDate(lastDecision.date)} — ${step == null ? 'решение принято' : step === 0 ? 'сохранить' : step < 0 ? `снизить на ${-step} б.п.` : `повысить на ${step} б.п.`}`;
   const nextNote = next ? ` · следующее ${fmtDate(next.date)}${next.anchor ? ', опорное' : ''}` : ' · дат заседаний следующего года ЦБ ещё не опубликовал';
 
   const tiles = [
@@ -390,7 +390,8 @@ function rtSaidHtml() {
   const dc = (RE.decisions || [])[0];
   const items = [];
   if (dc) {
-    const what = dc.change_bp === 0 ? `сохранить ключевую ставку на уровне ${fmtPct(dc.rate, 2)}`
+    const what = dc.change_bp == null ? escapeHtml(dc.title || `ставка ${fmtPct(dc.rate, 2)}`)
+      : dc.change_bp === 0 ? `сохранить ключевую ставку на уровне ${fmtPct(dc.rate, 2)}`
       : `${dc.change_bp < 0 ? 'снизить' : 'повысить'} ключевую ставку на ${Math.abs(dc.change_bp)} б.п., до ${fmtPct(dc.rate, 2)}`;
     items.push({ g: 'i', tone: 'neutral', html: `Решение ${fmtDate(dc.date)}: ${escapeHtml(what)}.${rtLink(dc.url, 'Пресс-релиз')}` });
     if (dc.signal) items.push({ g: 'i', tone: 'neutral', html: `Сигнал: «${escapeHtml(dc.signal)}»${rtLink(dc.statement_url, 'Заявление Председателя')}` });

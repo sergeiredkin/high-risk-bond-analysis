@@ -45,6 +45,30 @@ echo "=== Rating backfill ===" >> "$LOG"
 PYTHONPATH=src python -m hybond backfill-ratings --agency nkr >> "$LOG" 2>&1
 echo "Rating backfill exit: $?" >> "$LOG"
 
+# Key-rate expectations (Ставка и ОФЗ page, 2026-09-17): CBR forecasts,
+# ОНЕГДКП scenarios, the macro survey, decision documents, the daily key rate
+# and the meeting calendar -- each from the official cbr.ru page it is updated
+# on, each stored with its history (the first run loads the whole history by
+# itself). Cheap when nothing is new: the survey workbook and forecast PDFs are
+# only downloaded when a new one appears. Placed BEFORE `hybond universe`,
+# whose AEY scenarios are read from these publications (stress =
+# «Проинфляционный», bull = «Дезинфляционный», aey_risky = «Рисковый»).
+# Network step, non-fatal; every source fails independently.
+echo "=== Rate expectations ===" >> "$LOG"
+PYTHONPATH=src python -m hybond expectations >> "$LOG" 2>&1 \
+    || echo "expectations step failed (non-fatal)" >> "$LOG"
+
+# CBR catch-up (2026-09-17): check_and_fetch_today() further down only acts
+# on the exact calendar day, so a day the machine was off loses that meeting
+# for good -- the 11.09.2026 decision was lost exactly that way (no runs 5-13
+# Sep). This re-fetches any recent past meeting whose decision, résumé or
+# comment is still missing, from the schedule the step above just refreshed.
+# Before `universe` for the same reason: the current key rate feeds the AEY
+# deltas. Network step, non-fatal.
+echo "=== CBR catch-up ===" >> "$LOG"
+PYTHONPATH=src python -m hybond cbr --catch-up >> "$LOG" 2>&1 \
+    || echo "cbr catch-up failed (non-fatal)" >> "$LOG"
+
 # Universe snapshot: full MOEX corporate-bond screen + G-spread + mispricing.
 # The SECID->ИНН emitent map is cached (emitent_map table) and only
 # re-paginated weekly -- force that refresh on Sundays (same cron slot as
@@ -135,25 +159,6 @@ PYTHONPATH=src python3 -c "
 from hybond.cbr_tracker import check_and_fetch_today
 check_and_fetch_today()
 " >> "$LOG" 2>&1
-
-# CBR catch-up (2026-09-17): check_and_fetch_today() above only acts on the
-# exact calendar day, so a day the machine was off loses that meeting for
-# good -- the 11.09.2026 decision was lost exactly that way (no runs 5-13 Sep).
-# This re-fetches any recent past meeting whose decision, résumé or comment
-# is still missing. Network step, non-fatal.
-echo "=== CBR catch-up ===" >> "$LOG"
-PYTHONPATH=src python -m hybond cbr --catch-up >> "$LOG" 2>&1 \
-    || echo "cbr catch-up failed (non-fatal)" >> "$LOG"
-
-# Key-rate expectations (Ставка и ОФЗ page, 2026-09-17): CBR forecasts,
-# ОНЕГДКП scenarios, the macro survey, decision documents, the daily key rate
-# and the meeting calendar -- each from the official cbr.ru page it is updated
-# on, each stored with its history. Cheap when nothing is new (the survey
-# workbook and forecast PDFs are only downloaded when a new one appears).
-# Network step, non-fatal; every source fails independently.
-echo "=== Rate expectations ===" >> "$LOG"
-PYTHONPATH=src python -m hybond expectations >> "$LOG" 2>&1 \
-    || echo "expectations step failed (non-fatal)" >> "$LOG"
 
 # Slice 2: change detection + factlists
 PYTHONPATH=src python -m hybond diff --factlist-dir data/factlists >> "$LOG" 2>&1
