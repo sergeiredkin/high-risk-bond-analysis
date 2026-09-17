@@ -1388,7 +1388,11 @@ def cbr_export(con, scenarios: dict) -> dict:
     db.init_cbr_diff(con)
 
     today = date.today().isoformat()
-    schedule = cbr_tracker.CBR_MEETINGS_2026
+    # The stored CBR calendar (cbr_tracker.get_schedule), limited to this
+    # year onward so the meeting timeline stays the same shape it had when
+    # it read the hardcoded 2026 list -- and does not go empty on 1 January.
+    year_start = f"{date.today().year}-01-01"
+    schedule = [m for m in cbr_tracker.get_schedule(con) if m["date"] >= year_start]
 
     latest = con.execute(
         "SELECT * FROM cbr_meeting WHERE rate_after IS NOT NULL "
@@ -1445,6 +1449,7 @@ def cbr_export(con, scenarios: dict) -> dict:
         meetings.append({
             "date": m["date"],
             "is_anchor": m["anchor"],
+            "resume_date": m.get("resume_date"),
             "rate_after": row.get("rate_after"),
             "rate_change_bp": row.get("rate_change_bp"),
             "is_past": m["date"] <= today,

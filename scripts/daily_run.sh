@@ -56,6 +56,15 @@ if [ "$(date +%u)" = "7" ]; then
 fi
 PYTHONPATH=src python -m hybond universe $UNIVERSE_FLAGS >> "$LOG" 2>&1
 
+# OFZ snapshot (Ставка и ОФЗ page, 2026-09-17): `hybond ofz` was never in any
+# cron script, so every OFZ number in both dashboards stayed frozen at the one
+# manual run of 2026-08-05. Placed right after `universe`, whose run also
+# stores today's CBR zero-coupon curve. ~60 MOEX bondization calls, so it is a
+# network step: non-fatal under `set -e`, like scrape/market-notes below.
+echo "=== OFZ snapshot ===" >> "$LOG"
+PYTHONPATH=src python -m hybond ofz >> "$LOG" 2>&1 \
+    || echo "ofz step failed (non-fatal)" >> "$LOG"
+
 # Watchlist health scan (2026-08-24): hard-demotes/soft-flags tier=1 issuers
 # off today's just-refreshed universe_snapshot/spread_snapshot. Placed here
 # (after `hybond universe`, not immediately after `hybond run` above) --
@@ -126,6 +135,15 @@ PYTHONPATH=src python3 -c "
 from hybond.cbr_tracker import check_and_fetch_today
 check_and_fetch_today()
 " >> "$LOG" 2>&1
+
+# CBR catch-up (2026-09-17): check_and_fetch_today() above only acts on the
+# exact calendar day, so a day the machine was off loses that meeting for
+# good -- the 11.09.2026 decision was lost exactly that way (no runs 5-13 Sep).
+# This re-fetches any recent past meeting whose decision, résumé or comment
+# is still missing. Network step, non-fatal.
+echo "=== CBR catch-up ===" >> "$LOG"
+PYTHONPATH=src python -m hybond cbr --catch-up >> "$LOG" 2>&1 \
+    || echo "cbr catch-up failed (non-fatal)" >> "$LOG"
 
 # Slice 2: change detection + factlists
 PYTHONPATH=src python -m hybond diff --factlist-dir data/factlists >> "$LOG" 2>&1

@@ -1373,13 +1373,33 @@ def cmd_cbr(args) -> int:
         print(cbr_tracker.generate_cron_entries(str(Path.cwd())))
         return 0
 
+    if args.refresh_schedule:
+        con = db.connect()
+        db.init_db(con)
+        n = cbr_tracker.refresh_schedule(con)
+        schedule = [m for m in cbr_tracker.get_schedule(con) if m["date"] >= f"{date.today().year}-01-01"]
+        con.close()
+        print(f"Stored {n} calendar events from {cbr_tracker.CALENDAR_URL}")
+        for m in schedule:
+            print(f"  {m['date']}  {'★ опорное' if m['anchor'] else '         '}  резюме {m['resume_date'] or '—'}")
+        return 0
+
+    if args.catch_up:
+        report = cbr_tracker.catch_up_missed_meetings()
+        if not report:
+            print("Nothing missed: every past meeting in the catch-up window is stored.")
+        for r in report:
+            print(f"  {r['date']}  missing {r['missing']:<8} -> {'found' if r['found'] else 'still not published'}")
+        return 0
+
     if args.list:
         con = db.connect()
         db.init_db(con)
         db.init_cbr(con)
+        schedule = cbr_tracker.get_schedule(con)
         print(f"{'Date':<12} {'Anchor':<7} {'Rate':<8} {'Change':<7} {'Press':<6} "
               f"{'Speech':<7} {'Résumé':<7} {'Forecast':<9} {'Comment':<8} {'Analysis'}")
-        for m in cbr_tracker.CBR_MEETINGS_2026:
+        for m in [m for m in schedule if m["date"] >= "2026-01-01"]:
             row = db.get_cbr_meeting(con, m["date"])
             row = dict(row) if row else {}
             def has(field):
@@ -1396,21 +1416,26 @@ def cmd_cbr(args) -> int:
     if args.fetch_all:
         from datetime import date as _date
         results = cbr_tracker.fetch_all_meetings()
-        past_meetings = [m for m in cbr_tracker.CBR_MEETINGS_2026
+        con = db.connect()
+        db.init_db(con)
+        past_meetings = [m for m in cbr_tracker.get_schedule(con)
                         if _date.fromisoformat(m["date"]) <= _date.today()]
+        con.close()
         for m, result in zip(past_meetings, results):
             _print_fetch_result(m["date"], m["anchor"], result)
             print()
         return 0
 
     if args.fetch:
-        meeting = next((m for m in cbr_tracker.CBR_MEETINGS_2026 if m["date"] == args.fetch), None)
-        if not meeting:
-            print(f"{args.fetch} is not in CBR_MEETINGS_2026 -- add it there first.", file=sys.stderr)
-            return 1
-        result = cbr_tracker.fetch_meeting(args.fetch, meeting["anchor"])
         con = db.connect()
         db.init_db(con)
+        meeting = next((m for m in cbr_tracker.get_schedule(con) if m["date"] == args.fetch), None)
+        if not meeting:
+            con.close()
+            print(f"{args.fetch} is not a scheduled meeting -- run `hybond cbr --refresh-schedule` "
+                  f"to load the CBR calendar first.", file=sys.stderr)
+            return 1
+        result = cbr_tracker.fetch_meeting(args.fetch, meeting["anchor"])
         cbr_tracker.store_meeting(con, result)
         con.close()
         _print_fetch_result(args.fetch, meeting["anchor"], result)
@@ -1438,8 +1463,8 @@ def cmd_cbr(args) -> int:
         _print_diff(dict(row))
         return 0
 
-    print("Specify --fetch YYYY-MM-DD, --fetch-all, --list, --diff YYYY-MM-DD, --diff-all, or --install-cron",
-          file=sys.stderr)
+    print("Specify --fetch YYYY-MM-DD, --fetch-all, --catch-up, --refresh-schedule, --list, "
+          "--diff YYYY-MM-DD, --diff-all, or --install-cron", file=sys.stderr)
     return 1
 
 
@@ -1818,11 +1843,16 @@ def main(argv=None) -> int:
     pc.add_argument("--fetch", metavar="YYYY-MM-DD",
                     help="fetch/backfill all available documents for one meeting date")
     pc.add_argument("--fetch-all", action="store_true",
-                    help="backfill every past 2026 meeting date")
+                    help="backfill every past scheduled meeting date")
+    pc.add_argument("--catch-up", action="store_true",
+                    help="re-fetch recent past meetings whose decision/résumé/comment is missing "
+                         "(a cron day the machine was off)")
+    pc.add_argument("--refresh-schedule", action="store_true",
+                    help="load the meeting calendar from cbr.ru/dkp/cal_mp/ into cbr_schedule")
     pc.add_argument("--list", action="store_true",
-                    help="show fetch status for every 2026 meeting date")
+                    help="show fetch status for every meeting date this year")
     pc.add_argument("--install-cron", action="store_true",
-                    help="print crontab entries for every upcoming 2026 meeting/résюме date")
+                    help="print crontab entries for every upcoming meeting/résюме date")
     pc.add_argument("--diff", metavar="YYYY-MM-DD",
                     help="show the stored meeting-over-meeting diff for one date")
     pc.add_argument("--diff-all", action="store_true",

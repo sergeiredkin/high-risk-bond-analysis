@@ -33,15 +33,25 @@ sentence ("...снизить/повысить ключевую ставку на
 rate_after AND rate_change_bp directly from the primary source, so
 rate_before never needs a separate lookup against the previous meeting.
 
-Forecast-table parsing is best-effort text extraction (pypdf) off the
-"Ключевая ставка, в среднем за год" and "Инфляция..." rows -- the PDF text
-layer occasionally fuses a footnote-reference digit onto the last number in
-a range (seen once: "14,5-14,61" for what the document's own footnote shows
-is "14,5-14,6" + footnote marker "1"). This is NOT auto-corrected: guessing
-which trailing digit is a footnote vs. real precision is exactly the kind of
-silent number-mangling this project avoids elsewhere. The raw extracted
-string is stored as-is; a human (or the analysis skill) should sanity-check
-it against the source PDF before trusting the last digit.
+Forecast-table parsing is text extraction (pypdf) off the "Ключевая ставка,
+в среднем за год" and "Инфляция..." rows. Two traps, both seen in every
+real document, not guessed at:
+
+  * The PDF text layer fuses the footnote-reference digit onto the number
+    it annotates: "14,5–14,61", "17,51", "19,21". Checked against all 11
+    forecasts published since 16.02.2024 (2026-09-17): the CBR prints the
+    key-rate average to exactly one decimal, and every second decimal digit
+    is that footnote marker. parse_rate_range() strips it; forecast_summary
+    keeps the raw text for anyone who wants to re-check.
+  * The table's columns are years, and which years depends on the vintage:
+    3 forecast years in February, 4 in July, and the first column moves
+    every January. Columns are mapped to the years printed in the table's
+    own header row, never by position -- a positional "index 1 is 2026"
+    would silently file the February 2027 forecast's 2027 range as 2026.
+
+The meeting schedule comes from the CBR calendar (cbr.ru/dkp/cal_mp/),
+stored in cbr_schedule by refresh_schedule(); CBR_MEETINGS_2026 below is
+only the fallback for a store that has never fetched it.
 """
 from __future__ import annotations
 
@@ -62,10 +72,12 @@ MATERIALS_INDEX_URL = f"{BASE}/dkp/mp_dec/decision_key_rate/"
 SEARCH_URL = f"{BASE}/search/"
 RAW_DIR = Path("data/raw/cbr")
 
-# 2026 meeting schedule (confirmed from the CBR calendar, cbr.ru/dkp/cal_mp/).
-# resume_date is CBR's own ~2-weeks-later target; actual publication can
-# drift a day or two (observed: scheduled 2026-07-02 for the 19 June
-# meeting, actually published 2026-07-01).
+CALENDAR_URL = f"{BASE}/dkp/cal_mp/"
+
+# Fallback 2026 schedule, used only until refresh_schedule() has stored the
+# CBR calendar (get_schedule() merges the two, the calendar winning). Four
+# résumé dates here were a day later than the calendar's own (01.04, 01.07,
+# 05.08, 23.09) -- the fetch then ran a day late rather than missing.
 CBR_MEETINGS_2026 = [
     {"date": "2026-02-13", "anchor": True, "resume_date": "2026-02-26"},
     {"date": "2026-03-20", "anchor": False, "resume_date": "2026-04-02"},
@@ -243,19 +255,149 @@ def _extract_row(text: str, label: str) -> list[str]:
     return [t for t in tokens if re.search(r"\d", t)]
 
 
+_RANGE_SPLIT_RE = re.compile(r"\s*[–—-]\s*")
+_ONE_NUMBER_RE = re.compile(r"^\d{1,3}(?:[.,]\d+)?$")
+
+
+def _strip_footnote(num: str) -> str:
+    """'14,61' -> '14,6'. The CBR prints key-rate averages to one decimal;
+    a second decimal digit is the footnote marker the PDF text layer fused
+    on (see module docstring). Integers and one-decimal values pass through."""
+    m = re.fullmatch(r"(\d{1,3})[.,](\d)(\d+)", num)
+    return f"{m.group(1)},{m.group(2)}" if m else num
+
+
+def parse_rate_range(token: str | None) -> tuple[float, float] | None:
+    """A CBR key-rate cell -> (low, high) in percent, footnote digits stripped.
+
+    Accepts every spelling seen in real documents: '14,5–14,61', '13,5-15,51',
+    '19,0 – 21,0', '14,0 –16,0', '17,51', '14.5-14.6'. A single value comes
+    back as (v, v). None for anything that is not one or two numbers."""
+    if not token:
+        return None
+    parts = [p for p in _RANGE_SPLIT_RE.split(token.strip()) if p]
+    if not 1 <= len(parts) <= 2 or not all(_ONE_NUMBER_RE.match(p) for p in parts):
+        return None
+    vals = [float(_strip_footnote(p).replace(",", ".")) for p in parts]
+    return (min(vals), max(vals))
+
+
+def format_rate_range(rng: tuple[float, float] | None, dash: str = "–") -> str | None:
+    """(14.5, 14.6) -> '14,5–14,6'; (17.5, 17.5) -> '17,5'. The spelling the
+    cbr_meeting range columns have always stored, footnote-free; `dash` lets
+    a caller keep the source document's own separator."""
+    if rng is None:
+        return None
+    lo, hi = (f"{v:.1f}".replace(".", ",") for v in rng)
+    return lo if lo == hi else f"{lo}{dash}{hi}"
+
+
+def forecast_table_years(forecast_text: str) -> list[int]:
+    """The years heading the forecast table, in column order -- the first is
+    the prior-year actual ('2025 (факт)'). Read from the text between the
+    table title and the key-rate row. [] when no header is present."""
+    idx = forecast_text.find("Ключевая ставка, в среднем за год")
+    if idx == -1:
+        return []
+    head_start = forecast_text.rfind("Основные параметры прогноза", 0, idx)
+    head = forecast_text[head_start if head_start != -1 else 0:idx]
+    first_row = head.find("Инфляция")
+    if first_row != -1:
+        head = head[:first_row]
+    years: list[int] = []
+    for y in re.findall(r"\b(20\d\d)\b", head):
+        if int(y) not in years:
+            years.append(int(y))
+    return years
+
+
+def forecast_rate_by_year(forecast_text: str) -> dict[int, tuple[float, float]]:
+    """{year: (low, high)} for the key-rate row, every column including the
+    prior-year actual, mapped through forecast_table_years(). {} when the
+    header years and the row's cells do not line up -- better no numbers
+    than numbers filed under the wrong year."""
+    years = forecast_table_years(forecast_text)
+    cells = _extract_row(forecast_text, "Ключевая ставка, в среднем за год")
+    if not years or len(years) != len(cells):
+        return {}
+    out = {}
+    for y, cell in zip(years, cells):
+        rng = parse_rate_range(cell)
+        if rng is not None:
+            out[y] = rng
+    return out
+
+
+_MONTHS_GEN = {"января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6, "июля": 7,
+               "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12}
+_REST_OF_YEAR_RE = re.compile(
+    r"с\s+1\s+января\s+по\s+(\d{1,2})\s+([а-я]+)\s+(\d{4})\s+года\s+средняя\s+ключевая\s+ставка\s+"
+    r"равна\s+(\d{1,2}[.,]\d)\s*%\s*,?\s*с\s+(\d{1,2})\s+([а-я]+)\s+до\s+конца\s+(\d{4})\s+года\s+"
+    r"средняя\s+ключевая\s+ставка\s+прогнозируется\s+в\s+диапазоне\s+"
+    r"(\d{1,2}[.,]\d)\s*[–—-]\s*(\d{1,2}[.,]\d)\s*%")
+
+
+def forecast_rest_of_year(forecast_text: str) -> dict | None:
+    """The forecast's footnote on the remainder of the current year:
+    «С учетом того, что с 1 января по 26 июля 2026 года средняя ключевая
+    ставка равна 15,0%, с 27 июля до конца 2026 года средняя ключевая ставка
+    прогнозируется в диапазоне 13,7–14,0%». Present in every forecast since
+    16.02.2024; written with a hyphen until February 2025 and an en dash
+    after. Returns {year, lo, hi, ytd_avg, rest_from} or None."""
+    flat = re.sub(r"\s+", " ", forecast_text)
+    m = _REST_OF_YEAR_RE.search(flat)
+    if not m:
+        return None
+    month = _MONTHS_GEN.get(m.group(6))
+    if not month:
+        return None
+    year = int(m.group(7))
+    return {
+        "year": year,
+        "lo": float(m.group(8).replace(",", ".")),
+        "hi": float(m.group(9).replace(",", ".")),
+        "ytd_avg": float(m.group(4).replace(",", ".")),
+        "rest_from": f"{year:04d}-{month:02d}-{int(m.group(5)):02d}",
+    }
+
+
 def extract_forecast_ranges(forecast_text: str) -> dict[str, str | None]:
-    """Row layout is (year-minus-1 факт, 2026, 2027, ..., longest horizon) --
-    index 0 is always the prior-year actual, index 1 is always 2026 (the
-    forecast's near year never moves), index 2 is 2027, and the LAST column
-    is whichever year is currently the far end of CBR's rolling horizon --
-    that's what 'rate_neutral' means here, not a fixed index."""
+    """The cbr_meeting range columns for one forecast PDF's text.
+
+    With the table header present (every real forecast), each column is
+    filed under the year printed above it: rate_2026_mid .. rate_2029_mid
+    get their own year's range (footnote-free, '14,5–14,6'), and a year the
+    forecast does not cover stays None. rate_neutral is the last column,
+    whichever year that is. inflation_forecast_2026 is the 2026 column of the
+    inflation row.
+
+    Header-less text (a hand-trimmed row, as older tests feed it) falls back
+    to the historical positional reading -- index 1 = 2026, index 2 = 2027 --
+    because nothing else is knowable from it."""
     rate_row = _extract_row(forecast_text, "Ключевая ставка, в среднем за год")
     infl_row = _extract_row(forecast_text, "Инфляция, в %, декабрь к декабрю")
+    years = forecast_table_years(forecast_text)
+
+    def cell(row: list[str], i: int) -> str | None:
+        if len(row) <= i:
+            return None
+        dash = "-" if "-" in row[i] and "–" not in row[i] else "–"
+        return format_rate_range(parse_rate_range(row[i]), dash)
+
+    if years and len(years) == len(rate_row):
+        col = {y: i for i, y in enumerate(years)}
+        out = {f"rate_{y}_mid": (cell(rate_row, col[y]) if y in col and col[y] > 0 else None)
+               for y in (2026, 2027, 2028, 2029)}
+        out["rate_neutral"] = cell(rate_row, len(rate_row) - 1) if len(rate_row) > 3 else None
+        infl_col = col.get(2026)
+        out["inflation_forecast_2026"] = (cell(infl_row, infl_col)
+                                          if infl_col and len(infl_row) == len(years) else None)
+        return out
     return {
-        "rate_2026_mid": rate_row[1] if len(rate_row) > 1 else None,
-        "rate_2027_mid": rate_row[2] if len(rate_row) > 2 else None,
-        "rate_neutral": rate_row[-1] if len(rate_row) > 3 else None,
-        "inflation_forecast_2026": infl_row[1] if len(infl_row) > 1 else None,
+        "rate_2026_mid": cell(rate_row, 1),
+        "rate_2027_mid": cell(rate_row, 2),
+        "rate_neutral": cell(rate_row, len(rate_row) - 1) if len(rate_row) > 3 else None,
+        "inflation_forecast_2026": cell(infl_row, 1),
     }
 
 
@@ -563,10 +705,101 @@ def store_meeting(con, result: dict[str, Any]) -> dict[str, Any]:
     return diff
 
 
+# --- schedule: the CBR calendar ----------------------------------------------
+
+_CAL_DAY_SPLIT = '<div class="main-events_day">'
+_CAL_DATE_RE = re.compile(
+    r'<div class="date[^"]*">\s*(\d{1,2})(?:&nbsp;|\s)+([а-я]+)(?:&nbsp;|\s)+(\d{4})(?:&nbsp;|\s)+года')
+_HREF_RE = re.compile(r'href="([^"]+)"[^>]*>([^<]*)<')
+
+
+def parse_calendar(html: str) -> list[dict]:
+    """Every dated event on cbr.ru/dkp/cal_mp/ (all year tabs at once):
+    [{event_date, kind, is_anchor, url}], kind in meeting/summary/comment.
+
+    A day block that names «Заседание Совета директоров» is a meeting; it is
+    an anchor (опорное) meeting when the same block lists «Среднесрочный
+    прогноз» -- the calendar prints that line, linked or not, only for
+    anchor meetings. «Резюме обсуждения» and «Комментарий к среднесрочному
+    прогнозу» are separate later days. URLs are present once published."""
+    import html as html_mod
+    events: list[dict] = []
+    for block in html.split(_CAL_DAY_SPLIT)[1:]:
+        m = _CAL_DATE_RE.search(block)
+        month = _MONTHS_GEN.get(m.group(2)) if m else None
+        if not m or not month:
+            continue
+        day = f"{int(m.group(3)):04d}-{month:02d}-{int(m.group(1)):02d}"
+        text = html_mod.unescape(_TAG_RE.sub(" ", block)).replace("\xa0", " ")
+        links = {html_mod.unescape(t).replace("\xa0", " ").strip(): u for u, t in _HREF_RE.findall(block)}
+
+        def link(prefix: str) -> str | None:
+            for label, u in links.items():
+                if label.startswith(prefix):
+                    return u if u.startswith("http") else BASE + u
+            return None
+
+        if "Заседание Совета директоров" in text:
+            events.append({"event_date": day, "kind": "meeting",
+                           "is_anchor": "Среднесрочный прогноз" in text, "url": link("Пресс-релиз")})
+        if "Резюме обсуждения" in text:
+            events.append({"event_date": day, "kind": "summary", "is_anchor": False,
+                           "url": link("Резюме обсуждения")})
+        if "Комментарий к" in text:
+            events.append({"event_date": day, "kind": "comment", "is_anchor": False,
+                           "url": link("Комментарий к")})
+    return events
+
+
+def schedule_from_events(events: list[dict]) -> list[dict]:
+    """Calendar events -> [{date, anchor, resume_date}] meetings, oldest
+    first. A meeting's résumé date is the first summary event after it and
+    before the next meeting; None when the calendar has not listed it."""
+    meetings = sorted((e for e in events if e["kind"] == "meeting"), key=lambda e: e["event_date"])
+    summaries = sorted(e["event_date"] for e in events if e["kind"] == "summary")
+    out = []
+    for i, m in enumerate(meetings):
+        nxt = meetings[i + 1]["event_date"] if i + 1 < len(meetings) else "9999-12-31"
+        resume = next((d for d in summaries if m["event_date"] < d < nxt), None)
+        out.append({"date": m["event_date"], "anchor": bool(m["is_anchor"]), "resume_date": resume})
+    return out
+
+
+def get_schedule(con=None) -> list[dict]:
+    """The meeting schedule every entry point uses: the stored CBR calendar
+    (cbr_schedule), with CBR_MEETINGS_2026 filling any date the store does
+    not have yet -- so a fresh install, or a store that has never fetched
+    the calendar, still has the 2026 dates. Oldest first."""
+    by_date = {m["date"]: dict(m) for m in CBR_MEETINGS_2026}
+    if con is not None:
+        db.init_rates(con)
+        for m in schedule_from_events(db.cbr_schedule_events(con)):
+            fallback = by_date.get(m["date"], {})
+            by_date[m["date"]] = {"date": m["date"], "anchor": m["anchor"],
+                                  "resume_date": m["resume_date"] or fallback.get("resume_date")}
+    return sorted(by_date.values(), key=lambda m: m["date"])
+
+
+def refresh_schedule(con) -> int:
+    """Fetch the CBR calendar and store every event it lists. Returns the
+    number of events stored; raises on a network error or an empty parse
+    (a layout change must be loud, not an empty schedule)."""
+    html = _get(CALENDAR_URL).text
+    events = parse_calendar(html)
+    if not any(e["kind"] == "meeting" for e in events):
+        raise ValueError("CBR calendar parse found no meetings; layout changed?")
+    db.init_rates(con)
+    today = date.today().isoformat()
+    for e in events:
+        db.upsert_cbr_schedule_event(con, e["event_date"], e["kind"], e["is_anchor"], e["url"], today)
+    con.commit()
+    return len(events)
+
+
 # --- cron entry points --------------------------------------------------------
 
-def _schedule_lookup() -> dict[str, dict]:
-    return {m["date"]: m for m in CBR_MEETINGS_2026}
+def _schedule_lookup(con=None) -> dict[str, dict]:
+    return {m["date"]: m for m in get_schedule(con)}
 
 
 def check_and_fetch_today() -> dict | None:
@@ -575,15 +808,19 @@ def check_and_fetch_today() -> dict | None:
     from .store import db
 
     today = date.today().isoformat()
-    schedule = _schedule_lookup()
+    con = db.connect()
+    db.init_db(con)
+    schedule = get_schedule(con)
+    con.close()
+    by_date = {m["date"]: m for m in schedule}
 
-    meeting = schedule.get(today)
+    meeting = by_date.get(today)
     action = None
     target_date = today
     if meeting:
         action = "meeting"
     else:
-        for m in CBR_MEETINGS_2026:
+        for m in schedule:
             if m["resume_date"] == today:
                 action, target_date = "resume", m["date"]
                 meeting = m
@@ -618,6 +855,74 @@ def check_and_fetch_today() -> dict | None:
     return {"action": action, "meeting_date": target_date, "result": result}
 
 
+# How far back catch_up_missed_meetings() looks. A decision missed for longer
+# than this is a manual `hybond cbr --fetch` job, not something to retry on
+# every cron slot forever.
+CATCH_UP_MEETING_DAYS = 60
+CATCH_UP_DOCUMENT_DAYS = 30
+
+
+def missed_meetings(con, today: date) -> list[dict]:
+    """Scheduled meetings the store is missing something for, as
+    [{date, anchor, missing}] with missing in decision/resume/comment:
+
+      decision -- the meeting is past (within CATCH_UP_MEETING_DAYS) and
+                  cbr_meeting has no rate_after for it;
+      resume   -- its résumé date is past (within CATCH_UP_DOCUMENT_DAYS)
+                  and resume_text is empty;
+      comment  -- an anchor meeting 14+ days past (within the same window)
+                  with no comment_text.
+
+    check_and_fetch_today() only acts on the exact calendar day, so a day
+    the machine was off (5-13 Sep 2026 lost the 11.09 decision) is never
+    revisited without this."""
+    db.init_cbr(con)
+    out = []
+    for m in get_schedule(con):
+        md = date.fromisoformat(m["date"])
+        if md > today:
+            continue
+        row = db.get_cbr_meeting(con, m["date"])
+        row = dict(row) if row else {}
+        missing = None
+        if row.get("rate_after") is None and (today - md).days <= CATCH_UP_MEETING_DAYS and md < today:
+            missing = "decision"
+        elif (m["resume_date"] and not row.get("resume_text")
+              and 0 <= (today - date.fromisoformat(m["resume_date"])).days <= CATCH_UP_DOCUMENT_DAYS):
+            missing = "resume"
+        elif (m["anchor"] and not row.get("comment_text")
+              and 14 <= (today - md).days <= 14 + CATCH_UP_DOCUMENT_DAYS):
+            missing = "comment"
+        if missing:
+            out.append({"date": m["date"], "anchor": m["anchor"], "missing": missing})
+    return out
+
+
+def catch_up_missed_meetings(today: date | None = None) -> list[dict]:
+    """Re-fetch every meeting missed_meetings() reports and store what the
+    CBR has published by now. Logs CBR_STALE when a past decision's press
+    release still cannot be found. Returns [{date, missing, found}]."""
+    today = today or date.today()
+    con = db.connect()
+    db.init_db(con)
+    try:
+        todo = missed_meetings(con, today)
+        report = []
+        for m in todo:
+            result = fetch_meeting(m["date"], m["anchor"])
+            store_meeting(con, result)
+            field = {"decision": "press_release_text", "resume": "resume_text",
+                     "comment": "comment_text"}[m["missing"]]
+            found = field in result
+            if m["missing"] == "decision" and not found:
+                log_health(con, 'cbr', 'ingest', 'warn', 'CBR_STALE',
+                           f'decision for past meeting {m["date"]} still not found on cbr.ru')
+            report.append({"date": m["date"], "missing": m["missing"], "found": found})
+        return report
+    finally:
+        con.close()
+
+
 def fetch_today_meeting() -> dict | None:
     """Dedicated meeting-day cron slot (14:00 MSK, after the 13:30 press
     release). Only acts if today is actually a scheduled meeting date.
@@ -626,12 +931,13 @@ def fetch_today_meeting() -> dict | None:
     same day (published ~2 weeks later) and are picked up by the separate
     résюме-day cron slot instead."""
     today = date.today().isoformat()
-    meeting = _schedule_lookup().get(today)
-    if not meeting:
-        return None
-    result = fetch_meeting(today, meeting["anchor"])
     con = db.connect()
     db.init_db(con)
+    meeting = _schedule_lookup(con).get(today)
+    if not meeting:
+        con.close()
+        return None
+    result = fetch_meeting(today, meeting["anchor"])
     store_meeting(con, result)
     con.close()
     return result
@@ -644,25 +950,26 @@ def fetch_today_resume() -> dict | None:
     meeting-day fetch (upsert merges, doesn't overwrite), so this call's
     real job is picking up résюме (and, for anchor meetings, the comment)."""
     today = date.today().isoformat()
-    meeting = next((m for m in CBR_MEETINGS_2026 if m["resume_date"] == today), None)
-    if not meeting:
-        return None
-    result = fetch_meeting(meeting["date"], meeting["anchor"])
     con = db.connect()
     db.init_db(con)
+    meeting = next((m for m in get_schedule(con) if m["resume_date"] == today), None)
+    if not meeting:
+        con.close()
+        return None
+    result = fetch_meeting(meeting["date"], meeting["anchor"])
     store_meeting(con, result)
     con.close()
     return result
 
 
 def fetch_all_meetings() -> list[dict]:
-    """Backfill every past meeting in CBR_MEETINGS_2026 (meeting_date <=
-    today). Used by `hybond cbr --fetch-all`."""
+    """Backfill every past scheduled meeting (meeting_date <= today). Used by
+    `hybond cbr --fetch-all`."""
     today = date.today()
     con = db.connect()
     db.init_db(con)
     results = []
-    for m in CBR_MEETINGS_2026:
+    for m in get_schedule(con):
         if date.fromisoformat(m["date"]) > today:
             continue
         result = fetch_meeting(m["date"], m["anchor"])
@@ -681,7 +988,7 @@ def compute_all_diffs() -> list[dict]:
     db.init_cbr(con)
     db.init_cbr_diff(con)
     diffs = []
-    for m in CBR_MEETINGS_2026:
+    for m in get_schedule(con):
         row = db.get_cbr_meeting(con, m["date"])
         if not row or not row["rate_after"]:
             continue
@@ -694,9 +1001,9 @@ def compute_all_diffs() -> list[dict]:
 
 
 def generate_cron_entries(project_root: str) -> str:
-    """Two crontab lines per 2026 meeting date, generated from
-    CBR_MEETINGS_2026 rather than hand-written so adding a year's schedule
-    is a one-line data change:
+    """Two crontab lines per meeting date, generated from get_schedule() (the
+    stored CBR calendar, CBR_MEETINGS_2026 as fallback) rather than
+    hand-written:
 
       - meeting_date, 14:00 MSK (11:00 UTC) -- after the 13:30 press
         release; fetches press release + speech (+ forecast if anchor)
@@ -710,7 +1017,11 @@ def generate_cron_entries(project_root: str) -> str:
     """
     today = date.today()
     lines = []
-    for m in CBR_MEETINGS_2026:
+    con = db.connect()
+    db.init_db(con)
+    schedule = get_schedule(con)
+    con.close()
+    for m in schedule:
         meeting_d = date.fromisoformat(m["date"])
         if meeting_d >= today:
             y, mo, d = m["date"].split("-")
@@ -720,8 +1031,8 @@ def generate_cron_entries(project_root: str) -> str:
                 f'PYTHONPATH=src python3 -c "from hybond.cbr_tracker import fetch_today_meeting; '
                 f'fetch_today_meeting()" >> {log} 2>&1'
             )
-        resume_d = date.fromisoformat(m["resume_date"])
-        if resume_d >= today:
+        resume_d = date.fromisoformat(m["resume_date"]) if m["resume_date"] else None
+        if resume_d and resume_d >= today:
             y, mo, d = m["resume_date"].split("-")
             log = f'data/logs/cbr_{y}{mo}{d}_resume.log'
             lines.append(

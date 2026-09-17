@@ -1452,7 +1452,10 @@ def init_universe(con) -> None:
             "ALTER TABLE universe_snapshot ADD COLUMN signal_excluded INTEGER DEFAULT 0")
     # mod_dur/aey_* added for the AEY scenario overlay (see portfolio.py) --
     # same retrofit pattern.
-    for col in ("mod_dur", "aey_base", "aey_stress", "aey_bull", "aey_base_risk_adj"):
+    # aey_risky: AEY under the CBR's «Рисковый» ОНЕГДКП scenario, kept out of
+    # aey_stress so a tail scenario does not recolour the whole market
+    # (captain's Q1, 2026-09-17). Same retrofit pattern.
+    for col in ("mod_dur", "aey_base", "aey_stress", "aey_bull", "aey_base_risk_adj", "aey_risky"):
         if col not in cols:
             con.execute(f"ALTER TABLE universe_snapshot ADD COLUMN {col} REAL")
     # vdo_scope: broad-ВДО-screen flag (rating-band-or-unrated + spread
@@ -1500,9 +1503,10 @@ def insert_universe_snapshot(con, **f) -> None:
             "tenor_yrs,rf_rate,g_spread_bp,yield_source,rating,"
             "implied_fair_spread_bp,mispricing_bp,in_watchlist,signal_excluded,"
             "mod_dur,aey_base,aey_stress,aey_bull,aey_base_risk_adj,vdo_scope,"
-            "coupon_period")
+            "coupon_period,aey_risky")
     f.setdefault("vdo_scope", 0)  # added after callers in older tests were written
     f.setdefault("coupon_period", None)  # added after callers in older tests were written
+    f.setdefault("aey_risky", None)  # added after callers in older tests were written
     placeholders = ",".join(f":{c}" for c in cols.split(","))
     con.execute(
         f"INSERT OR REPLACE INTO universe_snapshot({cols}) VALUES({placeholders})",
@@ -1581,13 +1585,22 @@ CREATE TABLE IF NOT EXISTS ofz_snapshot (
 
 def init_ofz(con) -> None:
     con.executescript(OFZ_SCHEMA)
+    # cashflows_json (Ставка и ОФЗ page, 2026-09-17): the remaining
+    # [years_from_snap, rub_per_face] schedule the YTM was solved on, so the
+    # horizon return can be priced off the real flows at export time
+    # (compute/ofz_carry.horizon_return) instead of coupon/price + a shift.
+    # NULL for floaters/linkers and for rows written before the column.
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(ofz_snapshot)")}
+    if "cashflows_json" not in cols:
+        con.execute("ALTER TABLE ofz_snapshot ADD COLUMN cashflows_json TEXT")
     con.commit()
 
 
 def upsert_ofz_snapshot(con, **f) -> None:
+    f.setdefault("cashflows_json", None)  # added after older callers were written
     cols = ("secid,snap_date,short_name,isin,board_id,instrument_type,mat_date,"
             "coupon_pct,face_value,last_pct,accrued_int_pct,dirty_price_pct,"
-            "ytm,mod_dur,convexity,tenor_yrs,volume,num_trades,yield_source")
+            "ytm,mod_dur,convexity,tenor_yrs,volume,num_trades,yield_source,cashflows_json")
     placeholders = ",".join(f":{c}" for c in cols.split(","))
     con.execute(
         f"INSERT OR REPLACE INTO ofz_snapshot({cols}) VALUES({placeholders})", f)
@@ -1756,6 +1769,223 @@ def upsert_cbr_meeting_diff(con, **f) -> None:
 def get_cbr_meeting_diff(con, meeting_date: str):
     return con.execute(
         "SELECT * FROM cbr_meeting_diff WHERE meeting_date=?", (meeting_date,)).fetchone()
+
+
+# --- Rates & expectations (Ставка и ОФЗ page, 2026-09-17) ------------------
+# What the CBR itself publishes about the key-rate path, kept with its history
+# so the dashboard can show how the Bank's and the analysts' expectations
+# moved publication by publication, not just the latest value. Every row
+# carries the official URL it was read from. See hybond/expectations.py.
+
+RATES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cbr_schedule (
+    event_date  TEXT NOT NULL,      -- ISO date
+    kind        TEXT NOT NULL,      -- 'meeting' | 'summary' | 'comment'
+    is_anchor   INTEGER DEFAULT 0,  -- meetings only: a Среднесрочный прогноз is due
+    url         TEXT,               -- the document link, once the CBR has published it
+    fetched_on  TEXT,
+    PRIMARY KEY (event_date, kind)
+);
+
+CREATE TABLE IF NOT EXISTS cbr_document (
+    meeting_date TEXT NOT NULL,     -- the board meeting the document belongs to
+    doc_type     TEXT NOT NULL,     -- 'press_release' | 'statement' | 'forecast' | 'summary' | 'comment'
+    published    TEXT,              -- ISO date the CBR lists for the document
+    title        TEXT,
+    url          TEXT NOT NULL,
+    text         TEXT,              -- body text where fetched; NULL when only the index row is known
+    fetched_on   TEXT,
+    PRIMARY KEY (meeting_date, doc_type)
+);
+
+CREATE TABLE IF NOT EXISTS rate_expectation (
+    source     TEXT NOT NULL,       -- 'cbr_forecast' | 'ondkp' | 'survey'
+    edition    TEXT NOT NULL,       -- forecast: meeting date; ondkp: 'on_2027_2029'; survey: 'YYYY-MM'
+    published  TEXT NOT NULL,       -- ISO date of this version of the publication
+    status     TEXT NOT NULL DEFAULT '',  -- ondkp: 'draft' | 'final'; '' elsewhere
+    scenario   TEXT NOT NULL,       -- CBR: 'base' | 'disinflation' | 'proinflation' | 'risk'; survey: statistic
+    period     TEXT NOT NULL DEFAULT 'year',  -- 'year' | 'rest_of_year' (forecast footnote)
+    year       INTEGER NOT NULL,
+    lo         REAL,                -- percent; lo == hi for a point value
+    hi         REAL,
+    ytd_avg    REAL,                -- rest_of_year only: the average from 1 January the footnote states
+    rest_from  TEXT,                -- rest_of_year only: first day of the forecast remainder
+    url        TEXT,
+    fetched_on TEXT,
+    PRIMARY KEY (source, edition, published, status, scenario, period, year)
+);
+
+CREATE TABLE IF NOT EXISTS expectation_source (
+    source         TEXT PRIMARY KEY, -- 'cbr_forecast' | 'ondkp' | 'survey' | 'key_rate' | 'calendar' | 'documents'
+    page_url       TEXT,             -- the official page the source is refreshed from
+    last_published TEXT,             -- newest publication date stored
+    last_ok        TEXT,             -- last successful fetch+parse (ISO datetime)
+    last_error     TEXT,             -- last failure detail, NULL once a fetch succeeds again
+    last_error_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS key_rate_daily (
+    rate_date TEXT PRIMARY KEY,
+    rate      REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS zcyc_snapshot (
+    snap_date TEXT NOT NULL,
+    tenor_yrs REAL NOT NULL,
+    rate      REAL NOT NULL,        -- decimal, as sources.fetch_cbr_zcyc returns it
+    PRIMARY KEY (snap_date, tenor_yrs)
+);
+"""
+
+
+def init_rates(con) -> None:
+    """Create the rates/expectations tables (idempotent)."""
+    con.executescript(RATES_SCHEMA)
+    con.commit()
+
+
+def upsert_cbr_schedule_event(con, event_date: str, kind: str, is_anchor: bool = False,
+                              url: str | None = None, fetched_on: str | None = None) -> None:
+    """Insert or refresh one calendar event. A URL already stored is kept when
+    the new fetch has none (the calendar drops nothing, but be safe)."""
+    con.execute(
+        "INSERT INTO cbr_schedule(event_date, kind, is_anchor, url, fetched_on) VALUES(?,?,?,?,?) "
+        "ON CONFLICT(event_date, kind) DO UPDATE SET is_anchor=excluded.is_anchor, "
+        "url=COALESCE(excluded.url, cbr_schedule.url), fetched_on=excluded.fetched_on",
+        (event_date, kind, 1 if is_anchor else 0, url, fetched_on))
+
+
+def cbr_schedule_events(con) -> list[dict]:
+    """Every stored calendar event, oldest first."""
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM cbr_schedule ORDER BY event_date, kind")]
+
+
+def upsert_cbr_document(con, *, meeting_date: str, doc_type: str, url: str,
+                        published: str | None = None, title: str | None = None,
+                        text: str | None = None, fetched_on: str | None = None) -> None:
+    """Insert or refresh one CBR document. Fields already stored survive a
+    later call that passes None for them (the index row is known long before
+    the body is fetched)."""
+    con.execute(
+        "INSERT INTO cbr_document(meeting_date, doc_type, published, title, url, text, fetched_on) "
+        "VALUES(?,?,?,?,?,?,?) ON CONFLICT(meeting_date, doc_type) DO UPDATE SET "
+        "published=COALESCE(excluded.published, cbr_document.published), "
+        "title=COALESCE(excluded.title, cbr_document.title), url=excluded.url, "
+        "text=COALESCE(excluded.text, cbr_document.text), "
+        "fetched_on=COALESCE(excluded.fetched_on, cbr_document.fetched_on)",
+        (meeting_date, doc_type, published, title, url, text, fetched_on))
+
+
+def cbr_documents(con, doc_type: str | None = None) -> list[dict]:
+    """Stored CBR documents, newest meeting first; optionally one doc_type."""
+    if doc_type:
+        rows = con.execute("SELECT * FROM cbr_document WHERE doc_type=? "
+                           "ORDER BY meeting_date DESC", (doc_type,))
+    else:
+        rows = con.execute("SELECT * FROM cbr_document ORDER BY meeting_date DESC, doc_type")
+    return [dict(r) for r in rows]
+
+
+def replace_rate_expectations(con, source: str, edition: str, published: str,
+                              rows: list[dict], status: str = "") -> int:
+    """Store one publication version atomically: every row previously stored
+    for (source, edition, published, status) is replaced by `rows`. Each row
+    needs scenario/year/lo/hi; period/ytd_avg/rest_from/url/fetched_on are
+    optional. Returns the number of rows written."""
+    con.execute("DELETE FROM rate_expectation WHERE source=? AND edition=? AND published=? AND status=?",
+                (source, edition, published, status))
+    con.executemany(
+        "INSERT INTO rate_expectation(source, edition, published, status, scenario, period, year, "
+        "lo, hi, ytd_avg, rest_from, url, fetched_on) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(source, edition, published, status, r["scenario"], r.get("period", "year"), int(r["year"]),
+          r.get("lo"), r.get("hi"), r.get("ytd_avg"), r.get("rest_from"), r.get("url"),
+          r.get("fetched_on")) for r in rows])
+    return len(rows)
+
+
+def rate_expectations(con, source: str) -> list[dict]:
+    """All stored rows for one source, oldest publication first."""
+    return [dict(r) for r in con.execute(
+        "SELECT * FROM rate_expectation WHERE source=? ORDER BY published, edition, scenario, period, year",
+        (source,))]
+
+
+def rate_expectation_versions(con, source: str) -> list[tuple[str, str, str]]:
+    """Distinct (edition, published, status) versions stored for a source,
+    oldest first."""
+    return [(r["edition"], r["published"], r["status"]) for r in con.execute(
+        "SELECT DISTINCT edition, published, status FROM rate_expectation WHERE source=? "
+        "ORDER BY published, edition", (source,))]
+
+
+def mark_expectation_source(con, source: str, *, page_url: str | None = None,
+                            last_published: str | None = None, ok: bool = True,
+                            error: str | None = None) -> None:
+    """Record the outcome of one refresh of an expectation source. A success
+    clears the last error; a failure keeps the last good fetch visible."""
+    now = datetime.now().isoformat(timespec="seconds")
+    con.execute("INSERT OR IGNORE INTO expectation_source(source) VALUES(?)", (source,))
+    if page_url:
+        con.execute("UPDATE expectation_source SET page_url=? WHERE source=?", (page_url, source))
+    if last_published:
+        con.execute("UPDATE expectation_source SET last_published=MAX(COALESCE(last_published, ''), ?) "
+                    "WHERE source=?", (last_published, source))
+    if ok:
+        con.execute("UPDATE expectation_source SET last_ok=?, last_error=NULL, last_error_at=NULL "
+                    "WHERE source=?", (now, source))
+    else:
+        con.execute("UPDATE expectation_source SET last_error=?, last_error_at=? WHERE source=?",
+                    (error, now, source))
+
+
+def expectation_sources(con) -> dict[str, dict]:
+    """source -> its expectation_source row."""
+    return {r["source"]: dict(r) for r in con.execute("SELECT * FROM expectation_source")}
+
+
+def upsert_key_rates(con, rows: list[tuple[str, float]]) -> int:
+    """(ISO date, percent) pairs from the CBR daily key-rate table."""
+    con.executemany("INSERT OR REPLACE INTO key_rate_daily(rate_date, rate) VALUES(?,?)", rows)
+    return len(rows)
+
+
+def key_rate_steps(con, since: str | None = None) -> list[tuple[str, float]]:
+    """The daily key-rate series collapsed to the days the rate changed
+    (plus the first day on or after `since`), oldest first."""
+    q = "SELECT rate_date, rate FROM key_rate_daily"
+    args: tuple = ()
+    if since:
+        q += " WHERE rate_date >= ?"
+        args = (since,)
+    steps: list[tuple[str, float]] = []
+    for r in con.execute(q + " ORDER BY rate_date", args):
+        if not steps or abs(steps[-1][1] - r["rate"]) > 1e-9:
+            steps.append((r["rate_date"], r["rate"]))
+    return steps
+
+
+def latest_key_rate(con) -> tuple[str, float] | None:
+    """(ISO date, percent) of the newest stored daily key rate, or None."""
+    row = con.execute("SELECT rate_date, rate FROM key_rate_daily ORDER BY rate_date DESC LIMIT 1").fetchone()
+    return (row["rate_date"], row["rate"]) if row else None
+
+
+def replace_zcyc_snapshot(con, snap_date: str, points: list[tuple[float, float]]) -> None:
+    """Store one day's CBR zero-coupon curve grid, replacing that day's rows."""
+    con.execute("DELETE FROM zcyc_snapshot WHERE snap_date=?", (snap_date,))
+    con.executemany("INSERT INTO zcyc_snapshot(snap_date, tenor_yrs, rate) VALUES(?,?,?)",
+                    [(snap_date, float(t), float(r)) for t, r in points])
+
+
+def latest_zcyc_snapshot(con) -> tuple[str, list[tuple[float, float]]] | None:
+    """(snap_date, [(tenor_yrs, rate_decimal), ...]) for the newest stored curve."""
+    row = con.execute("SELECT MAX(snap_date) AS d FROM zcyc_snapshot").fetchone()
+    if not row or not row["d"]:
+        return None
+    pts = [(r["tenor_yrs"], r["rate"]) for r in con.execute(
+        "SELECT tenor_yrs, rate FROM zcyc_snapshot WHERE snap_date=? ORDER BY tenor_yrs", (row["d"],))]
+    return row["d"], pts
 
 
 COMPANY_SCAN_SCHEMA = """
