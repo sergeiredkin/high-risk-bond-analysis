@@ -235,7 +235,18 @@ def survival_probability(rating: str, t_years: float) -> float | None:
 RATING_ORDER: list[str] = list(DEFAULT_PROBS.keys())
 
 
+# 'D' is the resolver's single key for the default family (SD/RD/D on any
+# agency's scale, see ratings.py). It has no PD row -- lookup('D') stays None
+# so a defaulted bond never gets a model PD -- but it ranks below ruC, so
+# rating-band checks (ВДО scope, promote floor, downgrade detection) treat it
+# as the worst grade rather than as unrecognised.
+DEFAULT_GRADE = "D"
+
+
 def rating_rank(rating: str) -> int | None:
-    """Position on RATING_ORDER (0 = ruAAA, best), or None if unrecognised."""
+    """Position on RATING_ORDER (0 = ruAAA, best), len(RATING_ORDER) for 'D',
+    or None if unrecognised."""
+    if rating and rating.strip().upper() in (DEFAULT_GRADE, "RUD"):
+        return len(RATING_ORDER)
     norm = _normalise(rating)
     return RATING_ORDER.index(norm) if norm in RATING_ORDER else None

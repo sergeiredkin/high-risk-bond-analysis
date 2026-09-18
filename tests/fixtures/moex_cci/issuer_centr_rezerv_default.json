@@ -1,0 +1,38 @@
+{
+ "cci_rating_companies": {
+  "columns": [
+   "agency_id",
+   "agency_name_short_ru",
+   "rating_book_id",
+   "rating_level_id",
+   "rating_date",
+   "rating_publicate_date",
+   "rating_level_name_short_ru"
+  ],
+  "data": [
+   [
+    3,
+    "АКРА",
+    1,
+    21,
+    "2026-09-10 00:00:00",
+    "2026-09-10 00:00:00",
+    "D(RU)"
+   ]
+  ]
+ },
+ "cci_rating_companies.cursor": {
+  "columns": [
+   "INDEX",
+   "TOTAL",
+   "PAGESIZE"
+  ],
+  "data": [
+   [
+    0,
+    1,
+    100
+   ]
+  ]
+ }
+}

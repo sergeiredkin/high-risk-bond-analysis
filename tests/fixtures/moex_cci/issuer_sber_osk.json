@@ -1,0 +1,65 @@
+{
+ "cci_rating_companies": {
+  "columns": [
+   "agency_id",
+   "agency_name_short_ru",
+   "rating_book_id",
+   "rating_level_id",
+   "rating_date",
+   "rating_publicate_date",
+   "rating_level_name_short_ru"
+  ],
+  "data": [
+   [
+    3,
+    "АКРА",
+    1,
+    null,
+    "2026-05-19 00:00:00",
+    "2026-05-19 00:00:00",
+    "AAA(RU)"
+   ],
+   [
+    3,
+    "АКРА",
+    11,
+    null,
+    "2026-05-19 00:00:00",
+    "2026-05-19 00:00:00",
+    "aaa(ru)"
+   ],
+   [
+    5,
+    "НКР",
+    29,
+    null,
+    "2025-10-10 00:00:00",
+    "2025-10-10 00:00:00",
+    "AAA.ru"
+   ],
+   [
+    5,
+    "НКР",
+    43,
+    null,
+    "2025-10-10 00:00:00",
+    "2025-10-10 00:00:00",
+    "aaa.ru"
+   ]
+  ]
+ },
+ "cci_rating_companies.cursor": {
+  "columns": [
+   "INDEX",
+   "TOTAL",
+   "PAGESIZE"
+  ],
+  "data": [
+   [
+    0,
+    4,
+    100
+   ]
+  ]
+ }
+}

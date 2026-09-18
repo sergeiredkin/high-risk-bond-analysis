@@ -22,6 +22,7 @@ from .compute import bondmath, cashflows, default_probs, expected_return
 from .health import log_health, log_health_once_today
 from .ingest import sources
 from .store import db
+from . import ratings
 
 logger = logging.getLogger(__name__)
 
@@ -257,12 +258,12 @@ def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
                 convexity=cvx, yield_source=yield_source,
             )
             # Default Probability Layer (see DEFAULT_PROB_FEATURE.md): rating
-            # comes from the `rating` table (db.current_rating), the single
-            # source of truth shared with factlist/assemble.py -- not the
-            # watchlist dict directly. None for issuers with no current
-            # rating row, or whose rating string doesn't parse against the
-            # ruXX table; lookup() degrades gracefully rather than raising.
-            rating = db.current_rating(con, issuer_id)
+            # comes from ratings.resolve() (MOEX CCI agency ratings, legacy
+            # `rating` table as fallback), the single source of truth shared
+            # with the universe screen and factlist/assemble.py -- not the
+            # watchlist dict directly. None for unrated bonds; 'D' for a
+            # default, which lookup() doesn't know, so no fair spread.
+            rating = ratings.resolved_grade(con, issuer_id, secid)
             implied_fair = default_probs.implied_fair_spread_bp(rating or "")
             misprice = (gsp - implied_fair) if implied_fair is not None else None
 

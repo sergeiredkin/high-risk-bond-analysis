@@ -118,10 +118,11 @@ def fetch_bonds_by_inn(inn: str, snapshot: bool = True) -> list[dict[str, Any]]:
 
 
 def fetch_emitent_map(snapshot: bool = True) -> dict[str, dict[str, str | None]]:
-    """SECID -> {emitent_inn, emitent_title} across the whole MOEX stock-bonds
-    universe (~10k securities incl. delisted/matured -- corporate + munis +
-    non-OFZ sovereign issues). Used only for the universe screener's rating
-    join (universe_pipeline.py).
+    """SECID -> {emitent_inn, emitent_title, emitent_id, isin} across the whole
+    MOEX stock-bonds universe (~10k securities incl. delisted/matured --
+    corporate + munis + non-OFZ sovereign issues). Used for the universe
+    screener's rating join (universe_pipeline.py) and to address the MOEX CCI
+    rating endpoints (ratings_pipeline.py).
 
     Necessary evil: fetch_bond_master()'s single-call endpoint does NOT
     expose emitent_inn at all -- verified empirically, requesting the column
@@ -154,8 +155,37 @@ def fetch_emitent_map(snapshot: bool = True) -> dict[str, dict[str, str | None]]
     for row in all_rows:
         secid = row.get("secid")
         if secid:
-            out[secid] = {"emitent_inn": row.get("emitent_inn"),
-                          "emitent_title": row.get("emitent_title")}
+            out[secid] = _emitent_row(row)
+    return out
+
+
+def _emitent_row(row: dict[str, Any]) -> dict[str, Any]:
+    # emitent_id is MOEX's own issuer key -- the MOEX CCI rating endpoints
+    # (ingest/moex_ratings.py) are addressed by it, so it is kept, not dropped.
+    return {"emitent_inn": row.get("emitent_inn"),
+            "emitent_title": row.get("emitent_title"),
+            "emitent_id": row.get("emitent_id"),
+            "isin": row.get("isin")}
+
+
+def fetch_emitent_rows_for_secids(secids: list[str], sleep_s: float = 0.5) -> dict[str, dict[str, Any]]:
+    """Emitent-map rows for individual secids missing from the weekly cache
+    (new placements), one `/iss/securities.json?q=<secid>` call each, exact
+    secid match only. Failures are skipped, not raised: a bond the map can't
+    place just stays unjoined until the weekly refresh, as before."""
+    out: dict[str, dict[str, Any]] = {}
+    for i, secid in enumerate(secids):
+        if i:
+            time.sleep(sleep_s)
+        try:
+            r = _get(f"{MOEX_BASE}/securities.json",
+                     params={"q": secid, "iss.meta": "off", "iss.only": "securities"})
+        except (IngestError, requests.RequestException):
+            continue
+        for row in _rows(r.json(), "securities"):
+            if row.get("secid") == secid:
+                out[secid] = _emitent_row(row)
+                break
     return out
 
 

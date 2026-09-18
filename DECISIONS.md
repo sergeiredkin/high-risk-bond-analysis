@@ -299,3 +299,34 @@ filters against today's real DB. Two separate issues:
    Fix: redesign cap enforcement loop -- separate backlog item.
 
 Balanced and aggressive presets work correctly end-to-end.
+
+## 2026-09-17 — Agency ratings from free MOEX ISS ЦКИ endpoints
+
+**Decision (captain):** ratings come from MOEX ISS's free anonymous CCI
+endpoints (`/iss/cci/rating/companies/ecbd_<emitent_id>.json` and
+`.../securities/isin_<ISIN>.json`), keyed by emitent_id / ISIN / INN, never
+by name. No ЦКИ subscription (20 000 ₽/month) or any other paid source.
+Split ratings resolve to the most conservative live national grade; issue
+rating before issuer rating; SD/RD/D -> `D` (shown, no PD); `.sf` shown, not
+modelled. The НКР scrape (`backfill-ratings --agency nkr`) left the daily
+run: ratings.ru's terms forbid automated collection. Code: `ratings.py`
+(resolver), `ratings_pipeline.py` (daily refresh), `ingest/moex_ratings.py`.
+
+**Rate-limit check before building:** MOEX publishes no ISS request limit;
+moex.com/a2193 only says ISS data is "только для ознакомления, не может быть
+использована для извлечения прибыли". The real daily workload (370 issuer +
+199 ISIN calls for the 2026-09-16 universe) was run twice back to back at
+0.5 s spacing: 1138/1138 HTTP 200 JSON, no rate-limit headers, median latency
+0.15-0.19 s with no drift, identical data in both passes. Every anonymous
+response says `X-MicexPassport-Marker: denied` even when complete, so the
+refresh treats empty/HTML/non-JSON bodies as the failure signal, keeps last
+known ratings (stale flag after 3 days), and stops on any 403/429.
+
+**Effect (2026-09-16 universe, 1 200 bonds):** rated 296 -> 1 052 (24.7% ->
+87.7%); PD-usable non-excluded bonds 254 -> 938 of 1 043; 80 of 280 ВДО-scope
+bonds leave the band once their real (> ruBB) rating is known — the scope
+definition was deliberately not changed.
+
+**If MOEX restricts the free path:** lower `--max-calls` and raise
+`--ttl-hours` for a multi-day rotation (the refresh already defers what
+doesn't fit to the next run, oldest first) before considering anything paid.

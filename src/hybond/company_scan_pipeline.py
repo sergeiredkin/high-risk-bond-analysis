@@ -28,6 +28,7 @@ import requests
 
 from .compute import inflection
 from .store import db
+from . import ratings
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPANY_SCAN_PROMPT_PATH = ROOT / "skills" / "bond-narrative-card" / "bond_screening_prompt_v3.5.1.md"
@@ -174,13 +175,13 @@ def _issuer_snapshot(con, inn: str | None) -> dict:
         return {"rating": None, "rated_on": None, "filing_count": 0, "filing_latest": None}
     db.init_rating(con)
     db.init_filing(con)
-    rating_row = db.current_rating_row(con, inn)
+    resolved = ratings.resolve(con, inn=inn)
     filing_row = con.execute(
         "SELECT COUNT(*) cnt, MAX(published) latest FROM filing WHERE issuer_id=?",
         (inn,)).fetchone()
     return {
-        "rating": rating_row["rating"] if rating_row else None,
-        "rated_on": rating_row["rated_on"] if rating_row else None,
+        "rating": resolved["grade"],
+        "rated_on": resolved["rated_on"],
         "filing_count": filing_row["cnt"] if filing_row else 0,
         "filing_latest": filing_row["latest"] if filing_row else None,
     }

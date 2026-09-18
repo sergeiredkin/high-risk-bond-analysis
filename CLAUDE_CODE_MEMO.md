@@ -60,7 +60,7 @@ hybond/
     export_dashboard_data.py, build_dashboard.py
                                  dashboard rebuild (also invoked directly by
                                  rebuild_dashboard.sh, not a `hybond` subcommand)
-    daily_run.sh, hourly_filings.sh, weekly_financials.sh, cbonds_sample.sh,
+    daily_run.sh, hourly_filings.sh, weekly_financials.sh,
       backup_db.sh, startup_catch.sh
                                  cron jobs -- see section 5
   rebuild_dashboard.sh          classification-aware dashboard rebuild
@@ -155,10 +155,9 @@ becomes a real watchlist entry via `hybond promote --inn INN --name NAME`
 
 | Time | Job | Purpose |
 |---|---|---|
-| 05:00, 10:00, 16:00 Mon–Fri | `daily_run.sh` | prices/spreads, rate expectations + CBR catch-up, universe screen, OFZ snapshot, promote report, scrape, market-notes, CBR check, diff/factlists, dashboard rebuild |
+| 05:00, 10:00, 16:00 Mon–Fri | `daily_run.sh` | prices/spreads, MOEX ЦКИ ratings refresh, rate expectations + CBR catch-up, universe screen, OFZ snapshot, promote report, scrape, market-notes, CBR check, diff/factlists, dashboard rebuild |
 | `:15` hourly, Mon–Fri | `hourly_filings.sh` | scrape + market-notes + `auto-classify --limit 30` |
 | `*/30 * * * *` | `rebuild_dashboard.sh` (project root) | classification-aware dashboard rebuild — see section 6 |
-| 06:47 daily | `cbonds_sample.sh` | Cbonds sample data |
 | 07:00 Sun | `weekly_financials.sh` | annual financials refresh (needs `PARSER_API_KEY`) |
 | 06:00, 18:00 daily | `backup_db.sh` | DB backup |
 | `@reboot` | `startup_catch.sh` | polls MOEX ISS for real network readiness (not a fixed sleep — a fixed 120s sleep once raced a slow post-reboot DNS), catches up any missed daily/hourly run |

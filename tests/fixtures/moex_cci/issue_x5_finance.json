@@ -1,0 +1,42 @@
+{
+ "cci_rating_securities": {
+  "columns": [
+   "agency_id",
+   "agency_name_short_ru",
+   "rating_book_id",
+   "rating_level_id",
+   "rating_date",
+   "rating_publicate_date",
+   "rating_level_name_short_ru"
+  ],
+  "data": [
+   [
+    5,
+    "НКР",
+    29,
+    400,
+    "2026-06-25 00:00:00",
+    "2026-06-25 00:00:00",
+    "AAA.ru"
+   ],
+   [
+    3,
+    "АКРА",
+    1,
+    1,
+    "2026-06-24 00:00:00",
+    "2026-06-24 00:00:00",
+    "AAA(RU)"
+   ],
+   [
+    4,
+    "Эксперт РА",
+    18,
+    233,
+    "2026-07-29 00:00:00",
+    "2026-07-29 00:00:00",
+    "ruAAA"
+   ]
+  ]
+ }
+}

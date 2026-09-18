@@ -148,6 +148,29 @@ def cmd_google_news(args) -> int:
     return 1 if result["errors"] and result["new"] == 0 and result["parsed"] == 0 else 0
 
 
+def cmd_refresh_ratings(args) -> int:
+    from . import ratings_pipeline
+    r = ratings_pipeline.run_refresh(ttl_hours=args.ttl_hours, max_calls=args.max_calls)
+    print(f"MOEX CCI ratings: {r['issuers_targeted']} issuers / {r['bonds_targeted']} bonds targeted")
+    print(f"Calls: {r['calls']} (issuer {r['issuer_calls']}, issue {r['issue_calls']}); "
+          f"fresh, skipped: {r['skipped_fresh']}; deferred to next run: {r['deferred']}")
+    print(f"Outcomes: {r['outcomes']}")
+    print(f"Baselined (first fetch, no change reported): {r['baselined']}")
+    for line in r["changes"]:
+        print(f"  CHANGE   {line}")
+    for line in r["emptied"]:
+        print(f"  emptied  {line}")
+    for line in r["defaults"]:
+        print(f"  DEFAULT  {line}")
+    if r["blocked"]:
+        print(f"BLOCKED: {r['blocked']}", file=sys.stderr)
+        return 2
+    if r["aborted"]:
+        print(f"ABORTED: {r['aborted']}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def cmd_backfill_ratings(args) -> int:
     if args.agency != "nkr":
         print(f"--agency {args.agency!r} not supported yet (only 'nkr').", file=sys.stderr)
@@ -1173,9 +1196,23 @@ def cmd_rate(args) -> int:
         return 1
 
     rated_on = args.date or date.today().isoformat()
+    from . import ratings
+    from .store import agency_ratings
+    agency_ratings.init(con)
+    prev = con.execute("SELECT rating FROM rating WHERE issuer_id=? AND agency=? AND is_current=1",
+                       (args.inn, args.agency)).fetchone()
+    before = ratings.resolve(con, inn=args.inn)["grade"]
     db.upsert_rating(con, issuer_id=args.inn, agency=args.agency,
                       rating=args.rating, outlook=args.outlook,
                       action=args.action, rated_on=rated_on, source="manual")
+    # recorded in the same change log the MOEX refresh writes, so a hand-entered
+    # action (e.g. a default MOEX hasn't loaded yet) reaches the dashboard feed
+    change = agency_ratings.manual_change(
+        inn=args.inn, agency=args.agency, old_grade=prev["rating"] if prev else None,
+        new_grade=args.rating, rated_on=rated_on, today=date.today(),
+        resolved_before=before, resolved_after=ratings.resolve(con, inn=args.inn)["grade"])
+    if change:
+        agency_ratings.record_changes(con, [change], source="manual")
     con.commit()
     print(f"Recorded {args.rating} ({args.agency}) for ИНН {args.inn} on {rated_on}")
     con.close()
@@ -1702,6 +1739,15 @@ def main(argv=None) -> int:
     pbr.add_argument("--inn", default=None,
                       help="restrict to one issuer_id/ИНН instead of every qualifying tier=1 issuer")
     pbr.set_defaults(func=cmd_backfill_ratings)
+    prr = sub.add_parser("refresh-ratings",
+                         help="Refresh agency credit ratings from MOEX ISS CCI (free anonymous "
+                              "endpoints, keyed by emitent_id/ISIN) for today's universe and "
+                              "tier 1/2 issuers; incremental, spaced, non-destructive on failure")
+    prr.add_argument("--ttl-hours", type=float, default=20,
+                     help="skip targets fetched successfully within this many hours (default 20)")
+    prr.add_argument("--max-calls", type=int, default=1500,
+                     help="cap on ISS calls this run; the rest roll to the next run (default 1500)")
+    prr.set_defaults(func=cmd_refresh_ratings)
     pu = sub.add_parser("universe", help="Full MOEX corporate-bond universe screen + G-spread + mispricing")
     pu.add_argument("--refresh-emitent-map", action="store_true",
                      help="force a fresh paginated SECID->ИНН fetch instead of the cached "

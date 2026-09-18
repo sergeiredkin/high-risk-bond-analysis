@@ -77,7 +77,8 @@ def test_pages_are_still_separate_source_files_not_one_template():
     # The modular layout is the constraint the redesign is built under.
     page_files = sorted(p.name for p in (SRC / "pages").glob("*.js"))
     assert page_files == ["bond-detail.js", "data.js", "overview-market-band.js",
-                          "overview.js", "portfolio.js", "rates.js", "terminal-map.js", "terminal.js"]
+                          "overview-rating-band.js", "overview.js", "portfolio.js",
+                          "rates.js", "terminal-map.js", "terminal.js"]
     # template.html stays a shell: markup + includes, no page logic
     assert len(TEMPLATE.read_text(encoding="utf-8").splitlines()) < 150
 

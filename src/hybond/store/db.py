@@ -1624,37 +1624,74 @@ CREATE TABLE IF NOT EXISTS emitent_map (
     secid         TEXT PRIMARY KEY,
     emitent_inn   TEXT,
     emitent_title TEXT,
-    fetched_on    TEXT
+    fetched_on    TEXT,
+    emitent_id    INTEGER,
+    isin          TEXT
 );
 """
 
 
 def init_emitent_map(con) -> None:
     con.executescript(EMITENT_MAP_SCHEMA)
+    # emitent_id/isin added 2026-09-17 (MOEX CCI ratings are keyed by MOEX's
+    # emitent_id, which the bulk fetch always returned but used to drop).
+    # A cache written before then has them NULL until its next refresh --
+    # see universe_pipeline.load_emitent_map(), which forces that refresh.
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(emitent_map)")}
+    if "emitent_id" not in cols:
+        con.execute("ALTER TABLE emitent_map ADD COLUMN emitent_id INTEGER")
+    if "isin" not in cols:
+        con.execute("ALTER TABLE emitent_map ADD COLUMN isin TEXT")
     con.commit()
+
+
+def _emitent_map_values(secid: str, v: dict, fetched_on: str) -> tuple:
+    return (secid, v.get("emitent_inn"), v.get("emitent_title"), fetched_on,
+            v.get("emitent_id"), v.get("isin"))
 
 
 def replace_emitent_map(con, rows: dict[str, dict], fetched_on: str) -> None:
     """Overwrite the whole cache with a freshly paginated fetch."""
     con.execute("DELETE FROM emitent_map")
     con.executemany(
-        "INSERT INTO emitent_map(secid, emitent_inn, emitent_title, fetched_on) "
-        "VALUES(?,?,?,?)",
-        [(secid, v.get("emitent_inn"), v.get("emitent_title"), fetched_on)
-         for secid, v in rows.items()],
+        "INSERT INTO emitent_map(secid, emitent_inn, emitent_title, fetched_on, emitent_id, isin) "
+        "VALUES(?,?,?,?,?,?)",
+        [_emitent_map_values(secid, v, fetched_on) for secid, v in rows.items()],
+    )
+    con.commit()
+
+
+def upsert_emitent_map_rows(con, rows: dict[str, dict], fetched_on: str) -> None:
+    """Add or refresh individual secids (new placements looked up one by one)
+    without touching the rest of the cache or its weekly-refresh clock."""
+    con.executemany(
+        "INSERT INTO emitent_map(secid, emitent_inn, emitent_title, fetched_on, emitent_id, isin) "
+        "VALUES(?,?,?,?,?,?) ON CONFLICT(secid) DO UPDATE SET emitent_inn=excluded.emitent_inn, "
+        "emitent_title=excluded.emitent_title, emitent_id=excluded.emitent_id, isin=excluded.isin",
+        [_emitent_map_values(secid, v, fetched_on) for secid, v in rows.items()],
     )
     con.commit()
 
 
 def get_emitent_map(con) -> dict[str, dict]:
-    rows = con.execute("SELECT secid, emitent_inn, emitent_title FROM emitent_map").fetchall()
-    return {r["secid"]: {"emitent_inn": r["emitent_inn"], "emitent_title": r["emitent_title"]}
+    rows = con.execute(
+        "SELECT secid, emitent_inn, emitent_title, emitent_id, isin FROM emitent_map").fetchall()
+    return {r["secid"]: {"emitent_inn": r["emitent_inn"], "emitent_title": r["emitent_title"],
+                         "emitent_id": r["emitent_id"], "isin": r["isin"]}
             for r in rows}
 
 
 def emitent_map_fetched_on(con) -> str | None:
-    row = con.execute("SELECT fetched_on FROM emitent_map LIMIT 1").fetchone()
-    return row["fetched_on"] if row else None
+    # MIN, not an arbitrary row: upsert_emitent_map_rows() stamps single
+    # late additions with today's date, which must not make a week-old bulk
+    # cache look fresh.
+    row = con.execute("SELECT MIN(fetched_on) AS f FROM emitent_map").fetchone()
+    return row["f"] if row else None
+
+
+def emitent_map_has_ids(con) -> bool:
+    row = con.execute("SELECT 1 FROM emitent_map WHERE emitent_id IS NOT NULL LIMIT 1").fetchone()
+    return row is not None
 
 
 CBR_MEETING_SCHEMA = """

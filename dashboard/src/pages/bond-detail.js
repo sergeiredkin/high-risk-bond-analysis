@@ -9,7 +9,8 @@
 //   "шесть опор"           -> the four pillars compute/pillars.py actually
 //        scores (leverage, liquidity, refinancing, operations); the other
 //        six_pillars fields are raw ratios, not scores.
-//   "три агентства"        -> issuers.ratings_all, however many it carries.
+//   "три агентства"        -> the bond's own rating_agencies (MOEX ЦКИ via
+//        src/hybond/ratings.py), however many agencies rate it.
 // An unrated bond has no model PD, so the credit-adjusted blocks are
 // replaced by one line explaining why, never by an estimate.
 
@@ -141,27 +142,61 @@ function detPillarsSection(b) {
   });
 }
 
-function detRatingsSection(b) {
-  const iss = b.issuer || b.passiveIssuer;
-  const all = (iss && iss.ratings_all) || [];
-  if (!all.length) {
-    return detCard('Разрешение рейтингов', `<div class="det-note">${b.rating
-      ? `У бумаги рейтинг ${escapeHtml(b.rating)}, но лента рейтинговых действий по эмитенту в выгрузке отсутствует — показывать нечего, кроме итогового значения.`
-      : 'Ни одно агентство не присваивало рейтинг этому эмитенту. Без рейтинга нет модельной PD, поэтому справедливый спред и AEY после потерь для бумаги не считаются.'}</div>`);
+// Every recorded change touching this bond (issuer-level changes touch all of
+// the issuer's bonds), newest first: the day it was seen, and the agency's
+// own action date.
+function detRatingChangesHtml(b) {
+  const list = b.ratingChanges || [];
+  const meta = DATA.rating_changes || {};
+  if (!list.length) {
+    return meta.baseline_since
+      ? `<div class="det-note">Изменений рейтинга с начала наблюдения (${escapeHtml(fmtDate(meta.baseline_since))}) не было.</div>`
+      : '';
   }
-  const winnerAgency = (iss.rating_detail && iss.rating_detail.agency) || null;
+  return `<div class="det-rchg-head">Изменения рейтинга</div><div class="det-rchgs">${list.map(c => `
+    <div class="det-rchg${ratingChangeIsDown(c) ? ' is-down' : ' is-up'}">
+      <div class="det-rchg-date">${escapeHtml(fmtDate(c.detected_on))}</div>
+      <div class="det-rchg-text">${escapeHtml(ratingChangeText(c))}${c.level === 'issue' ? ' · выпуск' : ''}</div>
+      <div class="det-rchg-mark">${escapeHtml(RATING_KIND_LABEL[c.kind] || c.kind)} · решение ${escapeHtml(fmtDate(c.rated_on))}${c.source === 'moex_baseline' ? ' · сверка с прежним' : c.source === 'manual' ? ' · ручная запись' : ''}</div>
+    </div>`).join('')}</div>`;
+}
+
+function detRatingsSection(b) {
+  const all = b.ratingAgencies || [];
+  if (!all.length) {
+    return detCard('Разрешение рейтингов', `${detRatingChangesHtml(b)}<div class="det-note">${b.rating
+      ? `У бумаги рейтинг ${escapeHtml(b.rating)}, но агентских записей по нему в выгрузке нет — показывать нечего, кроме итогового значения.`
+      : 'Ни одно агентство не присваивало рейтинг ни эмитенту, ни выпуску — по данным MOEX ЦКИ. Без рейтинга нет модельной PD, поэтому справедливый спред и AEY после потерь для бумаги не считаются.'}</div>`);
+  }
   const rows = all.map(a => {
-    const win = a.agency === winnerAgency && a.is_current;
-    return `<div class="det-rating${win ? ' is-win' : ''}">
+    const displayOnly = a.scale !== 'national';
+    const mark = a.used ? 'принят'
+      : a.status === 'withdrawn' ? 'отозван'
+      : a.status === 'suspended' ? 'приостановлен'
+      : displayOnly ? 'не в модели'
+      : 'выше — не используется';
+    const grade = a.status === 'withdrawn' || a.status === 'suspended' ? DASH : (a.grade || a.raw);
+    return `<div class="det-rating${a.used ? ' is-win' : ''}">
       <div class="det-rating-ag">${escapeHtml(a.agency || DASH)}</div>
-      <div class="det-rating-grade">${escapeHtml(a.rating || DASH)}</div>
-      <div class="det-rating-date">присвоен ${escapeHtml(fmtDate(a.rated_on))}${a.outlook ? ' · ' + escapeHtml(a.outlook) : ''}</div>
-      <div class="det-rating-mark">${win ? 'принят' : a.is_current ? 'ниже по приоритету' : 'не действует'}</div>
+      <div class="det-rating-grade">${escapeHtml(grade || DASH)}</div>
+      <div class="det-rating-date">${a.status === 'withdrawn' ? 'отозван' : 'присвоен'} ${escapeHtml(fmtDate(a.rated_on))}${a.level === 'issue' ? ' · выпуск' : ''}${a.source === 'legacy' ? ' · ручная запись' : ''}</div>
+      <div class="det-rating-mark">${mark}</div>
     </div>`;
   }).join('');
-  const stale = iss.rating_detail && iss.rating_detail.is_stale;
+  const notes = [];
+  if (b.rating) {
+    notes.push(`Итоговый рейтинг бумаги: ${escapeHtml(b.rating)}${b.ratingLevel === 'issue' ? ' (рейтинг выпуска)' : ''}.`);
+  } else if (b.ratingWithdrawnOn) {
+    notes.push(`Все рейтинги отозваны, последний — ${escapeHtml(fmtDate(b.ratingWithdrawnOn))}. Бумага считается без рейтинга.`);
+  } else if (b.ratingSf) {
+    notes.push(`Есть только рейтинг структурного финансирования ${escapeHtml(b.ratingSf)} — он показан, но в модель PD не идёт.`);
+  }
+  if (b.ratingDefaulted) notes.push('Рейтинг дефолтный (D): модельной PD для него нет, кредитная поправка и справедливый спред не считаются.');
+  if (b.ratingSplit) notes.push('Агентства расходятся — в модель идёт самый низкий действующий рейтинг.');
+  if (b.ratingStale) notes.push(`MOEX не подтверждал эти рейтинги с ${escapeHtml(fmtDate(b.ratingLastSeen))} — показан последний известный.`);
   return detCard('Разрешение рейтингов', `<div class="det-ratings">${rows}</div>
-    <div class="det-note">Приоритет фиксирован: АКРА выше Эксперт РА, дальше НКР и НРА, ручная правка — только с обоснованием в журнале. Итоговый рейтинг бумаги: ${escapeHtml(b.rating || DASH)}.${stale ? ' Рейтинг помечен как устаревший — требует проверки.' : ''}</div>`);
+    ${detRatingChangesHtml(b)}
+    <div class="det-note">Источник — MOEX ЦКИ. Рейтинг выпуска важнее рейтинга эмитента; из действующих рейтингов по национальной шкале берётся самый консервативный. ${notes.join(' ')}</div>`);
 }
 
 function detGapSection(b) {

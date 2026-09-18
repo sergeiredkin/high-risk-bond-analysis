@@ -228,7 +228,7 @@ function termRowHtml(b) {
     <td class="al-right c-aey ${aeyCls}">${fmtPct(b.aey, 1)}</td>
     <td class="al-right dim">${b.gs == null ? DASH : fmtBpSigned(b.gs)}</td>
     <td class="al-right ${gapCls}">${b.gap == null ? DASH : fmtBpSigned(b.gap)}</td>
-    <td class="al-center"><span class="rat ${ratCls}">${b.rating ? escapeHtml(b.rating) : 'без рейтинга'}</span></td>
+    <td class="al-center"><span class="rat ${ratCls}${b.ratingStale ? ' is-stale' : ''}" title="${escapeHtml(ratingTitle(b))}">${escapeHtml(ratingLabel(b))}${b.ratingSplit ? '<span class="rat-split" aria-label="агентства расходятся">≠</span>' : ''}${b.ratingMove ? `<span class="rat-move is-${b.ratingMove}" aria-label="${b.ratingMove === 'down' ? 'рейтинг понижен за 30 дней' : 'рейтинг повышен за 30 дней'}">${b.ratingMove === 'down' ? '↓' : '↑'}</span>` : ''}</span></td>
     <td class="al-right">${sc == null ? `<span class="dim">${DASH}</span>` : `<div class="score">
         <div class="score-track"><div class="score-fill${sc >= 7 ? ' is-good' : sc >= 4 ? ' is-mid' : ' is-bad'}" style="width:${sc * 10}%"></div></div>
         <span class="score-num">${fmtNum(sc, 1)}</span>

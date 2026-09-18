@@ -50,6 +50,8 @@ const D_SOURCE = {
   google_news: 'Google News',
   watchlist_health_scan: 'скан здоровья',
   manual: 'ручная запись',
+  moex_cci: 'MOEX ЦКИ',
+  moex_baseline: 'MOEX ЦКИ · сверка с прежним рейтингом',
 };
 const D_LEVEL = {
   critical: ['критическая', 'критические', 'критических'],
@@ -137,6 +139,7 @@ function dSourcesHtml() {
     ['ЦБ · ключевая ставка', ((DATA.cbr || {}).meetings || []).filter(m => m.rate_after != null)
       .map(m => m.date).sort().pop()],
     [`PD-таблица · ${meta.source || 'источник не указан'}`, meta.dated],
+    ['MOEX ЦКИ · рейтинги', ((DATA.ratings_meta || {}).last_refresh || '').slice(0, 10) || null],
     ['Дефолты МосБиржи', ((DATA.moex_defaults || {}).watchlist_matches || [])
       .map(m => m.planned_date).filter(Boolean).sort().pop()],
   ].filter(([, d]) => d);
@@ -165,9 +168,11 @@ function dPolicyHtml() {
   const issuers = (DATA.issuers || []).length;
   const passive = (DATA.issuers_passive || []).length;
   const universe = ((DATA.universe_now || {}).bonds || []).length;
+  const rm = DATA.ratings_meta || {};
 
   const counters = [
     [fmtNum(universe, 0), 'бумаг с котировкой в снимке'],
+    [rm.bonds ? fmtPct(rm.rated / rm.bonds * 100, 0) : DASH, 'из них с рейтингом агентства'],
     [fmtNum(issuers + passive, 0), 'эмитентов в мониторинге'],
     [fmtNum(defaults, 0), `${plural(defaults, ['дефолт', 'дефолта', 'дефолтов'])} МосБиржи по ним`],
     [meta.recovery_rate == null ? DASH : fmtPct(meta.recovery_rate * 100, 1), 'ставка восстановления в модели'],
@@ -196,6 +201,13 @@ function dFeed() {
   (DATA.issuers || []).forEach(i => push(i.events, i.name));
   (DATA.issuers_passive || []).forEach(i => push(i.events, i.name));
   push(DATA.market_wide_notes, null);
+  // Rating changes: one feed row per agency move (issuer- or issue-level).
+  RATING_CHANGES.forEach(c => out.push({
+    occurred: c.detected_on, severity: ratingChangeSeverity(c), category: 'rating_action',
+    summary: `${ratingChangeText(c)} — ${RATING_KIND_LABEL[c.kind] || c.kind}${c.level === 'issue' ? ', рейтинг выпуска' : ''}, решение агентства ${fmtDate(c.rated_on)}`
+      + ((c.secids || []).some(s => HELD_SECIDS.has(s)) ? '. Бумага есть в портфеле.' : ''),
+    source: c.source, url: null, issuer: shortIssuerName(c.issuer) || c.issuer,
+  }));
   return out.sort((a, b) => String(b.occurred).localeCompare(String(a.occurred)));
 }
 

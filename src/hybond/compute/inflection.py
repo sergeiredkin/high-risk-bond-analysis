@@ -194,6 +194,10 @@ def classify_yield_zone(aey_base: float | None, g_spread_bp: float | None,
     compute a principled floor/ceiling from) -- 'negative_ev' if over the
     cap, 'unrated' otherwise (distinct from 'green' so a caller can tell
     "no principled check was possible" from "checked and clean")."""
+    if rating == default_probs.DEFAULT_GRADE:
+        # a defaulted issuer/issue: no PD row to build a floor or ceiling
+        # from, and nothing about it is "clean" -- red zone, not 'green'
+        return "negative_ev"
     if aey_base is None or not rating:
         if aey_base is not None and aey_base * 100 > UNRATED_MAX_YIELD_PCT:
             return "negative_ev"

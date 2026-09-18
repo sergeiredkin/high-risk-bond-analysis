@@ -39,6 +39,8 @@ from hybond import pd_import  # noqa: E402
 from hybond import moex_defaults  # noqa: E402
 from hybond import portfolio  # noqa: E402
 from hybond import promote  # noqa: E402
+from hybond import ratings  # noqa: E402
+from hybond.store import agency_ratings  # noqa: E402
 from hybond import spravka_parser  # noqa: E402
 from hybond.universe_pipeline import VDO_MIN_VOLUME  # noqa: E402
 
@@ -660,6 +662,84 @@ def expected_returns_by_secid(con) -> dict[str, dict]:
     return out
 
 
+def issuer_ratings_all(res: dict) -> list[dict]:
+    """ratings.resolve()'s national-scale agencies in the long-standing
+    `ratings_all` row shape (agency/rating/rated_on/outlook/is_current), plus
+    status/source. A withdrawn rating is kept, with is_current false."""
+    return [{"agency": e["agency"], "rating": e["grade"], "rated_on": e["rated_on"],
+             "outlook": None, "is_current": e["status"] in ratings.LIVE,
+             "status": e["status"], "source": e["source"]}
+            for e in res["agencies"] if e["scale"] == "national"]
+
+
+def _rating_needs_verification(con, issuer_id: str, res: dict) -> bool | None:
+    """MOEX-sourced: needs a look only when stale. Legacy-sourced: the
+    `rating` row's own needs_verification flag, as before."""
+    if res["source"] in ("moex", "mixed"):
+        return bool(res["stale"])
+    row = db.current_rating_row(con, issuer_id)
+    return bool(row["needs_verification"]) if row else None
+
+
+def ratings_meta(con, bonds: list[dict]) -> dict:
+    """Coverage and freshness of the resolved ratings for the Данные page."""
+    rated = [b for b in bonds if b.get("rating")]
+    return {
+        "source": "MOEX ISS ЦКИ",
+        "last_refresh": agency_ratings.last_refresh(con),
+        "bonds": len(bonds),
+        "rated": len(rated),
+        "defaulted": sum(1 for b in bonds if b.get("rating_defaulted")),
+        "withdrawn": sum(1 for b in bonds if b.get("rating_withdrawn_on")),
+        "split": sum(1 for b in bonds if b.get("rating_split")),
+        "sf_only": sum(1 for b in bonds if b.get("rating_sf") and not b.get("rating")),
+        "stale": sum(1 for b in bonds if b.get("rating_stale")),
+        "stale_days": ratings.RATINGS_STALE_DAYS,
+    }
+
+
+# How far back the exported rating-change log reaches. The dashboard's own
+# "recent" window is EVENT_LOOKBACK_DAYS in dashboard/src/bonds.js; this only
+# has to cover it with room for the drawer's per-bond history.
+RATING_CHANGES_EXPORT_DAYS = 90
+
+
+def rating_changes_export(con, bonds: list[dict], as_of: date | None = None) -> dict:
+    """DATA.rating_changes: every change the ratings refresh (or `hybond
+    rate`) recorded in the last RATING_CHANGES_EXPORT_DAYS, newest first,
+    plus which of today's universe bonds each one touches -- an issuer-level
+    change touches all the issuer's bonds, an issue-level change only its
+    ISIN. `baseline_since` is when change detection started watching, so the
+    UI can say "no changes since X" instead of implying a long clean record."""
+    as_of = as_of or date.today()
+    since = (as_of - timedelta(days=RATING_CHANGES_EXPORT_DAYS)).isoformat()
+    by_inn: dict[str, list[str]] = defaultdict(list)
+    names: dict[str, str] = {}
+    for b in bonds:
+        if b.get("emitent_inn"):
+            by_inn[b["emitent_inn"]].append(b["secid"])
+            names.setdefault(b["emitent_inn"], b.get("emitent_title"))
+    universe_secids = {b["secid"] for b in bonds}
+    issuer_names = {r["issuer_id"]: r["name"] for r in con.execute("SELECT issuer_id, name FROM issuer")}
+    items = []
+    for c in agency_ratings.recent_changes(con, since):
+        level = "issue" if c["isin"] else "issuer"
+        secids = ([c["isin"]] if c["isin"] in universe_secids else []) if level == "issue" \
+            else by_inn.get(c["inn"], [])
+        items.append({
+            "id": c["change_id"], "detected_on": c["detected_on"], "rated_on": c["rated_on"],
+            "inn": c["inn"], "isin": c["isin"] or None, "level": level,
+            "issuer": issuer_names.get(c["inn"]) or names.get(c["inn"]) or c["inn"],
+            "agency": c["agency"], "scale": c["scale"], "kind": c["kind"],
+            "old_grade": c["old_grade"], "new_grade": c["new_grade"],
+            "old_raw": c["old_raw"], "new_raw": c["new_raw"],
+            "resolved_before": c["resolved_before"], "resolved_after": c["resolved_after"],
+            "severity": c["severity"], "source": c["source"], "secids": secids,
+        })
+    return {"window_days": RATING_CHANGES_EXPORT_DAYS,
+            "baseline_since": agency_ratings.baseline_since(con), "items": items}
+
+
 def data_conflicts_for_issuer(con, issuer_id: str, ratings_all: list[dict]) -> list[dict]:
     """Detects genuine disagreements between hybond's own DB rows for one
     issuer, for the narrative-card generator (skills/bond-narrative-card) to
@@ -679,7 +759,7 @@ def data_conflicts_for_issuer(con, issuer_id: str, ratings_all: list[dict]) -> l
     output."""
     conflicts: list[dict] = []
 
-    grades = {r["rating"] for r in ratings_all if r.get("rating")}
+    grades = {r["rating"] for r in ratings_all if r.get("rating") and r.get("is_current", True)}
     if len(grades) > 1:
         conflicts.append({
             "type": "rating_disagreement",
@@ -818,7 +898,43 @@ def _coupon_freq_bucket(coupon_period: int | None) -> str | None:
     return "annual"
 
 
-def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str]) -> list[dict]:
+def bond_rating_fields(res: dict) -> dict:
+    """Per-bond rating provenance from ratings.resolve(), for the screener's
+    rating cell and the drawer's "Разрешение рейтингов" card. `rating` itself
+    stays the universe snapshot's value -- the grade PD/AEY were actually
+    computed with that run.
+
+      rating_agencies   every agency's grade on the level used (plus .sf /
+                        structural grades): agency, grade, raw (as the agency
+                        writes it), rated_on, scale, status, level, source,
+                        used (this grade is the one resolved)
+      rating_level      'issue' / 'issuer' / null
+      rating_split      live agencies disagree (the lowest grade is used)
+      rating_withdrawn_on  set when every national rating is withdrawn
+      rating_defaulted  the resolved grade is 'D' (SD/RD/D): no PD
+      rating_sf         structured-finance grade, display only
+      rating_stale      MOEX hasn't re-confirmed it for RATINGS_STALE_DAYS
+      rating_source     'moex' / 'legacy' / 'mixed' / null
+    """
+    return {
+        "rating_agencies": [
+            {k: e[k] for k in ("agency", "grade", "raw", "rated_on", "scale", "status",
+                               "level", "source", "used")}
+            for e in res["agencies"]],
+        "rating_level": res["level"],
+        "rating_split": res["split"],
+        "rating_withdrawn_on": res["withdrawn_on"],
+        "rating_defaulted": res["defaulted"],
+        "rating_suspended": res["suspended"],
+        "rating_sf": res["sf_grade"],
+        "rating_stale": res["stale"],
+        "rating_last_seen": res["last_seen"],
+        "rating_source": res["source"],
+    }
+
+
+def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str],
+                         with_rating_detail: bool = False) -> list[dict]:
     """One time-bucket of universe_snapshot, shaped for the screener AND the
     market-map tabs. Coupon type is a best-effort heuristic (COUPONPERCENT
     null -> floater), NOT a reliable classification -- confirmed false
@@ -839,6 +955,10 @@ def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str]) ->
     universe-wide bonds, same tradeoff as the g_spread proxy itself.
     """
     rows = db.universe_snapshot_rows(con, snap_date)
+    emitent_map = {}
+    if with_rating_detail:
+        db.init_emitent_map(con)
+        emitent_map = db.get_emitent_map(con)
     bonds = []
     for r in rows:
         signal_excluded = bool(r["signal_excluded"])
@@ -917,6 +1037,11 @@ def _bonds_for_snap_date(con, snap_date: str, issuer_sectors: dict[str, str]) ->
             "health_status": r["health_status"],
             "health_source": r["health_source"],
         })
+        if with_rating_detail:
+            emit = emitent_map.get(r["secid"], {})
+            bonds[-1].update(bond_rating_fields(ratings.resolve(
+                con, inn=r["emitent_inn"], secid=emit.get("isin") or r["secid"],
+                emitent_id=emit.get("emitent_id"))))
     return bonds
 
 
@@ -964,8 +1089,9 @@ def rating_trend(history: list[dict]) -> dict | None:
     tooltip = " → ".join(h["rating"] for h in history) + f" ({history[-1]['agency']})"
     if len(history) < 2:
         return {"direction": "flat", "tooltip": tooltip}
-    prev_val = RATING_TREND_VALUE.get(history[-2]["rating"])
-    cur_val = RATING_TREND_VALUE.get(history[-1]["rating"])
+    # the resolver writes a default as plain 'D' (ratings.py)
+    prev_val = RATING_TREND_VALUE.get(history[-2]["rating"]) or RATING_TREND_VALUE.get(f"ru{history[-2]['rating']}")
+    cur_val = RATING_TREND_VALUE.get(history[-1]["rating"]) or RATING_TREND_VALUE.get(f"ru{history[-1]['rating']}")
     if prev_val is None or cur_val is None:
         direction = "flat"
     elif cur_val > prev_val:
@@ -990,12 +1116,33 @@ def rating_history_by_issuer(con, issuer_ids: list[str]) -> dict[str, list[dict]
         return {}
     placeholders = ",".join("?" * len(issuer_ids))
     out: dict[str, list[dict]] = {}
+    seen: set[tuple] = set()
     for r in con.execute(
         f"SELECT issuer_id, agency, rating, rated_on FROM rating "
         f"WHERE issuer_id IN ({placeholders}) AND agency != 'manual' "
         f"ORDER BY issuer_id, rated_on ASC", issuer_ids):
+        seen.add((r["issuer_id"], r["agency"], r["rated_on"]))
         out.setdefault(r["issuer_id"], []).append(
             {"date": r["rated_on"], "rating": r["rating"], "agency": r["agency"]})
+    # MOEX CCI observations (issuer level, national scale): each distinct
+    # level+date MOEX has shown us. A withdrawal reads as "отозван".
+    try:
+        moex_rows = con.execute(
+            f"SELECT inn, agency, grade, status, rated_on FROM agency_rating_history "
+            f"WHERE inn IN ({placeholders}) AND isin='' AND scale='national' AND rated_on != ''",
+            issuer_ids).fetchall()
+    except sqlite3.OperationalError:
+        moex_rows = []
+    for r in moex_rows:
+        key = (r["inn"], r["agency"], r["rated_on"])
+        if key in seen:
+            continue
+        seen.add(key)
+        label = r["grade"] or ("отозван" if r["status"] == "withdrawn" else r["status"])
+        out.setdefault(r["inn"], []).append(
+            {"date": r["rated_on"], "rating": label, "agency": r["agency"]})
+    for hist in out.values():
+        hist.sort(key=lambda h: h["date"])
     return out
 
 
@@ -1116,7 +1263,10 @@ def universe_snapshot_bundle(con) -> dict:
         stale_days = (date.fromisoformat(latest) - date.fromisoformat(sd)).days
         buckets[key] = {
             "snap_date": sd,
-            "bonds": _bonds_for_snap_date(con, sd, issuer_sectors),
+            # rating provenance only on "now": the older buckets feed the
+            # map's history, where today's agency list would be anachronistic
+            "bonds": _bonds_for_snap_date(con, sd, issuer_sectors,
+                                          with_rating_detail=(days_back == 0)),
             "stale_days": stale_days,
             "no_history": no_history,
         }
@@ -1195,13 +1345,13 @@ def known_issuers_meta(con) -> dict[str, dict]:
     }
     out = {}
     for r in rows:
-        rating_row = db.current_rating_row(con, r["issuer_id"])
+        res = ratings.resolve(con, inn=r["issuer_id"])
         fstat = filing_stats.get(r["issuer_id"], {"count": 0, "latest_published": None})
         out[r["issuer_id"]] = {
             "name": r["name"],
-            "rating": rating_row["rating"] if rating_row else None,
-            "rated_on": rating_row["rated_on"] if rating_row else None,
-            "rating_needs_verification": bool(rating_row["needs_verification"]) if rating_row else None,
+            "rating": res["grade"],
+            "rated_on": res["rated_on"],
+            "rating_needs_verification": _rating_needs_verification(con, r["issuer_id"], res),
             "filing_count": fstat["count"],
             "filing_latest_published": fstat["latest_published"],
         }
@@ -1259,13 +1409,13 @@ def passive_issuers_export(con, tier2_rows: list[dict], watchlist: dict, snap_da
     for row in tier2_rows:
         issuer_id = row["issuer_id"]
         meta = watchlist.get(issuer_id, {})
-        rating_row = db.current_rating_row(con, issuer_id)
+        res = ratings.resolve(con, inn=issuer_id)
         aeys = aey_by_inn.get(issuer_id, [])
         out.append({
             "issuer_id": issuer_id,
             "name": meta.get("name") or row["name"],
             "sector": meta.get("sector") or row["sector"],
-            "rating": rating_row["rating"] if rating_row else meta.get("rating"),
+            "rating": res["grade"] if (res["grade"] or res["agencies"]) else meta.get("rating"),
             "last_aey_base_risk_adj_pct": round(max(aeys) * 100, 2) if aeys else None,
             "events": passive_events_since(con, issuer_id, since),
         })
@@ -1868,22 +2018,27 @@ def main() -> None:
                 "status": thesis_row["status"],
                 "updated": thesis_row["updated"],
             }
+        res = ratings.resolve(con, inn=issuer_id)
         rating_row = db.current_rating_row(con, issuer_id)
-        rating_needs_verification = bool(rating_row["needs_verification"]) if rating_row else False
-        ratings_all = db.all_current_ratings(con, issuer_id)
+        rating_needs_verification = bool(_rating_needs_verification(con, issuer_id, res))
+        ratings_all = issuer_ratings_all(res)
         rating_detail = None
-        if rating_row:
-            rated_on = rating_row["rated_on"]
-            is_stale = None
-            if rated_on:
+        if res["grade"]:
+            rated_on = res["rated_on"]
+            is_stale = res["stale"]
+            if rated_on and not is_stale:
                 try:
                     is_stale = db.rating_is_stale(rated_on)
                 except ValueError:
                     is_stale = None
+            legacy_winner = (rating_row if rating_row and rating_row["agency"] == res["agency"]
+                             and rating_row["rated_on"] == rated_on else None)
             rating_detail = {
-                "agency": rating_row["agency"], "rated_on": rated_on,
-                "outlook": rating_row["outlook"], "action": rating_row["action"],
-                "is_stale": is_stale,
+                "agency": res["agency"], "rated_on": rated_on,
+                "outlook": legacy_winner["outlook"] if legacy_winner else None,
+                "action": legacy_winner["action"] if legacy_winner else None,
+                "is_stale": is_stale, "split": res["split"], "defaulted": res["defaulted"],
+                "source": res["source"],
             }
 
         bonds = fl.get("bonds", [])
@@ -1908,7 +2063,7 @@ def main() -> None:
             b["aey_base_risk_adj_pct"] = (round(aey["aey_base_risk_adj"] * 100, 2)
                                           if aey and aey["aey_base_risk_adj"] is not None else None)
             b["aey_risk_decomposition"] = _aey_risk_decomposition_pct(
-                aey["aey_base"] if aey else None, meta.get("rating"))
+                aey["aey_base"] if aey else None, res["grade"])
             b["expected_return"] = expected_returns.get(b["secid"], {})
             # Task B -- verdict component on the per-bond detail drawer:
             # yield_zone/ev_positive straight from universe_snapshot (Task
@@ -1931,7 +2086,8 @@ def main() -> None:
             "name": meta.get("name") or issuer_row["name"],
             "sector": meta.get("sector") or issuer_row["sector"],
             "risk_tier": meta.get("risk_tier", "core"),
-            "rating": meta.get("rating"),
+            "rating": res["grade"] if (res["grade"] or res["agencies"]) else meta.get("rating"),
+            "rating_withdrawn_on": res["withdrawn_on"],
             "rating_needs_verification": rating_needs_verification,
             "rating_detail": rating_detail,
             "ratings_all": ratings_all,
@@ -1962,8 +2118,9 @@ def main() -> None:
             # not a separate issuer-level field, which the schema has no
             # equivalent of.
             "pillars_date": pillars_date_by_issuer.get(issuer_id),
-            "rating_date": rating_row["rated_on"] if rating_row else None,
-            "verified_on": rating_row["verified_on"] if rating_row else None,
+            "rating_date": res["rated_on"],
+            "verified_on": (res["last_seen"] if res["source"] in ("moex", "mixed")
+                            else rating_row["verified_on"] if rating_row else None),
             "rating_history": rating_history_by_issuer_map.get(issuer_id, []),
             "rating_trend": rating_trend(rating_history_by_issuer_map.get(issuer_id, [])),
             "moex_defaults": moex_defaults_by_issuer.get(issuer_id, []),
@@ -2041,7 +2198,8 @@ def main() -> None:
             "target_after_cap": promote.TARGET_AFTER_CAP_DEFAULT,
             "min_volume": VDO_MIN_VOLUME,
         },
-        "rating_order": RATING_ORDER,
+        # 'D' (resolved default, no PD row) sorts after ruC
+        "rating_order": RATING_ORDER + ["D"],
         "placement_thresholds": {
             "stall_weeks": db.PLACEMENT_STALL_WEEKS,
             "stall_threshold_pct": db.PLACEMENT_STALL_THRESHOLD_PCT,
@@ -2054,6 +2212,8 @@ def main() -> None:
         "rates_premium": rates_premium,
         "data_notes": notes,
         "known_issuers": known_issuers,
+        "ratings_meta": ratings_meta(con, market_map["universe_now"]["bonds"]),
+        "rating_changes": rating_changes_export(con, market_map["universe_now"]["bonds"]),
         "company_scan_history": company_scan_history,
         "spread_history": spread_history,
         "spread_history_labels": spread_history_labels,
