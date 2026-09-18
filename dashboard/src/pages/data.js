@@ -50,6 +50,8 @@ const D_SOURCE = {
   google_news: 'Google News',
   watchlist_health_scan: 'скан здоровья',
   manual: 'ручная запись',
+  moex_cci: 'MOEX ЦКИ',
+  moex_baseline: 'MOEX ЦКИ · сверка с прежним рейтингом',
 };
 const D_LEVEL = {
   critical: ['критическая', 'критические', 'критических'],
@@ -199,6 +201,13 @@ function dFeed() {
   (DATA.issuers || []).forEach(i => push(i.events, i.name));
   (DATA.issuers_passive || []).forEach(i => push(i.events, i.name));
   push(DATA.market_wide_notes, null);
+  // Rating changes: one feed row per agency move (issuer- or issue-level).
+  RATING_CHANGES.forEach(c => out.push({
+    occurred: c.detected_on, severity: ratingChangeSeverity(c), category: 'rating_action',
+    summary: `${ratingChangeText(c)} — ${RATING_KIND_LABEL[c.kind] || c.kind}${c.level === 'issue' ? ', рейтинг выпуска' : ''}, решение агентства ${fmtDate(c.rated_on)}`
+      + ((c.secids || []).some(s => HELD_SECIDS.has(s)) ? '. Бумага есть в портфеле.' : ''),
+    source: c.source, url: null, issuer: shortIssuerName(c.issuer) || c.issuer,
+  }));
   return out.sort((a, b) => String(b.occurred).localeCompare(String(a.occurred)));
 }
 

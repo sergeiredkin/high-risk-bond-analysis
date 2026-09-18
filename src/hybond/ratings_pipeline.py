@@ -27,7 +27,18 @@ Health (pipeline_health, source 'moex'):
                                denial, emptiness is NOT applied
   MOEX_RATINGS_EMPTIED  warn   a populated target came back empty (kept as
                                last known until EMPTY_CONFIRM_DAYS)
-  MOEX_RATINGS_DEFAULT  warn   a grade in the default family appeared
+  MOEX_RATINGS_DEFAULT  warn   a default-family grade was detected as a change
+
+Rating changes (store/agency_ratings.rating_change): every upgrade,
+downgrade, new rating, withdrawal, suspension, default or dropped rating,
+per agency, issuer and issue level, with the agency's date, the day it was
+seen and the resolved grade before/after. A target's first successful fetch
+is its baseline and records nothing, so the first production run (and any
+bond newly entering the universe) announces no "new" ratings. One exception:
+if the issuer already had a displayed grade from the legacy `rating` table
+and MOEX's grade differs, that correction is recorded once (source
+'moex_baseline') -- on the 2026-09-17 data that is 16 issuers, including two
+defaults we were still showing as ruB-/ruC.
 Known ratings are never dropped because of a failed run; the resolver marks
 them stale once last_seen is RATINGS_STALE_DAYS old (ratings.py).
 """
@@ -36,8 +47,9 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timedelta
 
-from . import universe_pipeline
+from . import ratings, universe_pipeline
 from .health import log_health
+from .compute import default_probs
 from .ingest import moex_ratings, sources
 from .store import agency_ratings, db
 
@@ -113,7 +125,8 @@ def run_refresh(con=None, *, client: moex_ratings.MoexRatingsClient | None = Non
 
     result = {"issuers_targeted": len(issuers), "bonds_targeted": len(bonds),
               "issuer_calls": 0, "issue_calls": 0, "skipped_fresh": 0, "deferred": 0,
-              "outcomes": {}, "changed": [], "emptied": [], "defaults": [],
+              "outcomes": {}, "changed": [], "changes": [], "baselined": 0,
+              "emptied": [], "defaults": [],
               "blocked": None, "aborted": None, "calls": 0}
     raw: dict[str, object] = {}
     pending: list[tuple] = []   # (emitent_id, isin, inn, FetchResult)
@@ -199,6 +212,32 @@ def run_refresh(con=None, *, client: moex_ratings.MoexRatingsClient | None = Non
     return result
 
 
+def _baseline_correction(eid, inn, before: dict, after: dict, rows, today) -> dict | None:
+    """On an issuer's first MOEX fetch: a change record when the grade the app
+    showed (legacy `rating` rows) differs from what MOEX now resolves to.
+    Nothing when there was no prior grade -- that is a new rating, not news."""
+    if before["grade"] == after["grade"]:
+        return None
+    old, new = before["grade"], after["grade"]
+    if new is None:
+        if not after["withdrawn_on"]:
+            return None
+        kind = "withdrawn"
+        agency = next((e["agency"] for e in after["agencies"]
+                       if e["status"] == "withdrawn" and e["rated_on"] == after["withdrawn_on"]), "")
+        rated_on, new_raw = after["withdrawn_on"], "Отозван"
+    else:
+        o, n = default_probs.rating_rank(old), default_probs.rating_rank(new)
+        kind = ("default" if new == "D" else "changed" if o is None or n is None
+                else "downgrade" if n > o else "upgrade")
+        agency, rated_on = after["agency"], after["rated_on"]
+        new_raw = next((r.raw_level for r in rows if r.agency == agency and r.grade == new), new)
+    return {"detected_on": today.isoformat(), "rated_on": rated_on, "emitent_id": eid, "isin": "",
+            "inn": inn, "agency": agency or "—", "book_id": None, "scale": "national", "kind": kind,
+            "old_grade": old, "new_grade": new, "old_raw": old, "new_raw": new_raw,
+            "severity": agency_ratings.change_severity(kind, "national"), "source": "moex_baseline"}
+
+
 def _apply(con, pending, state, today, now, result) -> None:
     fetched_at = now.isoformat(timespec="seconds")
     emptied_now = [p for p in pending if p[3].outcome == "empty"
@@ -211,19 +250,37 @@ def _apply(con, pending, state, today, now, result) -> None:
         outcome = res.outcome
         if outcome == "empty" and suspect:
             outcome = "denied"
+
+        def resolved():
+            return ratings.resolve(con, inn=inn, secid=isin or None, emitent_id=eid, as_of=today)
+        before_res = resolved() if outcome in ("ok", "empty") else None
+        before = before_res["grade"] if before_res else None
         change = agency_ratings.apply_fetch(
             con, emitent_id=eid, isin=isin, inn=inn, rows=res.rows, today=today,
             fetched_at=fetched_at, outcome=outcome, empty_confirm_days=EMPTY_CONFIRM_DAYS)
         label = f"{inn or eid}{'/' + isin if isin else ''}"
         if change["emptied"]:
             result["emptied"].append(label)
+        if change["baseline"] and outcome in ("ok", "empty"):
+            result["baselined"] += 1
+            if not isin and before:
+                correction = _baseline_correction(eid, inn, before_res, resolved(), res.rows, today)
+                if correction:
+                    change["changes"].append(correction)
         for agency, book, old, new in change["changed"]:
             result["changed"].append(f"{label} {agency}[{book}]: {old} -> {new}")
-        for r in res.rows:
-            if r.status == "default" and r.scale == "national":
-                prev = [x for x in change["changed"] if x[0] == r.agency and x[1] == r.book_id]
-                if prev:
-                    result["defaults"].append(f"{label} {r.agency} {r.raw_level} {r.rated_on}")
+        if change["changes"]:
+            after = resolved()["grade"]
+            for c in change["changes"]:
+                c["resolved_before"], c["resolved_after"] = before, after
+            for c in change["changes"]:
+                agency_ratings.record_changes(con, [c], source=c.pop("source", "moex_cci"))
+            for c in change["changes"]:
+                result["changes"].append(
+                    f"{label} {c['agency']} {c['kind']}: {c['old_raw'] or '—'} -> "
+                    f"{c['new_raw'] or '—'} ({c['rated_on']}); resolved {before or '—'} -> {after or '—'}")
+                if c["kind"] == "default" and c["scale"] == "national":
+                    result["defaults"].append(f"{label} {c['agency']} {c['new_raw']} {c['rated_on']}")
         state[(eid, isin)] = {"ok_at": fetched_at if outcome in ("ok", "empty") else
                               (state.get((eid, isin)) or {}).get("ok_at"), "outcome": outcome}
     con.commit()

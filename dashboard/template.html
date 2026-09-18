@@ -54,6 +54,10 @@
         <div class="readout-value" id="cbrRate">—</div>
         <div class="readout-next" id="cbrNext"></div>
       </div>
+      <button type="button" class="readout readout-health" id="ratingChip" data-page="overview">
+        <span class="health-dot" id="ratingDot"></span>
+        <span id="ratingLabel">—</span>
+      </button>
       <button type="button" class="readout readout-health" id="healthChip" data-page="data">
         <span class="health-dot" id="healthDot"></span>
         <span id="healthLabel">—</span>
@@ -90,6 +94,7 @@
 <script>/*__INCLUDE:src/pages/overview.js__*/</script>
 <!-- Обзор "Рынок сегодня" band: an addition beyond the design reference; delete this line and the file to remove it. -->
 <script>/*__INCLUDE:src/pages/overview-market-band.js__*/</script>
+<script>/*__INCLUDE:src/pages/overview-rating-band.js__*/</script>
 <script>/*__INCLUDE:src/pages/terminal-map.js__*/</script>
 <script>/*__INCLUDE:src/pages/bond-detail.js__*/</script>
 <script>/*__INCLUDE:src/pages/terminal.js__*/</script>

@@ -698,6 +698,48 @@ def ratings_meta(con, bonds: list[dict]) -> dict:
     }
 
 
+# How far back the exported rating-change log reaches. The dashboard's own
+# "recent" window is EVENT_LOOKBACK_DAYS in dashboard/src/bonds.js; this only
+# has to cover it with room for the drawer's per-bond history.
+RATING_CHANGES_EXPORT_DAYS = 90
+
+
+def rating_changes_export(con, bonds: list[dict], as_of: date | None = None) -> dict:
+    """DATA.rating_changes: every change the ratings refresh (or `hybond
+    rate`) recorded in the last RATING_CHANGES_EXPORT_DAYS, newest first,
+    plus which of today's universe bonds each one touches -- an issuer-level
+    change touches all the issuer's bonds, an issue-level change only its
+    ISIN. `baseline_since` is when change detection started watching, so the
+    UI can say "no changes since X" instead of implying a long clean record."""
+    as_of = as_of or date.today()
+    since = (as_of - timedelta(days=RATING_CHANGES_EXPORT_DAYS)).isoformat()
+    by_inn: dict[str, list[str]] = defaultdict(list)
+    names: dict[str, str] = {}
+    for b in bonds:
+        if b.get("emitent_inn"):
+            by_inn[b["emitent_inn"]].append(b["secid"])
+            names.setdefault(b["emitent_inn"], b.get("emitent_title"))
+    universe_secids = {b["secid"] for b in bonds}
+    issuer_names = {r["issuer_id"]: r["name"] for r in con.execute("SELECT issuer_id, name FROM issuer")}
+    items = []
+    for c in agency_ratings.recent_changes(con, since):
+        level = "issue" if c["isin"] else "issuer"
+        secids = ([c["isin"]] if c["isin"] in universe_secids else []) if level == "issue" \
+            else by_inn.get(c["inn"], [])
+        items.append({
+            "id": c["change_id"], "detected_on": c["detected_on"], "rated_on": c["rated_on"],
+            "inn": c["inn"], "isin": c["isin"] or None, "level": level,
+            "issuer": issuer_names.get(c["inn"]) or names.get(c["inn"]) or c["inn"],
+            "agency": c["agency"], "scale": c["scale"], "kind": c["kind"],
+            "old_grade": c["old_grade"], "new_grade": c["new_grade"],
+            "old_raw": c["old_raw"], "new_raw": c["new_raw"],
+            "resolved_before": c["resolved_before"], "resolved_after": c["resolved_after"],
+            "severity": c["severity"], "source": c["source"], "secids": secids,
+        })
+    return {"window_days": RATING_CHANGES_EXPORT_DAYS,
+            "baseline_since": agency_ratings.baseline_since(con), "items": items}
+
+
 def data_conflicts_for_issuer(con, issuer_id: str, ratings_all: list[dict]) -> list[dict]:
     """Detects genuine disagreements between hybond's own DB rows for one
     issuer, for the narrative-card generator (skills/bond-narrative-card) to
@@ -1905,6 +1947,7 @@ def main() -> None:
         "data_notes": notes,
         "known_issuers": known_issuers,
         "ratings_meta": ratings_meta(con, market_map["universe_now"]["bonds"]),
+        "rating_changes": rating_changes_export(con, market_map["universe_now"]["bonds"]),
         "company_scan_history": company_scan_history,
         "spread_history": spread_history,
         "spread_history_labels": spread_history_labels,

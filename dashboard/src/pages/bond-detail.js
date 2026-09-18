@@ -142,10 +142,29 @@ function detPillarsSection(b) {
   });
 }
 
+// Every recorded change touching this bond (issuer-level changes touch all of
+// the issuer's bonds), newest first: the day it was seen, and the agency's
+// own action date.
+function detRatingChangesHtml(b) {
+  const list = b.ratingChanges || [];
+  const meta = DATA.rating_changes || {};
+  if (!list.length) {
+    return meta.baseline_since
+      ? `<div class="det-note">Изменений рейтинга с начала наблюдения (${escapeHtml(fmtDate(meta.baseline_since))}) не было.</div>`
+      : '';
+  }
+  return `<div class="det-rchg-head">Изменения рейтинга</div><div class="det-rchgs">${list.map(c => `
+    <div class="det-rchg${ratingChangeIsDown(c) ? ' is-down' : ' is-up'}">
+      <div class="det-rchg-date">${escapeHtml(fmtDate(c.detected_on))}</div>
+      <div class="det-rchg-text">${escapeHtml(ratingChangeText(c))}${c.level === 'issue' ? ' · выпуск' : ''}</div>
+      <div class="det-rchg-mark">${escapeHtml(RATING_KIND_LABEL[c.kind] || c.kind)} · решение ${escapeHtml(fmtDate(c.rated_on))}${c.source === 'moex_baseline' ? ' · сверка с прежним' : c.source === 'manual' ? ' · ручная запись' : ''}</div>
+    </div>`).join('')}</div>`;
+}
+
 function detRatingsSection(b) {
   const all = b.ratingAgencies || [];
   if (!all.length) {
-    return detCard('Разрешение рейтингов', `<div class="det-note">${b.rating
+    return detCard('Разрешение рейтингов', `${detRatingChangesHtml(b)}<div class="det-note">${b.rating
       ? `У бумаги рейтинг ${escapeHtml(b.rating)}, но агентских записей по нему в выгрузке нет — показывать нечего, кроме итогового значения.`
       : 'Ни одно агентство не присваивало рейтинг ни эмитенту, ни выпуску — по данным MOEX ЦКИ. Без рейтинга нет модельной PD, поэтому справедливый спред и AEY после потерь для бумаги не считаются.'}</div>`);
   }
@@ -176,6 +195,7 @@ function detRatingsSection(b) {
   if (b.ratingSplit) notes.push('Агентства расходятся — в модель идёт самый низкий действующий рейтинг.');
   if (b.ratingStale) notes.push(`MOEX не подтверждал эти рейтинги с ${escapeHtml(fmtDate(b.ratingLastSeen))} — показан последний известный.`);
   return detCard('Разрешение рейтингов', `<div class="det-ratings">${rows}</div>
+    ${detRatingChangesHtml(b)}
     <div class="det-note">Источник — MOEX ЦКИ. Рейтинг выпуска важнее рейтинга эмитента; из действующих рейтингов по национальной шкале берётся самый консервативный. ${notes.join(' ')}</div>`);
 }
 

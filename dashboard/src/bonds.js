@@ -16,6 +16,9 @@
 //   rating*      rating_agencies / rating_split / rating_defaulted / ...
 //                src/hybond/ratings.py: MOEX ЦКИ agency ratings, issue before
 //                issuer, the lowest live national grade across agencies
+//   ratingChanges DATA.rating_changes.items touching this bond (export maps
+//                each change to its bonds), newest first; ratingMove is
+//                'down'/'up' when one landed within EVENT_LOOKBACK_DAYS
 
 // Bands and thresholds. Chosen for this data, not copied from the design's
 // mock numbers (its ±60 б.п. band and 500 млн ₽ liquidity cut sit outside
@@ -64,6 +67,32 @@ function daysAgo(iso, asOf) {
   return isFinite(a) && isFinite(b) ? (b - a) / 864e5 : null;
 }
 
+// ── rating changes ──────────────────────────────────────────────────────
+// Recorded by the ratings refresh (src/hybond/ratings_pipeline.py) and by
+// `hybond rate`; the first MOEX fetch is a baseline, so these are real moves.
+const RATING_CHANGES = ((DATA.rating_changes || {}).items) || [];
+const RATING_DOWN_KINDS = ['default', 'downgrade', 'withdrawn', 'suspended', 'dropped'];
+const RATING_KIND_LABEL = {
+  default: 'дефолт', downgrade: 'понижен', upgrade: 'повышен', new: 'присвоен',
+  withdrawn: 'отозван', suspended: 'приостановлен', dropped: 'снят с MOEX', changed: 'изменён',
+};
+// secids held in any saved portfolio (allocation.bonds[].isin is the secid)
+const HELD_SECIDS = new Set((DATA.portfolios || []).flatMap(p =>
+  ((p.allocation && p.allocation.bonds) || []).map(b => b.isin)));
+
+function ratingChangeIsDown(c) { return RATING_DOWN_KINDS.includes(c.kind); }
+
+// 'АКРА: ruBB → ruB-' / 'Эксперт РА: ruBB- → отозван'
+function ratingChangeText(c) {
+  const to = c.kind === 'withdrawn' ? 'отозван' : c.kind === 'suspended' ? 'приостановлен'
+    : c.kind === 'dropped' ? 'снят с MOEX' : (c.new_grade || c.new_raw || DASH);
+  return `${c.agency}: ${c.old_grade || c.old_raw || 'нет'} → ${to}`;
+}
+
+function ratingChangesRecent(list, asOf) {
+  return list.filter(c => { const d = daysAgo(c.detected_on, asOf); return d == null || d <= EVENT_LOOKBACK_DAYS; });
+}
+
 const BONDS = (() => {
   const asOf = (DATA.universe_now && DATA.universe_now.snap_date) || DATA.day2_snap_date;
   const monitored = new Map((DATA.issuers || []).map(i => [i.issuer_id, i]));
@@ -79,6 +108,8 @@ const BONDS = (() => {
     const flagsToday = iss && iss.snap_date === asOf ? (iss.flags_today || []).filter(f => f.secid === b.secid) : [];
     const gap = b.signal_excluded ? null : b.mispricing_bp;
     const name = (known[b.emitent_inn] && known[b.emitent_inn].name) || shortIssuerName((iss && iss.name) || b.emitent_title) || b.secid;
+    const ratingChanges = RATING_CHANGES.filter(c => (c.secids || []).includes(b.secid));
+    const recentMoves = ratingChangesRecent(ratingChanges, asOf);
 
     const bond = {
       secid: b.secid, t: b.short_name || b.secid, n: name, inn: b.emitent_inn,
@@ -92,6 +123,9 @@ const BONDS = (() => {
       ratingWithdrawnOn: b.rating_withdrawn_on || null, ratingSf: b.rating_sf || null,
       ratingStale: b.rating_stale === true, ratingLastSeen: b.rating_last_seen || null,
       ratingSource: b.rating_source || null,
+      ratingChanges,
+      ratingMove: recentMoves.some(ratingChangeIsDown) ? 'down' : recentMoves.length ? 'up' : null,
+      held: HELD_SECIDS.has(b.secid),
       // pd_rating is exported as a fraction (0.0598); DATA.pd_by_rating is the
       // same number in percent (5.98). Kept in percent here, like every other
       // rate on the page.
@@ -118,6 +152,7 @@ const BOND_BY_SECID = new Map(BONDS.map(b => [b.secid, b]));
 function bondFlags(b) {
   const f = [];
   if (b.ratingDefaulted) f.push('дефолт');
+  if (b.ratingMove === 'down') f.push('рейтинг ↓');
   if (b.yieldZone === 'negative_ev') f.push('красная зона');
   else if (b.yieldZone === 'caution') f.push('жёлтая зона');
   if (b.watch) f.push('наблюдение');
@@ -125,6 +160,7 @@ function bondFlags(b) {
   if (b.gap != null && b.gap > CANDIDATE_GAP_BP && b.yieldZone === 'green') f.push('кандидат');
   if (b.vol != null && b.vol < LOW_LIQ_VOLUME_RUB) f.push('низкая ликв.');
   if (b.yieldSource && b.yieldSource !== 'moex') f.push('цена искажена');
+  if (b.ratingMove === 'up') f.push('рейтинг ↑');
   return f;
 }
 
@@ -142,7 +178,32 @@ function ratingTitle(b) {
     `${a.agency}: ${a.status === 'withdrawn' ? 'отозван' : a.grade || a.raw} от ${fmtDate(a.rated_on)}${a.used ? ' — принят' : ''}`);
   if (b.ratingSplit) lines.push('Агентства расходятся — взят самый низкий');
   if (b.ratingStale) lines.push(`MOEX не подтверждал с ${fmtDate(b.ratingLastSeen)} — последний известный`);
+  b.ratingChanges.slice(0, 3).forEach(c => lines.push(
+    `${fmtDate(c.detected_on)} ${RATING_KIND_LABEL[c.kind] || c.kind}: ${ratingChangeText(c)}`));
   return lines.join('\n');
+}
+
+// How loudly a change should be shown: defaults first, then downgrades on
+// bonds you hold or on the ВДО screen, then other downgrades, then
+// withdrawals, then everything else. Lower = louder.
+function ratingChangeProminence(c) {
+  const touched = (c.secids || []).map(s => BOND_BY_SECID.get(s)).filter(Boolean);
+  const exposed = touched.some(b => b.held || b.vdo);
+  if (c.kind === 'default') return exposed ? 0 : 1;
+  if (ratingChangeIsDown(c)) return exposed ? (c.kind === 'downgrade' ? 1 : 2) : c.kind === 'downgrade' ? 3 : 4;
+  return exposed ? 5 : 6;
+}
+
+// Severity for feeds: the recorded one, raised to 'high' for a downgrade,
+// withdrawal or default touching a held or ВДО bond.
+function ratingChangeSeverity(c) {
+  return ratingChangeProminence(c) <= 2 && c.severity !== 'critical' ? 'high' : c.severity;
+}
+
+// The bond to open for a change: a held one, else a ВДО one, else any.
+function ratingChangeBond(c) {
+  const touched = (c.secids || []).map(s => BOND_BY_SECID.get(s)).filter(Boolean);
+  return touched.find(b => b.held) || touched.find(b => b.vdo) || touched[0] || null;
 }
 
 // 'выше' / 'в модели' / 'ниже' / null (no rating -> no fair spread)

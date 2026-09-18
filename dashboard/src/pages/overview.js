@@ -2,8 +2,9 @@
 // verbatim from bond-lab-design-reference.html (renderVals() `cap` array and
 // the isOverview markup). Deviations from the reference copy, all of them
 // counts that had no source in the codebase or were wrong:
-//   #6  "трёх агентств" -> "четырёх агентств": db._AGENCY_PRIORITY ranks
-//       АКРА, Эксперт РА, НКР, НРА (the block's own body lists all four).
+//   #6  "трёх агентств" -> "четырёх агентств", and the body now states the
+//       real resolution rule (src/hybond/ratings.py: issue before issuer,
+//       most conservative grade), not the retired fixed agency priority.
 //   #11 "— 9 кодов" dropped: no code registry; codes are logged ad hoc.
 //   #14 "834 из 834 тестов" dropped: a test count is not dashboard content.
 //   #15 "Семь источников" dropped: not a fixed, sourced number.
@@ -19,7 +20,7 @@ const OVERVIEW_CAPABILITIES = [
     ['Скоринг РСБУ по шести опорам', 'Ликвидность, долговая нагрузка, покрытие процентов, рентабельность, денежный поток, структура капитала. Правила в коде и под тестами — не чёрный ящик.'],
     ['Поиск mispricing по G-спреду', 'Рыночный спред к кривой ОФЗ сравнивается со справедливым по модели. Разрыв — это и есть кандидат на покупку или на выход.'],
     ['Carry и roll-down по ОФЗ', 'Отдельно считается, сколько приносит удержание и сколько — сползание по кривой при неизменной форме.'],
-    ['Разрешение рейтингов четырёх агентств', 'АКРА > Эксперт РА > НКР > НРА > ручная правка. Один ответ вместо нескольких противоречащих, с датой и приоритетом.'],
+    ['Разрешение рейтингов четырёх агентств', 'АКРА, Эксперт РА, НКР и НРА из MOEX ЦКИ: рейтинг выпуска важнее рейтинга эмитента, при расхождении берётся самый консервативный. Каждое изменение попадает в ленту и в оповещения.'],
     ['Классификация событий локальной моделью', 'Ollama на своей машине: ни один клиентский документ не уходит наружу. Новость получает класс и уверенность.'],
     ['Трекер решений ЦБ', 'Траектория ставки, календарь заседаний и то, что из этого уже заложено в кривую.'],
   ] },
@@ -81,6 +82,8 @@ PAGES.overview = {
         </div>
       </div>
 
+      <div id="overviewRatingBand" hidden></div>
+
       <div id="overviewMarketBand" hidden></div>
 
       <div class="groups">${groups}</div>
@@ -94,6 +97,9 @@ PAGES.overview = {
       </div>
     </div>`;
 
+    if (typeof renderOverviewRatingBand === 'function') {
+      renderOverviewRatingBand(document.getElementById('overviewRatingBand'));
+    }
     if (typeof renderOverviewMarketBand === 'function') {
       renderOverviewMarketBand(document.getElementById('overviewMarketBand'));
     }

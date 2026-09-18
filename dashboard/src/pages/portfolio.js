@@ -323,6 +323,19 @@ function pfChecks(positions) {
       ? `${evInns.size} ${plural(evInns.size, ['эмитент', 'эмитента', 'эмитентов'])} с серьёзным событием или флагом детектора: ${evNames.slice(0, 3).join(', ')}${evNames.length > 3 ? ' и др' : ''}.`
       : 'Ни у одного эмитента нет серьёзного события за 30 дней и флагов детектора на сегодня.' });
 
+  // 4b. rating moves on record (src/hybond/ratings_pipeline.py change log),
+  // same 30-day window as the screener's marker. Counted by issuer, like events.
+  const moved = positions.filter(p => p.bond && p.bond.ratingMove === 'down');
+  const movedNames = Array.from(new Set(moved.map(p => {
+    const c = ratingChangesRecent(p.bond.ratingChanges, (DATA.universe_now || {}).snap_date).find(ratingChangeIsDown);
+    return c ? `${p.bond.n} (${ratingChangeText(c)})` : p.bond.n;
+  })));
+  const defaulted = positions.filter(p => p.bond && p.bond.ratingDefaulted);
+  out.push({ g: moved.length || defaulted.length ? '!' : '✓', tone: moved.length || defaulted.length ? 'warn' : 'ok',
+    t: moved.length || defaulted.length
+      ? `${defaulted.length ? `${defaulted.length} ${plural(defaulted.length, ['позиция', 'позиции', 'позиций'])} с дефолтным рейтингом. ` : ''}${moved.length ? `Рейтинг понижен, отозван или в дефолте за ${EVENT_LOOKBACK_DAYS} дней: ${movedNames.slice(0, 3).join('; ')}${movedNames.length > 3 ? ' и др' : ''}.` : ''}`
+      : `За ${EVENT_LOOKBACK_DAYS} дней рейтинги позиций не понижались и не отзывались.` });
+
   // 5. liquidity -- against the screener's own low-liquidity floor
   const thin = positions.filter(p => p.bond && p.bond.vol != null && p.bond.vol < LOW_LIQ_VOLUME_RUB);
   const noVol = positions.filter(p => !p.bond || p.bond.vol == null);

@@ -4,8 +4,32 @@
 
 const PAGE_IDS = ['overview', 'terminal', 'portfolio', 'data'];
 
+// ── header: rating changes ──────────────────────────────────────────────
+// The app-wide notification for rating moves: counts over the same 30-day
+// window the bond markers use; clicking goes to the Обзор alert band.
+function renderRatingChip() {
+  const asOf = (DATA.universe_now && DATA.universe_now.snap_date) || DATA.day2_snap_date;
+  const recent = ratingChangesRecent(RATING_CHANGES, asOf);
+  const down = recent.filter(ratingChangeIsDown);
+  const defaults = recent.filter(c => c.kind === 'default');
+  let label = 'Рейтинги: без изменений';
+  if (defaults.length) label = `Рейтинги: ${defaults.length} ${plural(defaults.length, ['дефолт', 'дефолта', 'дефолтов'])} · ${down.length - defaults.length} ↓ · ${recent.length - down.length} ↑`;
+  else if (recent.length) label = `Рейтинги: ${down.length} ↓ · ${recent.length - down.length} ↑`;
+  document.getElementById('ratingLabel').textContent = label;
+  const dot = document.getElementById('ratingDot');
+  dot.style.background = down.length ? 'var(--color-accent-400)' : recent.length ? 'var(--color-accent-2-400)' : 'var(--color-neutral-400)';
+  if (!down.length) dot.style.animation = 'none';
+  const top = recent.slice().sort((a, b) => ratingChangeProminence(a) - ratingChangeProminence(b)).slice(0, 5);
+  const since = (DATA.rating_changes || {}).baseline_since;
+  document.getElementById('ratingChip').title = [
+    `Изменения рейтингов за ${EVENT_LOOKBACK_DAYS} дней${since ? ` (наблюдение с ${fmtDate(since)})` : ''}`,
+    ...top.map(c => `${fmtDate(c.detected_on)} ${c.issuer} — ${ratingChangeText(c)}`),
+  ].join('\n');
+}
+
 // ── header: ЦБ key rate + pipeline health ───────────────────────────────
 function renderHeader() {
+  renderRatingChip();
   const cbr = DATA.cbr || {};
   document.getElementById('cbrRate').textContent = fmtPct(cbr.current_rate);
   document.getElementById('cbrNext').textContent = cbr.next_meeting ? `заседание ${fmtDayMonth(cbr.next_meeting)}` : '';

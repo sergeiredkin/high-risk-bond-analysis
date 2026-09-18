@@ -413,13 +413,177 @@ def test_mass_emptiness_is_treated_as_denial_not_as_withdrawal(con, monkeypatch)
     assert ratings.resolve(con, inn="7708503727", as_of=date(2026, 9, 21))["stale"] is True
 
 
-def test_new_default_is_logged(con):
+# ---- rating change detection -------------------------------------------------
+
+DAY2 = datetime(2026, 9, 18, 10, 0)
+
+
+def edited(name, block, edits=(), drop=(), add=()):
+    """A fixture with rows edited by agency name: edits {agency: (level, date)}."""
+    p = fixture(name)
+    data = [row for row in p[block]["data"] if row[1] not in drop]
+    for row in data:
+        if row[1] in dict(edits):
+            row[6], row[4] = dict(edits)[row[1]][0], dict(edits)[row[1]][1] + " 00:00:00"
+    data += [list(r) for r in add]
+    p[block]["data"] = data
+    if f"{block}.cursor" in p:
+        p[f"{block}.cursor"]["data"] = [[0, len(data), 100]]
+    return p
+
+
+def changes(con):
+    return [dict(r) for r in con.execute("SELECT * FROM rating_change ORDER BY change_id")]
+
+
+def test_first_fetch_is_a_baseline_not_a_flood_of_new_ratings(con):
     seed_universe(con)
+    r = refresh(con, FakeISS())
+    assert r["baselined"] == 4 and r["changes"] == []
+    assert changes(con) == []
+    db.init_pipeline_health(con)
+    assert not [row for row in con.execute("SELECT code FROM pipeline_health")
+                if row["code"] == "MOEX_RATINGS_DEFAULT"]
+
+
+def test_every_kind_of_agency_move_is_recorded_per_level(con):
+    seed_universe(con)
+    refresh(con, FakeISS())
+    day2 = FakeISS({
+        mr.issuer_url(712): Resp(200, edited("issuer_rzd", "cci_rating_companies",
+                                             {"АКРА": ("AA+(RU)", "2026-09-18"),
+                                              "Эксперт РА": ("Отозван", "2026-09-17")})),
+        mr.issuer_url(11004): Resp(200, edited("issuer_mgkl_withdrawn", "cci_rating_companies",
+                                               {"НРА": ("D|ru|", "2026-09-16")})),
+        mr.issue_url(1259, "RU000A1075S4"): Resp(200, edited(
+            "issue_x5_finance", "cci_rating_securities", drop=("НКР",),
+            add=[[6, "НРА", 32, 1, "2026-09-17 00:00:00", "2026-09-17 00:00:00", "AA+|ru|"]])),
+    })
+    r = refresh(con, day2, now=DAY2)
+    got = {(c["inn"], c["isin"], c["agency"]): c for c in changes(con)}
+    rzd_akra = got[("7708503727", "", "АКРА")]
+    assert (rzd_akra["kind"], rzd_akra["old_grade"], rzd_akra["new_grade"], rzd_akra["severity"]) == \
+        ("downgrade", "ruAAA", "ruAA+", "high")
+    assert (rzd_akra["rated_on"], rzd_akra["detected_on"]) == ("2026-09-18", "2026-09-18")
+    assert (rzd_akra["resolved_before"], rzd_akra["resolved_after"]) == ("ruAAA", "ruAA+")
+    assert got[("7708503727", "", "Эксперт РА")]["kind"] == "withdrawn"
+    mgkl = got[("7707600245", "", "НРА")]
+    assert (mgkl["kind"], mgkl["severity"], mgkl["resolved_after"]) == ("default", "critical", "D")
+    assert got[("7715630469", "RU000A1075S4", "НКР")]["kind"] == "dropped"
+    assert got[("7715630469", "RU000A1075S4", "НРА")]["kind"] == "new"
+    assert len(got) == 5 and len(r["changes"]) == 5
+    assert "MOEX_RATINGS_DEFAULT" in [row["code"] for row in con.execute("SELECT code FROM pipeline_health")]
+
+
+def test_upgrade_and_reinstatement_are_changes(con):
+    seed_universe(con)
+    refresh(con, FakeISS())
+    refresh(con, FakeISS({mr.issuer_url(11004): Resp(200, edited(
+        "issuer_mgkl_withdrawn", "cci_rating_companies",
+        {"НРА": ("BBB-|ru|", "2026-09-18"), "Эксперт РА": ("ruBB+", "2026-09-18")}))}), now=DAY2)
+    kinds = {c["agency"]: c["kind"] for c in changes(con)}
+    assert kinds == {"НРА": "upgrade", "Эксперт РА": "new"}
+
+
+def test_confirmation_and_rerun_are_not_changes(con):
+    seed_universe(con)
+    refresh(con, FakeISS())
+    confirm = FakeISS({mr.issuer_url(712): Resp(200, edited(
+        "issuer_rzd", "cci_rating_companies", {"АКРА": ("AAA(RU)", "2026-09-18")}))})
+    refresh(con, confirm, now=DAY2)
+    assert changes(con) == []
+    down = {mr.issuer_url(712): Resp(200, edited(
+        "issuer_rzd", "cci_rating_companies", {"АКРА": ("AA(RU)", "2026-09-19")}))}
+    refresh(con, FakeISS(down), now=datetime(2026, 9, 19, 10, 0))
+    refresh(con, FakeISS(down), now=datetime(2026, 9, 20, 10, 0))
+    assert [c["kind"] for c in changes(con)] == ["downgrade"]
+
+
+def test_bonds_entering_or_leaving_the_universe_are_not_rating_changes(con):
+    seed_universe(con)
+    refresh(con, FakeISS())
+    # Центр-резерв enters (already in default) and МГКЛ leaves the target set
+    con.execute("DELETE FROM universe_snapshot WHERE secid='RU000A0MGKL1'")
+    db.insert_universe_snapshot(con, **{**dict(con.execute(
+        "SELECT * FROM universe_snapshot WHERE secid='RU000A106K43'").fetchone()),
+        "secid": "RU000A10CRZ1", "emitent_inn": "5612069520"})
+    db.upsert_emitent_map_rows(con, {"RU000A10CRZ1": {"emitent_inn": "5612069520", "emitent_title": None,
+                                                     "emitent_id": 12366, "isin": "RU000A10CRZ1"}},
+                               "2026-09-18")
+    iss = FakeISS({mr.issuer_url(12366): Resp(200, fixture("issuer_centr_rezerv_default"))})
+    r = refresh(con, iss, now=DAY2)
+    assert mr.issuer_url(12366) in iss.urls and mr.issuer_url(11004) not in iss.urls
+    assert r["baselined"] == 1 and changes(con) == []
+    assert ratings.resolve(con, inn="5612069520", as_of=DAY2.date())["grade"] == "D"
+
+
+def test_baseline_reports_a_stale_legacy_grade_once_not_new_ratings(con):
+    seed_universe(con)
+    # we still showed МГКЛ at Эксперт РА ruBB-; MOEX: Эксперт РА withdrew, НРА BB
+    db.upsert_issuer(con, "7707600245", "МГКЛ")
+    db.upsert_rating(con, "7707600245", "Эксперт РА", "ruBB-", None, None, "2025-09-12")
+    r = refresh(con, FakeISS())
+    got = changes(con)
+    assert r["baselined"] == 4 and len(got) == 1
+    c = got[0]
+    assert (c["inn"], c["kind"], c["old_grade"], c["new_grade"], c["agency"], c["source"]) == \
+        ("7707600245", "upgrade", "ruBB-", "ruBB", "НРА", "moex_baseline")
+    refresh(con, FakeISS(), now=DAY2)
+    assert len(changes(con)) == 1
+
+
+def test_baseline_reports_a_default_we_were_still_showing_as_rated(con):
+    seed_universe(con)
+    db.upsert_issuer(con, "5612069520", "Центр-резерв")
+    db.upsert_rating(con, "5612069520", "АКРА", "ruC", None, None, "2026-02-27")
     iss = FakeISS({mr.issuer_url(712): Resp(200, fixture("issuer_centr_rezerv_default"))})
+    db.replace_emitent_map(con, {**db.get_emitent_map(con), "RU000A106K43": {
+        "emitent_inn": "5612069520", "emitent_title": None, "emitent_id": 712, "isin": "RU000A106K43"}},
+        "2026-09-14")
+    con.execute("UPDATE universe_snapshot SET emitent_inn='5612069520' WHERE secid='RU000A106K43'")
     refresh(con, iss)
-    detail = [row["detail"] for row in con.execute(
-        "SELECT detail FROM pipeline_health WHERE code='MOEX_RATINGS_DEFAULT'")]
-    assert detail and "D(RU)" in detail[0]
+    (c,) = changes(con)
+    assert (c["kind"], c["severity"], c["old_grade"], c["new_grade"], c["rated_on"]) == \
+        ("default", "critical", "ruC", "D", "2026-09-10")
+
+
+def test_structured_finance_moves_are_recorded_one_step_quieter():
+    assert agency_ratings.change_severity("downgrade", "sf") == "medium"
+    assert agency_ratings.change_severity("default", "sf") == "critical"
+    new = mr.parse_payload(edited("issuer_sber_osk", "cci_rating_companies",
+                                  {"АКРА": ("aa(ru)", "2026-09-18")}))[0]
+    osk_new = [r for r in new if r.book_id == 11][0]
+    assert osk_new.scale not in agency_ratings.REPORTED_SCALES
+
+
+def test_manual_rate_entry_is_a_rating_change(con):
+    c = agency_ratings.manual_change(inn="7700000001", agency="НКР", old_grade="ruCC", new_grade="D",
+                                     rated_on="2026-09-15", today=TODAY,
+                                     resolved_before="ruCC", resolved_after="D")
+    assert (c["kind"], c["severity"]) == ("default", "critical")
+    assert agency_ratings.record_changes(con, [c], source="manual") == 1
+    assert agency_ratings.manual_change(inn="1", agency="НКР", old_grade="ruB", new_grade="ruB",
+                                        rated_on="2026-09-15", today=TODAY,
+                                        resolved_before=None, resolved_after=None) is None
+    assert agency_ratings.manual_change(inn="1", agency="НКР", old_grade="ruB", new_grade="ruB+",
+                                        rated_on="2026-09-15", today=TODAY, resolved_before=None,
+                                        resolved_after=None)["kind"] == "upgrade"
+
+
+def test_export_rating_changes_maps_each_change_to_affected_bonds(con):
+    from export_dashboard_data import rating_changes_export
+    seed_universe(con)
+    refresh(con, FakeISS())
+    refresh(con, FakeISS({mr.issuer_url(712): Resp(200, edited(
+        "issuer_rzd", "cci_rating_companies", {"АКРА": ("A(RU)", "2026-09-18")}))}), now=DAY2)
+    bonds = [{"secid": "RU000A106K43", "emitent_inn": "7708503727", "emitent_title": "РЖД"},
+             {"secid": "RU000A106K50", "emitent_inn": "7708503727", "emitent_title": "РЖД"}]
+    out = rating_changes_export(con, bonds, as_of=DAY2.date())
+    assert out["baseline_since"] == "2026-09-17" and len(out["items"]) == 1
+    item = out["items"][0]
+    assert (item["kind"], item["level"], item["issuer"], item["secids"]) == \
+        ("downgrade", "issuer", "РЖД", ["RU000A106K43", "RU000A106K50"])
+    assert "watchlist_tier" not in item
 
 
 # ---- emitent map and export ---------------------------------------------------

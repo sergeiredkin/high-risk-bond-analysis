@@ -155,8 +155,9 @@ def cmd_refresh_ratings(args) -> int:
     print(f"Calls: {r['calls']} (issuer {r['issuer_calls']}, issue {r['issue_calls']}); "
           f"fresh, skipped: {r['skipped_fresh']}; deferred to next run: {r['deferred']}")
     print(f"Outcomes: {r['outcomes']}")
-    for line in r["changed"]:
-        print(f"  changed  {line}")
+    print(f"Baselined (first fetch, no change reported): {r['baselined']}")
+    for line in r["changes"]:
+        print(f"  CHANGE   {line}")
     for line in r["emptied"]:
         print(f"  emptied  {line}")
     for line in r["defaults"]:
@@ -1158,9 +1159,23 @@ def cmd_rate(args) -> int:
         return 1
 
     rated_on = args.date or date.today().isoformat()
+    from . import ratings
+    from .store import agency_ratings
+    agency_ratings.init(con)
+    prev = con.execute("SELECT rating FROM rating WHERE issuer_id=? AND agency=? AND is_current=1",
+                       (args.inn, args.agency)).fetchone()
+    before = ratings.resolve(con, inn=args.inn)["grade"]
     db.upsert_rating(con, issuer_id=args.inn, agency=args.agency,
                       rating=args.rating, outlook=args.outlook,
                       action=args.action, rated_on=rated_on, source="manual")
+    # recorded in the same change log the MOEX refresh writes, so a hand-entered
+    # action (e.g. a default MOEX hasn't loaded yet) reaches the dashboard feed
+    change = agency_ratings.manual_change(
+        inn=args.inn, agency=args.agency, old_grade=prev["rating"] if prev else None,
+        new_grade=args.rating, rated_on=rated_on, today=date.today(),
+        resolved_before=before, resolved_after=ratings.resolve(con, inn=args.inn)["grade"])
+    if change:
+        agency_ratings.record_changes(con, [change], source="manual")
     con.commit()
     print(f"Recorded {args.rating} ({args.agency}) for ИНН {args.inn} on {rated_on}")
     con.close()
