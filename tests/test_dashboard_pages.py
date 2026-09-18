@@ -385,13 +385,14 @@ def test_dashboard_fetches_nothing_at_runtime():
 
 
 def test_no_scenario_delta_is_extrapolated_as_a_slope():
-    """Regression, plan finding S1: the Портфель tracker drew
-    rate_scenarios.base_annual_bp (a level difference) as a slope per year and
-    printed «база ЦБ 13,0%» for 18.12.2026, a number the CBR never published."""
+    """Regression, plan finding S1: the rate tracker (originally on Портфель,
+    moved to «Ставка и ОФЗ» 2026-09-18) drew rate_scenarios.base_annual_bp (a
+    level difference) as a slope per year and printed «база ЦБ 13,0%» for
+    18.12.2026, a number the CBR never published."""
     for path in sorted(SRC.rglob("*.js")):
         assert "_annual_bp" not in _code_lines(path), path.name
-    pf = (SRC / "pages" / "portfolio.js").read_text(encoding="utf-8")
-    assert "DATA.expectations" in pf and "f.rest" in pf
+    rt = (SRC / "pages" / "rates.js").read_text(encoding="utf-8")
+    assert "DATA.expectations" in rt and "f.rest" in rt
 
 
 def test_rates_page_taper_matches_the_model():
