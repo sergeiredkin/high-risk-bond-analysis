@@ -148,6 +148,33 @@ def _publication_scenarios(con, today: date) -> dict | None:
     }
 
 
+def scenario_deltas_by_year(con, years: list[int]) -> dict[str, dict[int, float | None]]:
+    """Per-year rate-path deltas (decimal) for each of the four CBR
+    scenarios -- generalises get_rate_scenarios()'s single-horizon-year
+    lookup (year = today.year + 1) to an arbitrary year list, for the
+    Портфель page's 3-year AEY-by-scenario chart. Same sources
+    (latest_publication), same None-when-missing discipline as
+    _publication_scenarios(): a year/scenario combination with nothing
+    published yet is None, never silently interpolated or omitted.
+
+    Base comes from the latest cbr_forecast edition (one edition can carry
+    several years); the three alternatives come from the latest ОНЕГДКП
+    edition's own scenario table -- exactly the sources _publication_
+    scenarios() already uses for the single-year AEY overlay, just read for
+    every requested year instead of one."""
+    _, current = current_key_rate(con)
+    out: dict[str, dict[int, float | None]] = {k: {y: None for y in years} for k in ("base", "stress", "bull", "risky")}
+    if current is None:
+        return out
+    for year in years:
+        base = latest_publication(con, "cbr_forecast", "base", year)
+        out["base"][year] = (base["mid"] - current) / 100.0 if base else None
+        for key, name in (("stress", "proinflation"), ("bull", "disinflation"), ("risky", "risk")):
+            v = latest_publication(con, "ondkp", name, year)
+            out[key][year] = (v["mid"] - current) / 100.0 if v else None
+    return out
+
+
 def get_rate_scenarios(con, today: date | None = None) -> dict:
     """Current rate-path deltas (decimal) for the AEY overlay.
 

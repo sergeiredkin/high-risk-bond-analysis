@@ -258,12 +258,119 @@ function pfCompositionHtml(positions) {
   </section>`;
 }
 
+// ── Портфель через 3 года: AEY под сценариями ЦБ ────────────────────────
 // The rate tracker that used to live here moved to «Ставка и ОФЗ» (captain,
 // 2026-09-18): it duplicated that page's own «Траектория по сценариям»
 // panel (rates.js), which draws the same published path across every CBR
-// scenario, not just one. pf-aside is single-panel until a rate-scenario
-// portfolio-impact projection (3-year horizon) replaces this slot -- follow-up
-// scope, not built here.
+// scenario, not just one. This replaces that slot with the follow-up the
+// captain asked for next: a rate-scenario portfolio-impact section
+// (scout plan: firstmate/data/portfolio-rate-plan-1789716252/report.md),
+// approved 2026-09-18. Two blocks, both backed by DATA.rates_premium
+// (scripts/export_dashboard_data.py's rates_premium_export -- the SAME
+// formula «Премия к ОФЗ» on «Ставка и ОФЗ» already uses live):
+//   A. one-time repricing tiles, one per CBR scenario, at today's holdings;
+//   B. the same repricing evaluated at each of the next few years' own
+//      published scenario level (aey_path) -- a sensitivity across years,
+//      NOT a compounding value path: there is no cash-flow/roll-down model
+//      for corporate bonds (unlike ofz_pipeline for OFZ), so this doesn't
+//      assume the portfolio still holds today's exact bonds in year 2 or 3.
+//      Paired with `rolloff` -- how much of the portfolio's own bond COUNT
+//      actually survives that long -- so the chart can't be read as more
+//      than it is.
+const PF_SCEN_ORDER = ['base', 'bull', 'stress', 'risky'];
+const PF_SCEN_LABEL = { base: 'Базовый', bull: 'Дезинфл.', stress: 'Проинфл.', risky: 'Рисковый' };
+const PF_SCEN_COLOR = { base: '#c67139', bull: '#7a8a5e', stress: '#8c491a', risky: '#56633f' };
+
+function pfRatePremium() {
+  const cur = pfCurrent();
+  if (!cur) return null;
+  return ((DATA.rates_premium && DATA.rates_premium.portfolios) || []).find(p => p.id === cur.id) || null;
+}
+
+function pfRateTilesHtml(rp) {
+  const tiles = PF_SCEN_ORDER.map(k => {
+    const s = rp.by_scenario[k];
+    if (!s || s.pf_aey_pct == null) {
+      return `<div class="stat"><div class="stat-k">${escapeHtml(PF_SCEN_LABEL[k])}</div><div class="stat-v">${DASH}</div><div class="stat-note">нет данных по этому сценарию</div></div>`;
+    }
+    return `<div class="stat${k === 'base' ? ' is-green' : ''}">
+      <div class="stat-k">${escapeHtml(PF_SCEN_LABEL[k])}</div>
+      <div class="stat-v">${fmtPct(s.pf_aey_pct, 2)}</div>
+      <div class="stat-note">AEY после потерь · дюр. ${rp.avg_mod_dur != null ? fmtNum(rp.avg_mod_dur, 2) + ' г.' : DASH}</div>
+    </div>`;
+  }).join('');
+  return `<section class="pf-card">
+    <div class="pf-card-title">Разовая переоценка по сценариям ЦБ</div>
+    <div class="pf-card-note">Сегодняшний состав, репрайс на сдвиг ставки каждого сценария — та же формула, что «Премия к ОФЗ» на «Ставка и ОФЗ». Разовый эффект, не путь на несколько лет — график ниже.</div>
+    <div class="stat-grid">${tiles}</div>
+  </section>`;
+}
+
+function pfRatePathSvg(rp) {
+  const years = rp.aey_path_years || [];
+  if (years.length < 2) return null;
+  const W = 440, H = 170, PX = 10, PT = 14, PB = 22, LBL = 96;
+  const x = i => PX + i / (years.length - 1) * (W - 2 * PX - LBL);
+  const vals = [];
+  PF_SCEN_ORDER.forEach(k => years.forEach(yy => {
+    const v = rp.aey_path[k] && rp.aey_path[k][String(yy)];
+    if (v != null) vals.push(v);
+  }));
+  if (!vals.length) return null;
+  const lo = Math.floor(Math.min.apply(null, vals) / 2) * 2 - 2, hi = Math.ceil(Math.max.apply(null, vals) / 2) * 2 + 2;
+  const y = v => PT + (1 - (v - lo) / (hi - lo)) * (H - PT - PB);
+  const parts = [];
+  const lastYear = years[years.length - 1];
+  const labelRows = [];
+  PF_SCEN_ORDER.forEach(k => {
+    const pts = years.map((yy, i) => {
+      const v = rp.aey_path[k] && rp.aey_path[k][String(yy)];
+      return v == null ? null : [i, v];
+    }).filter(Boolean);
+    if (pts.length < 2) return;
+    const d = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ');
+    parts.push(`<path d="${d}" fill="none" stroke="${PF_SCEN_COLOR[k]}" stroke-width="${k === 'base' ? 2.4 : 1.8}" stroke-linecap="round" stroke-linejoin="round"></path>`);
+    parts.push(pts.map(p => `<circle cx="${x(p[0]).toFixed(1)}" cy="${y(p[1]).toFixed(1)}" r="2.6" fill="${PF_SCEN_COLOR[k]}"></circle>`).join(''));
+    const lastV = rp.aey_path[k] && rp.aey_path[k][String(lastYear)];
+    if (lastV != null) labelRows.push({ k, v: lastV });
+  });
+  labelRows.sort((a, b) => a.v - b.v);
+  let prevY = -999;
+  labelRows.forEach(({ k, v }) => {
+    let yy = y(v) + 3;
+    if (yy - prevY < 11) yy = prevY + 11;
+    prevY = yy;
+    parts.push(`<text x="${(W - LBL + 6).toFixed(1)}" y="${yy.toFixed(1)}" font-size="9.5" fill="${PF_SCEN_COLOR[k]}" font-weight="600">${escapeHtml(PF_SCEN_LABEL[k])} ${fmtNum(v, 1)}%</text>`);
+  });
+  years.forEach((yy, i) => parts.push(`<text x="${x(i).toFixed(1)}" y="${H - 6}" font-size="9.5" text-anchor="middle" fill="#201e1d" fill-opacity=".5">${yy}</text>`));
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" class="pf-cbr-svg" role="img" aria-label="AEY портфеля по годам и сценариям">${parts.join('')}</svg>`;
+}
+
+function pfRatePathHtml(rp) {
+  const svg = pfRatePathSvg(rp);
+  const ro = rp.rolloff || {};
+  const years = rp.aey_path_years || [];
+  const rolloffPct = ro.n_bonds ? Math.round((ro.within_1y + ro.within_1_3y) / ro.n_bonds * 100) : null;
+  const note = svg
+    ? `Каждая точка — переоценка сегодняшних ${ro.n_bonds != null ? fmtNum(ro.n_bonds, 0) : ''} бумаг под уровень ставки сценария в этом году (та же формула, что в тайлах выше, просто на разных годах). Это не прогноз стоимости портфеля и не сложный процент${rolloffPct != null ? ` — ${rolloffPct}% бумаг по счёту гасится или уходит в оферту до ${years[years.length - 1]} года, и доходность этих денег зависит от того, во что они переинвестируются, не от сегодняшней дюрации` : ''}.`
+    : 'Сценариев ЦБ на несколько лет вперёд в выгрузке пока нет — появятся после hybond expectations.';
+  return `<section class="pf-cbr">
+    <div class="pf-cbr-kicker">AEY портфеля по годам и сценариям ЦБ</div>
+    ${svg || '<div class="pf-cbr-empty">Ставки по годам в выгрузке нет.</div>'}
+    <div class="pf-cbr-note">${escapeHtml(note)}</div>
+  </section>`;
+}
+
+function pfRateSectionHtml() {
+  const rp = pfRatePremium();
+  if (!rp) {
+    return `<section class="pf-card">
+      <div class="pf-card-title">Разовая переоценка по сценариям ЦБ</div>
+      <div class="pf-card-note">Считается только для пресетов конвейера — у корзины нет сохранённого состава, который экспортер может пересчитать по сценариям.</div>
+    </section>`;
+  }
+  return pfRateTilesHtml(rp) + pfRatePathHtml(rp);
+}
 
 // ── Проверка портфеля ───────────────────────────────────────────────────
 // Checks a preset portfolio against the very constraints build_preset()
@@ -461,6 +568,7 @@ function pfRender() {
     <div class="pf-split">
       ${pfCompositionHtml(positions)}
       <div class="pf-aside">
+        ${pfRateSectionHtml()}
         ${pfChecksHtml(positions)}
       </div>
     </div>`;

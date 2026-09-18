@@ -1811,6 +1811,43 @@ OFZ_DURATION_MATCH_MAX_DIFF_YEARS = 2.0  # same limit the old dashboard's premiu
 OFZ_BENCHMARK_MIN_TENOR_YEARS = 1.0
 
 
+AEY_PATH_YEARS_AHEAD = 3  # Портфель "AEY by year" chart: horizon year + this many more
+
+
+def _portfolio_rolloff(positions: list[dict], rows: dict, as_of: date) -> dict:
+    """Share of a preset's own bond COUNT (not weight -- this is about how
+    many positions come up for a reinvestment decision, not how much money)
+    that matures or hits a put option within 1 year / 1-3 years / beyond,
+    plus the floating-coupon count -- the data behind Портфель's "what
+    happens to the money" card. Same earlier-of-maturity-or-put convention
+    as portfolio.refinancing_flag(), and the same coupon_pct-is-null-means-
+    floater heuristic scripts/export_dashboard_data.py already uses for
+    bonds.js's own `coupon_type` field (see universe_for_dashboard)."""
+    y1 = y2_3 = beyond = floaters = counted = 0
+    for pos in positions:
+        r = rows.get(pos.get("isin"))
+        if r is None:
+            continue
+        counted += 1
+        if r["coupon_pct"] is None:
+            floaters += 1
+        candidates = [d for d in (r["mat_date"], r["offer_date"]) if d]
+        earliest = min(candidates) if candidates else None
+        if earliest is None:
+            continue
+        try:
+            earliest_d = date.fromisoformat(earliest[:10])
+        except ValueError:
+            continue
+        if earliest_d <= as_of + timedelta(days=365):
+            y1 += 1
+        elif earliest_d <= as_of + timedelta(days=365 * 3):
+            y2_3 += 1
+        else:
+            beyond += 1
+    return {"n_bonds": counted, "floaters": floaters, "within_1y": y1, "within_1_3y": y2_3, "beyond_3y": beyond}
+
+
 def rates_premium_export(con, scenarios: dict, portfolios: list[dict], ofz_bonds: list[dict]) -> dict:
     """DATA.rates_premium: each preset portfolio's AEY after credit losses
     against the nearest-duration nominal OFZ, per scenario, with ONE formula
@@ -1827,17 +1864,33 @@ def rates_premium_export(con, scenarios: dict, portfolios: list[dict], ofz_bonds
     Портфель page reads. The OFZ leg is a benchmark-grade issue (ПД/АД, YTM
     solved on its cash flows, at least a year to maturity) within
     OFZ_DURATION_MATCH_MAX_DIFF_YEARS of the portfolio's weighted duration;
-    beyond that the comparison is not made."""
+    beyond that the comparison is not made.
+
+    Also carries, per portfolio (Портфель "3-year" section, 2026-09-18):
+    `aey_path` -- the SAME snapshot-repricing metric as by_scenario, just
+    evaluated at each of the next AEY_PATH_YEARS_AHEAD+1 years' own
+    published scenario level (portfolio.scenario_deltas_by_year) instead of
+    only the current horizon year. This is a REPRICING sensitivity across
+    years, not a compounding value/reinvestment path -- there is no
+    cash-flow/roll-down model for corporate bonds (unlike ofz_pipeline for
+    OFZ), so nothing here assumes the portfolio still holds these exact
+    bonds in year 2 or 3. `rolloff` (from _portfolio_rolloff) is the honest
+    counterpart: how much of the bond COUNT actually survives that long."""
     snap = db.latest_universe_snap_date(con)
     rows = {r["secid"]: r for r in db.universe_snapshot_rows(con, snap)} if snap else {}
     candidates = [o for o in ofz_bonds if o.get("benchmark") and (o.get("tenor_yrs") or 0) >= OFZ_BENCHMARK_MIN_TENOR_YEARS]
     keys = [k for k, _, _ in PAGE_SCENARIOS if scenarios.get(k) is not None]
+    horizon_year = scenarios.get("horizon_year") or (date.today().year + 1)
+    path_years = [horizon_year + i for i in range(AEY_PATH_YEARS_AHEAD)]
+    deltas_by_year = portfolio.scenario_deltas_by_year(con, path_years)
     out = []
     for pf in portfolios:
         positions = (pf.get("allocation") or {}).get("bonds") or []
         dur_num = dur_den = 0.0
         covered = 0
         aey_sums = {k: [0.0, 0.0] for k in keys}
+        # per-year aey_sums, only for scenarios scenario_deltas_by_year can price
+        path_sums = {k: {y: [0.0, 0.0] for y in path_years} for k in ("base", "stress", "bull", "risky")}
         for pos in positions:
             r = rows.get(pos.get("isin"))
             w = pos.get("weight") or 0
@@ -1857,6 +1910,15 @@ def rates_premium_export(con, scenarios: dict, portfolios: list[dict], ofz_bonds
                     aey_sums[k][1] += w
                     ok = True
             covered += 1 if ok else 0
+            for k in path_sums:
+                for y in path_years:
+                    d = deltas_by_year[k].get(y)
+                    if d is None:
+                        continue
+                    a = portfolio.pd_adjusted_aey(portfolio.bond_aey(r["ytm"], mdur, d), r["rating"], con=con)
+                    if a is not None:
+                        path_sums[k][y][0] += a * w
+                        path_sums[k][y][1] += w
         avg_dur = dur_num / dur_den if dur_den else None
         bench = None
         if avg_dur is not None and candidates:
@@ -1874,6 +1936,12 @@ def rates_premium_export(con, scenarios: dict, portfolios: list[dict], ofz_bonds
                 "ofz_aey_pct": round(ofz_aey, 2) if ofz_aey is not None else None,
                 "premium_pp": round(pf_aey - ofz_aey, 2) if pf_aey is not None and ofz_aey is not None else None,
             }
+        aey_path = {}
+        for k, by_year in path_sums.items():
+            year_vals = {}
+            for y, (num, den) in by_year.items():
+                year_vals[str(y)] = round(num / den * 100, 2) if den else None
+            aey_path[k] = year_vals
         out.append({
             "id": pf["id"], "name": pf["name"], "preset_type": pf["preset_type"],
             "positions": len(positions), "covered": covered,
@@ -1881,6 +1949,9 @@ def rates_premium_export(con, scenarios: dict, portfolios: list[dict], ofz_bonds
             "ofz": ({"secid": bench["secid"], "short_name": bench["short_name"], "ytm_pct": bench["ytm_pct"],
                      "mod_dur": bench["mod_dur"], "mat_date": bench["mat_date"]} if bench else None),
             "by_scenario": by_scenario,
+            "aey_path": aey_path,
+            "aey_path_years": path_years,
+            "rolloff": _portfolio_rolloff(positions, rows, date.today()),
         })
     return {"match_max_diff_years": OFZ_DURATION_MATCH_MAX_DIFF_YEARS, "universe_snap_date": snap,
             "portfolios": out}
