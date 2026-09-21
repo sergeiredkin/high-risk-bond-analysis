@@ -95,6 +95,8 @@ function ratingChangesRecent(list, asOf) {
 
 const BONDS = (() => {
   const asOf = (DATA.universe_now && DATA.universe_now.snap_date) || DATA.day2_snap_date;
+  const weekAgo = new Map(((DATA.universe_week_ago && DATA.universe_week_ago.bonds) || [])
+    .map(b => [b.secid, b.g_spread_bp]));
   const monitored = new Map((DATA.issuers || []).map(i => [i.issuer_id, i]));
   const passive = new Map((DATA.issuers_passive || []).map(i => [i.issuer_id, i]));
   const known = DATA.known_issuers || {};
@@ -117,6 +119,8 @@ const BONDS = (() => {
       m: b.tenor_yrs, dur: b.mod_dur, matDate: b.mat_date, offerDate: b.offer_date,
       ytm: b.ytm_pct, aeyBase: b.aey_base_pct, aey: b.aey_base_risk_adj_pct,
       gs: b.g_spread_bp, fair: b.implied_fair_spread_bp, gap,
+      gspreadDelta: b.g_spread_bp != null && weekAgo.get(b.secid) != null
+        ? b.g_spread_bp - weekAgo.get(b.secid) : null,
       rating: b.rating, ratingClass: ratingClass(b.rating),
       ratingAgencies: b.rating_agencies || [], ratingLevel: b.rating_level || null,
       ratingSplit: b.rating_split === true, ratingDefaulted: b.rating_defaulted === true,
@@ -144,6 +148,74 @@ const BONDS = (() => {
 })();
 
 const BOND_BY_SECID = new Map(BONDS.map(b => [b.secid, b]));
+
+// The basket guard is deliberately browser-local: it helps a person make a
+// decision while adding a bond, without changing the map universe or the
+// pipeline-built presets. A missing weekly spread comparison is unknown, not
+// silently stable.
+const YIELD_GUARD = (() => {
+  const THRESHOLD_KEY = 'kl.yieldGuardThreshold';
+  const STABLE_KEY = 'kl.yieldGuardStable';
+  const DEFAULT_THRESHOLD = 30;
+  const listeners = [];
+  let threshold = DEFAULT_THRESHOLD;
+  let requireStable = true;
+  try {
+    const savedThreshold = localStorage.getItem(THRESHOLD_KEY);
+    const n = Number(savedThreshold);
+    if (savedThreshold != null && isFinite(n)) threshold = Math.max(10, Math.min(60, n));
+    const stable = localStorage.getItem(STABLE_KEY);
+    if (stable != null) requireStable = stable !== 'false';
+  } catch (e) { /* storage unavailable: session defaults are enough */ }
+  function save() {
+    try {
+      localStorage.setItem(THRESHOLD_KEY, String(threshold));
+      localStorage.setItem(STABLE_KEY, String(requireStable));
+    } catch (e) { /* storage unavailable: keep the in-memory setting */ }
+  }
+  function emit() { save(); listeners.forEach(fn => fn()); }
+  function stable(b) { return b && b.gspreadDelta != null && b.gspreadDelta <= 10; }
+  function safe(b) {
+    return !!(b && b.aey != null && b.aey <= threshold
+      && (!requireStable || stable(b)));
+  }
+  function alternatives(b, excludedIds) {
+    if (!b) return [];
+    const ids = new Set(excludedIds || []);
+    const inns = new Set((excludedIds || []).map(id => BOND_BY_SECID.get(id)).filter(Boolean).map(x => x.inn));
+    const pool = BONDS.filter(x => safe(x) && !ids.has(x.secid) && !inns.has(x.inn));
+    const sameSector = pool.filter(x => b.sector && x.sector === b.sector);
+    const near = sameSector.filter(x => b.dur == null || x.dur == null || Math.abs(x.dur - b.dur) <= 1.5);
+    const chosen = near.length ? near : sameSector.length ? sameSector : pool;
+    return chosen.slice().sort((x, y) => {
+      const zone = z => z === 'green' ? 0 : z === 'caution' ? 1 : 2;
+      const sx = x.sector === b.sector ? 0 : 1, sy = y.sector === b.sector ? 0 : 1;
+      const dx = b.dur == null || x.dur == null ? 99 : Math.abs(x.dur - b.dur);
+      const dy = b.dur == null || y.dur == null ? 99 : Math.abs(y.dur - b.dur);
+      return sx - sy || dx - dy || zone(x.yieldZone) - zone(y.yieldZone)
+        || (y.score == null ? 1 : x.score == null ? -1 : y.score - x.score)
+        || (x.aey || 999) - (y.aey || 999);
+    });
+  }
+  return {
+    get threshold() { return threshold; },
+    get requireStable() { return requireStable; },
+    setThreshold(v) { threshold = Math.max(10, Math.min(60, Number(v) || DEFAULT_THRESHOLD)); emit(); },
+    setRequireStable(v) { requireStable = !!v; emit(); },
+    isAbove(b) { return !!(b && b.aey != null && b.aey > threshold); },
+    isStable: stable,
+    isSafe: safe,
+    alternatives,
+    reasons(b) {
+      const out = [];
+      if (this.isAbove(b)) out.push(`AEY ${fmtPct(b.aey, 1)} выше порога ${fmtPct(threshold, 0)}`);
+      if (requireStable && b && b.gspreadDelta != null && b.gspreadDelta > 10) out.push(`G-спред расширился на ${fmtBpSigned(b.gspreadDelta)} б.п. за неделю`);
+      if (requireStable && b && b.gspreadDelta == null && b.aey != null && b.aey <= threshold) out.push('нет сравнения G-спреда за неделю');
+      return out;
+    },
+    onChange(fn) { listeners.push(fn); },
+  };
+})();
 
 // Short, highest-priority-first. The first one is what the screener's Флаг
 // column shows, so the zone verdict leads: a bond can carry a 300% AEY and

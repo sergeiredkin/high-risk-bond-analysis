@@ -141,6 +141,31 @@ def test_portfolio_aey_tile_is_gated_on_the_pipeline_yield_zone():
     assert "green: !red" in pf
 
 
+def test_yield_guard_is_add_flow_only_and_uses_weekly_spread_join():
+    bonds = (SRC / "bonds.js").read_text(encoding="utf-8")
+    terminal = (SRC / "pages" / "terminal.js").read_text(encoding="utf-8")
+    portfolio_page = (SRC / "pages" / "portfolio.js").read_text(encoding="utf-8")
+    # The map remains an unfiltered view; the guard is shared by basket/add
+    # surfaces and gets its stability signal from the exported prior snapshot.
+    assert "DATA.universe_week_ago" in bonds
+    assert "const YIELD_GUARD" in bonds
+    assert "BASKET.toggle(pick.dataset.pick)" in terminal
+    assert "Доходность ≤ порога" in terminal
+    assert "data-guard-threshold" in terminal
+    assert "YIELD_GUARD.alternatives" in terminal
+    assert "YIELD_GUARD.alternatives" in portfolio_page
+    assert "PF_REPLACED" in portfolio_page
+
+
+def test_yield_guard_keeps_map_unfiltered_by_default():
+    terminal = (SRC / "pages" / "terminal.js").read_text(encoding="utf-8")
+    # The opt-in chip is a predicate in TERM_CHIPS; no threshold predicate is
+    # applied to termVisible() unless the user selects that chip.
+    assert "filter: 'Все'" in terminal
+    assert "['Все', () => true]" in terminal
+    assert "['Доходность ≤ порога'" in terminal
+
+
 # ---- Данные ---------------------------------------------------------------
 
 def test_data_page_covers_the_whole_event_taxonomy():

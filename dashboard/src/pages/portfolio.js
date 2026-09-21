@@ -43,7 +43,19 @@ const PF_PRESETS = (DATA.portfolios || [])
 const PF = {
   source: null,       // portfolio id, or 'basket'
   expanded: false,
+  replaceOpen: null,
 };
+
+const PF_REPLACED = (() => {
+  const KEY = 'kl.pf.replaced';
+  let map = {};
+  try { map = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { map = {}; }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(map)); } catch (e) {} }
+  return {
+    get(key, id) { return map[key] && map[key][id] || null; },
+    set(key, oldId, newId) { if (!key) return; map[key] = Object.assign({}, map[key], { [oldId]: newId }); save(); },
+  };
+})();
 
 // Positions the user took out: { 'preset:conservative': [secid, …], basket: [secid, …] }.
 const PF_REMOVED = (() => {
@@ -83,10 +95,13 @@ function pfAllPositions() {
   }
   const pf = PF_PRESETS.find(p => p.id === PF.source);
   const bonds = (pf && pf.allocation && pf.allocation.bonds) || [];
-  return bonds.map(b => ({
-    secid: b.isin, weight: b.weight,
-    bond: BOND_BY_SECID.get(b.isin) || null, stored: b,
-  }));
+  return bonds.map(b => {
+    const replacement = PF_REPLACED.get(pfRemovalKey(), b.isin);
+    return {
+      secid: replacement || b.isin, weight: b.weight,
+      bond: replacement ? BOND_BY_SECID.get(replacement) || null : BOND_BY_SECID.get(b.isin) || null, stored: b,
+    };
+  });
 }
 
 // The positions every tile, share and check is computed over: the preset
@@ -112,6 +127,20 @@ function pfCurrent() { return PF_PRESETS.find(p => p.id === PF.source) || null; 
 function pfName(pos) {
   if (pos.bond) return pos.bond.t;
   return (pos.stored && pos.stored.short_name) || pos.secid;
+}
+
+function pfReplacementHtml(p, positions) {
+  if (!p.bond || !YIELD_GUARD.reasons(p.bond).length) return '';
+  if (PF.replaceOpen !== p.secid) {
+    return `<div class="pf-row-replace"><button type="button" class="pf-row-replace-btn" data-pf-replace="${escapeHtml(p.secid)}">Заменить ▾</button></div>`;
+  }
+  const alts = YIELD_GUARD.alternatives(p.bond, positions.map(x => x.secid)).slice(0, 3);
+  return `<div class="pf-replace-pop"><div class="pf-replace-pop-head">Безопаснее · ниже порога ${fmtPct(YIELD_GUARD.threshold, 0)} · другой эмитент</div>${alts.length ? alts.map(x => `<div class="pf-replace-option"><span>${escapeHtml(x.t)} · ${escapeHtml(x.sectorLabel || x.sector || 'без отрасли')}</span><span>${fmtPct(x.aey, 1)} · ${escapeHtml(x.rating || 'без рейтинга')}</span><button type="button" class="pf-replace-btn" data-pf-replace-pick="${escapeHtml(p.secid)}" data-pf-replace-to="${escapeHtml(x.secid)}">Заменить</button></div>`).join('') : '<div class="pf-replace-option">Подходящей альтернативы в текущем снимке нет.</div>'}</div>`;
+}
+
+function pfGuardControlsHtml() {
+  if (PF.source !== 'basket') return '';
+  return `<div class="pf-guard-inline"><div><b>Порог добавления</b><span>Настройка действует в этом браузере и помогает проверять новые позиции.</span></div><label><output>${fmtPct(YIELD_GUARD.threshold, 0)}</output><input class="yg-range" type="range" min="10" max="60" step="5" value="${YIELD_GUARD.threshold}" data-pf-guard-threshold></label><label class="yg-check"><input type="checkbox" data-pf-guard-stable ${YIELD_GUARD.requireStable ? 'checked' : ''}> стабильный G-спред</label></div>`;
 }
 
 // Weighted mean over the positions that actually have the value. Weights are
@@ -220,6 +249,7 @@ function pfCompositionHtml(positions) {
         <div class="pf-row-w">${fmtNum(p.weight / total * 100, 1)}%</div>
         <div class="pf-row-aey">${b && b.aey != null ? `AEY ${fmtPct(b.aey, 1)}` : DASH}</div>
       </div>
+      ${pfReplacementHtml(p, positions)}
       <button type="button" class="pick" data-pf-remove="${escapeHtml(p.secid)}" title="Убрать из портфеля" aria-label="Убрать ${escapeHtml(pfName(p))} из портфеля">−</button>
     </div>`;
   }).join('');
@@ -250,6 +280,7 @@ function pfCompositionHtml(positions) {
 
   return `<section class="pf-card">
     <div class="pf-card-title">${escapeHtml(title)}</div>
+    ${pfGuardControlsHtml()}
     <div class="pf-card-note">${escapeHtml(note)}</div>
     <div class="pf-bar">${bars}</div>
     <div class="pf-rows">${rows}</div>
@@ -585,6 +616,21 @@ function pfOnClick(e) {
   }
   if (e.target.closest('#pfMore')) { PF.expanded = !PF.expanded; pfRender(); return; }
 
+  const replace = e.target.closest('[data-pf-replace]');
+  if (replace) { e.stopPropagation(); PF.replaceOpen = PF.replaceOpen === replace.dataset.pfReplace ? null : replace.dataset.pfReplace; pfRender(); return; }
+  const replacePick = e.target.closest('[data-pf-replace-pick]');
+  if (replacePick) {
+    e.stopPropagation();
+    const oldId = replacePick.dataset.pfReplacePick, newId = replacePick.dataset.pfReplaceTo;
+    if (PF.source === 'basket') {
+      if (BASKET.has(oldId)) BASKET.toggle(oldId);
+      if (!BASKET.has(newId)) BASKET.toggle(newId);
+    } else PF_REPLACED.set(pfRemovalKey(), oldId, newId);
+    PF.replaceOpen = null;
+    pfRender();
+    return;
+  }
+
   const rm = e.target.closest('[data-pf-remove]');
   if (rm) {
     e.stopPropagation();
@@ -623,6 +669,13 @@ PAGES.portfolio = {
       <div id="pfBody"></div>
     </div>`;
     el.addEventListener('click', pfOnClick);
+    el.addEventListener('input', e => {
+      if (e.target.matches('[data-pf-guard-threshold]')) YIELD_GUARD.setThreshold(e.target.value);
+    });
+    el.addEventListener('change', e => {
+      if (e.target.matches('[data-pf-guard-stable]')) YIELD_GUARD.setRequireStable(e.target.checked);
+    });
+    YIELD_GUARD.onChange(() => pfRender());
     // The screener can empty or refill the basket while this page is built;
     // re-render so "Из корзины (N)" and the basket view never go stale.
     BASKET.onChange(() => {

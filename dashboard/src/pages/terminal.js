@@ -29,6 +29,7 @@ const TERM_CHIPS = [
   ['Зелёная зона', b => b.yieldZone === 'green'],                              // 180
   [`Балл ≥ ${SIMILAR_MIN_SCORE}`, b => b.score != null && b.score >= SIMILAR_MIN_SCORE], // 51
   ['Ликвидные', b => b.vol != null && b.vol >= LIQUID_VOLUME_RUB],            // 83
+  ['Доходность ≤ порога', b => b.aey != null && b.aey <= YIELD_GUARD.threshold],
   ['Лизинг', b => b.sector === 'leasing'],                                    // 47
   ['Недвижимость', b => b.sector === 'real_estate'],                          // 43
   ['Диверсифицированный холдинг', b => b.sector === 'holding_diversified'],   // 40
@@ -191,7 +192,10 @@ function termRenderChips() {
   const custom = S.custom && !chips.includes(S.custom.label) ? S.custom.label : null;
   document.getElementById('termChips').innerHTML =
     (custom ? `<button type="button" class="chip is-custom${S.filter === custom ? ' is-on' : ''}" data-chip="${escapeHtml(custom)}">${escapeHtml(custom)}</button>` : '')
-    + chips.map(c => `<button type="button" class="chip${S.filter === c ? ' is-on' : ''}" data-chip="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join('');
+    + chips.map(c => {
+      const label = c === 'Доходность ≤ порога' ? `Доходность ≤ ${fmtPct(YIELD_GUARD.threshold, 0)}` : c;
+      return `<button type="button" class="chip${S.filter === c ? ' is-on' : ''}" data-chip="${escapeHtml(c)}">${escapeHtml(label)}</button>`;
+    }).join('');
 }
 
 function termRenderHead() {
@@ -260,6 +264,11 @@ function termRenderBasket() {
   const bs = ids.map(id => BOND_BY_SECID.get(id)).filter(Boolean);
   const avg = f => { const v = bs.map(f).filter(x => x != null && isFinite(x)); return v.length ? v.reduce((a, c) => a + c, 0) / v.length : null; };
   const mins = bs.map(b => b.score).filter(x => x != null);
+  const risky = bs.filter(b => !YIELD_GUARD.isSafe(b));
+  const guardSummary = risky.length
+    ? `${risky.length} ${plural(risky.length, ['бумага', 'бумаги', 'бумаг'])} нуждается в проверке`
+    : 'Все бумаги проходят текущий фильтр безопасности';
+  const alt = risky.length ? YIELD_GUARD.alternatives(risky[0], ids).slice(0, 3) : [];
   bar.innerHTML = `
     <div class="basket-main">
       <div class="basket-kicker">Отобрано в корзину</div>
@@ -269,6 +278,13 @@ function termRenderBasket() {
       <div><span>AEY</span> <b>${fmtPct(avg(b => b.aey), 1)}</b></div>
       <div><span>Дюрация</span> <b>${avg(b => b.dur) == null ? DASH : fmtNum(avg(b => b.dur), 1) + ' г.'}</b></div>
       <div><span>Мин. балл</span> <b>${mins.length ? fmtNum(Math.min.apply(null, mins), 1) : DASH}</b></div>
+    </div>
+    <div class="basket-guard${risky.length ? ' is-warn' : ' is-ok'}">
+      <div class="basket-guard-line"><span class="basket-guard-dot"></span><b>${escapeHtml(guardSummary)}</b><button type="button" class="basket-guard-toggle" data-guard-expand="1">${risky.length ? 'Проверить' : 'Настроить'}</button></div>
+      <div class="basket-guard-panel"${risky.length ? ' hidden' : ''}>
+        <div class="basket-guard-controls"><label>Порог риска <output>${fmtPct(YIELD_GUARD.threshold, 0)}</output><input class="yg-range" type="range" min="10" max="60" step="5" value="${YIELD_GUARD.threshold}" data-guard-threshold></label><label class="yg-check"><input type="checkbox" data-guard-stable ${YIELD_GUARD.requireStable ? 'checked' : ''}> учитывать стабильность G-спреда</label></div>
+        ${risky.length ? `<div class="basket-guard-reason">${escapeHtml(YIELD_GUARD.reasons(risky[0]).join(' · '))}</div><div class="basket-alternatives"><div class="basket-alt-title">Безопаснее сейчас · ${escapeHtml(risky[0].t)}</div>${alt.length ? alt.map(x => `<button type="button" class="basket-alt" data-open-secid="${escapeHtml(x.secid)}"><span>${escapeHtml(x.t)}</span><span>${fmtPct(x.aey, 1)} · ${escapeHtml(x.rating || 'без рейтинга')}</span></button>`).join('') : '<div class="basket-alt-empty">Подходящей альтернативы в текущем снимке нет.</div>'}</div>` : ''}
+      </div>
     </div>
     <div class="basket-actions">
       <button type="button" class="basket-clear" id="termBasketClear">Очистить</button>
@@ -397,6 +413,15 @@ function termOnClick(e) {
   const chip = t.closest('[data-chip]');
   if (chip) { S.filter = chip.dataset.chip; S.shown = SCREENER_PAGE; termRefresh(); return; }
 
+  const guardToggle = t.closest('[data-guard-expand]');
+  if (guardToggle) {
+    const panel = document.querySelector('#termBasket .basket-guard-panel');
+    if (panel) panel.hidden = !panel.hidden;
+    return;
+  }
+  const openBond = t.closest('[data-open-secid]');
+  if (openBond) { termOpenBond(openBond.dataset.openSecid); return; }
+
   if (t.closest('#termClearBrush')) { S.brush = null; S.shown = SCREENER_PAGE; TerminalMap.refresh(); termRefresh(); return; }
   if (t.closest('#termResetZoom')) { TerminalMap.resetZoom(); return; }
   if (t.closest('#termMoreBtn')) { S.shown += SCREENER_PAGE; termRenderRows(); return; }
@@ -442,6 +467,12 @@ PAGES.terminal = {
     el = container;
     el.innerHTML = termShellHtml();
     el.addEventListener('click', termOnClick);
+    el.addEventListener('input', e => {
+      if (e.target.matches('[data-guard-threshold]')) YIELD_GUARD.setThreshold(e.target.value);
+    });
+    el.addEventListener('change', e => {
+      if (e.target.matches('[data-guard-stable]')) YIELD_GUARD.setRequireStable(e.target.checked);
+    });
     // the drawer lives in the app shell, outside this page's container
     document.getElementById('detail').addEventListener('click', termOnClick);
     TerminalMap.mount(document.getElementById('termMapRoot'), ctl);
@@ -456,6 +487,7 @@ PAGES.terminal = {
       if (cta) cta.textContent = BASKET.has(cta.dataset.secid) ? 'Убрать из корзины' : 'Добавить в корзину';
       TerminalMap.refresh();
     });
+    YIELD_GUARD.onChange(() => { termRenderChips(); termRenderBasket(); });
     termRefresh();
   },
 };
