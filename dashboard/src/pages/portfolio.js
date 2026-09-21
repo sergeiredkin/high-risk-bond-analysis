@@ -351,6 +351,12 @@ function pfRatePathSvg(rp) {
   const lo = Math.floor(Math.min.apply(null, vals) / 2) * 2 - 2, hi = Math.ceil(Math.max.apply(null, vals) / 2) * 2 + 2;
   const y = v => PT + (1 - (v - lo) / (hi - lo)) * (H - PT - PB);
   const parts = [];
+  const ticks = [0, 1, 2, 3, 4].map(i => lo + (hi - lo) * i / 4);
+  ticks.forEach(v => {
+    const yy = y(v);
+    parts.push(`<line x1="${PX}" x2="${(W - LBL).toFixed(1)}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" stroke="#201e1d" stroke-opacity=".10"></line>`);
+    parts.push(`<text x="0" y="${(yy + 3).toFixed(1)}" font-size="9.5" fill="#201e1d" fill-opacity=".58">${fmtNum(v, 1)}%</text>`);
+  });
   const lastYear = years[years.length - 1];
   const labelRows = [];
   PF_SCEN_ORDER.forEach(k => {

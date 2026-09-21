@@ -166,6 +166,13 @@ def test_yield_guard_keeps_map_unfiltered_by_default():
     assert "['Доходность ≤ порога'" in terminal
 
 
+def test_portfolio_scenario_chart_renders_percentage_ticks():
+    pf = (SRC / "pages" / "portfolio.js").read_text(encoding="utf-8")
+    assert "const ticks = [0, 1, 2, 3, 4]" in pf
+    assert 'stroke-opacity=".10"' in pf
+    assert 'fill-opacity=".58">${fmtNum(v, 1)}%</text>' in pf
+
+
 # ---- Данные ---------------------------------------------------------------
 
 def test_data_page_covers_the_whole_event_taxonomy():
