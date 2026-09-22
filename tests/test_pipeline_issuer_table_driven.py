@@ -210,3 +210,39 @@ def test_floater_plausible_high_distress_yield_is_still_written(tmp_path, monkey
     row = con.execute("SELECT ytm FROM spread_snapshot WHERE secid='SECID_T1'").fetchone()
     assert row["ytm"] == pytest.approx(0.434)
     con.close()
+
+
+def test_bondization_http_error_skips_bond_and_logs_health(tmp_path, monkeypatch):
+    """2026-09-22: one bondization 502 aborted the whole daily chain under
+    set -e, freezing the day's universe at the pre-open partial snapshot.
+    pipeline.run() must skip the dead bond, price the rest, and surface the
+    skip once via pipeline_health."""
+    con, dbpath = _setup_con(tmp_path)
+    monkeypatch.setattr(db, "DB_PATH", dbpath)
+    db.add_issuer_at_tier(con, "1", "Tier1 Co", watchlist_tier=1)
+    db.add_issuer_bond(con, "1", "SECID_T1", source="bond")
+    db.add_issuer_bond(con, "1", "SECID_T2", source="bond")
+    con.commit()
+    con.close()
+
+    _patch_network(monkeypatch, ["SECID_T1", "SECID_T2"])
+    real = sources.fetch_bondization
+
+    def flaky(secid):
+        if secid == "SECID_T1":
+            raise sources.IngestError("https://iss.moex.com/... -> HTTP 502")
+        return real(secid)
+
+    monkeypatch.setattr(sources, "fetch_bondization", flaky)
+    report = pipeline.run(None, snap_date=SNAP)  # must not raise
+
+    secids_in_screen = {r["secid"] for r in report["spread_screen"]}
+    assert secids_in_screen == {"SECID_T2"}  # dead bond skipped, sibling priced
+    con = db.connect(dbpath)
+    try:
+        row = con.execute(
+            "SELECT level FROM pipeline_health WHERE code='MOEX_BONDIZATION_SKIPPED'"
+        ).fetchone()
+        assert row is not None and row["level"] == "warn"
+    finally:
+        con.close()

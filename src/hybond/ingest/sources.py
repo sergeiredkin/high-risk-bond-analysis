@@ -14,6 +14,7 @@ source and allow a MOEX fallback.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from datetime import date, datetime
 from pathlib import Path
@@ -22,6 +23,15 @@ from typing import Any
 import requests
 
 MOEX_BASE = "https://iss.moex.com/iss"
+
+logger = logging.getLogger(__name__)
+
+# Transient upstream failures get a short retry instead of being taken at
+# face value: a single HTTP 502 on one bondization call killed the entire
+# 2026-09-22 10:00 daily run (RU000A10BW96). Other statuses (404, 403, ...)
+# are real answers and fail fast.
+RETRY_STATUSES = {502, 503, 504}
+_RETRY_DELAYS_S = (3.0, 7.0)
 CBR_ZCYC = "https://www.cbr.ru/hd_base/zcyc_params/"
 
 RAW_DIR = Path("data/raw")
@@ -32,11 +42,28 @@ class IngestError(RuntimeError):
 
 
 def _get(url: str, params: dict[str, Any] | None = None, timeout: int = 30) -> requests.Response:
-    r = requests.get(url, params=params or {}, timeout=timeout,
-                     headers={"User-Agent": "hybond/0.1 (research)"})
-    if r.status_code != 200:
-        raise IngestError(f"{url} -> HTTP {r.status_code}")
-    return r
+    """GET with a short retry on transient upstream failures: 502/503/504 and
+    connection errors/timeouts get 1 initial try + 2 retries (3s, 7s backoff);
+    any other non-200 is a real answer and raises IngestError at once.
+    Lives here so every bulk and per-bond fetcher inherits the resilience."""
+    attempts = 1 + len(_RETRY_DELAYS_S)
+    for attempt in range(attempts):
+        if attempt:
+            logger.warning("retrying %s (attempt %d/%d)", url, attempt + 1, attempts)
+            time.sleep(_RETRY_DELAYS_S[attempt - 1])
+        try:
+            r = requests.get(url, params=params or {}, timeout=timeout,
+                             headers={"User-Agent": "hybond/0.1 (research)"})
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            if attempt == attempts - 1:
+                raise
+            continue
+        if r.status_code != 200:
+            if r.status_code in RETRY_STATUSES and attempt < attempts - 1:
+                continue
+            raise IngestError(f"{url} -> HTTP {r.status_code}")
+        return r
+    raise IngestError(f"{url} -> exhausted retries")  # unreachable
 
 
 def _snapshot(name: str, text: str, day: date | None = None) -> Path:

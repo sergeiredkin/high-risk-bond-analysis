@@ -24,8 +24,13 @@ db.init_rating(con)
 con.close()
 " >> "$LOG" 2>&1
 
-# Slice 1: prices + spreads
-PYTHONPATH=src python -m hybond run >> "$LOG" 2>&1
+# Slice 1: prices + spreads. Non-fatal: pipeline.run() itself now skips a
+# bond whose bondization 502s through retries (and logs MOEX_BONDIZATION_SKIPPED),
+# but a wholesale outage here used to abort the whole chain under set -e --
+# exactly what froze 2026-09-22's universe at the pre-open 776-bond snapshot
+# (the 10:00 run died on RU000A10BW96 before the universe step could correct it).
+PYTHONPATH=src python -m hybond run >> "$LOG" 2>&1 \
+    || echo "run step failed (non-fatal)" >> "$LOG"
 
 # Portfolio monitoring (Phase B, 2026-08-27): every active portfolio's
 # bonds checked against their save-time baseline right after spread_snapshot
@@ -83,7 +88,8 @@ UNIVERSE_FLAGS=""
 if [ "$(date +%u)" = "7" ]; then
     UNIVERSE_FLAGS="--refresh-emitent-map"
 fi
-PYTHONPATH=src python -m hybond universe $UNIVERSE_FLAGS >> "$LOG" 2>&1
+PYTHONPATH=src python -m hybond universe $UNIVERSE_FLAGS >> "$LOG" 2>&1 \
+    || echo "universe step failed (non-fatal)" >> "$LOG"
 
 # OFZ snapshot (Ставка и ОФЗ page, 2026-09-17): `hybond ofz` was never in any
 # cron script, so every OFZ number in both dashboards stayed frozen at the one

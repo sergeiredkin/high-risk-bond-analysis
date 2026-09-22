@@ -82,6 +82,7 @@ def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
     curve = sources.fetch_cbr_zcyc()
 
     screen_rows = []
+    bondization_skips: list[str] = []  # bonds whose bondization 502'd through retries
     flows_by_issuer: dict[str, list] = {}
     # Per-bond mirror of flows_by_issuer, same (when, amount, kind) tuples --
     # feeds maturity_wall_by_secid below (Task: portfolio-level coupon/
@@ -156,6 +157,15 @@ def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
                 bz = sources.fetch_bondization(secid)
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
                 logger.warning("network error fetching bondization for %s: %s", secid, e)
+                continue
+            except sources.IngestError as e:
+                # Persistent HTTP failure (retries exhausted inside _get).
+                # Skip the bond -- one dead response must not abort the run:
+                # on 2026-09-22 a single 502 here killed the whole daily chain
+                # and froze the day's universe at the pre-open partial
+                # snapshot. Counted and surfaced once via pipeline_health.
+                bondization_skips.append(f"{secid} ({e})")
+                logger.warning("giving up on bondization for %s: %s", secid, e)
                 continue
             coupons = [(sources.parse_date(c.get("coupondate")), c.get("value"))
                        for c in bz["coupons"]]
@@ -296,6 +306,12 @@ def run(watchlist_path: Path | None, snap_date: date | None = None) -> dict:
                 "implied_fair_spread_bp": round(implied_fair, 0) if implied_fair is not None else None,
                 "mispricing_bp": round(misprice, 0) if misprice is not None else None,
             })
+
+    if bondization_skips:
+        log_health_once_today(
+            con, 'moex', 'ingest', 'warn', 'MOEX_BONDIZATION_SKIPPED',
+            f"{len(bondization_skips)} bond(s) skipped after retries -- "
+            f"first: {bondization_skips[0]}")
 
     con.commit()
     con.close()
