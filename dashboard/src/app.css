@@ -95,7 +95,7 @@ button { font-family: inherit; }
 .group-title { font-family: var(--font-heading); font-size: 22px; }
 .group-rule { flex: 1; height: 1px; background: var(--color-divider); }
 .group-count { font-size: 11.5px; opacity: .5; }
-.cap-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap: 12px; }
+.cap-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(min(280px,100%),1fr)); gap: 12px; }
 .cap {
   padding: 20px 22px; border-radius: 28px; background: var(--color-surface);
   display: flex; flex-direction: column; gap: 8px; animation: riseup .3s ease both;
@@ -124,7 +124,7 @@ button { font-family: inherit; }
 .value-band-btn:hover { background: var(--color-accent-300); }
 
 /* stat tiles -- reference pfStats tile */
-.stat-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit,minmax(230px,1fr)); }
+.stat-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit,minmax(min(230px,100%),1fr)); }
 .stat { padding: 20px 22px; border-radius: 28px; background: var(--color-surface); display: flex; flex-direction: column; gap: 5px; }
 .stat-k { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--color-accent-700); }
 .stat-v { font-family: var(--font-heading); font-size: 29px; line-height: 1.1; color: var(--color-text); }
@@ -351,7 +351,7 @@ button { font-family: inherit; }
 .basket-build:hover { background: var(--color-accent-300); }
 
 /* ── bond drawer body ────────────────────────────────────────────────── */
-.det-tiles { display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; }
+.det-tiles { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px; }
 .det-tile { padding: 14px 16px; border-radius: 24px; background: var(--color-surface); }
 .det-tile-k { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; opacity: .55; }
 .det-tile-v { font-family: var(--font-heading); font-size: 24px; line-height: 1.1; margin-top: 3px; }
@@ -502,9 +502,12 @@ button { font-family: inherit; }
 .pf-replace-option span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-replace-option span:nth-child(2) { opacity: .65; white-space: nowrap; }
 @media (max-width: 640px) {
+  .basket-bar { padding: 10px 14px; gap: 10px; }  /* 5 stacked rows were ~190px of sticky bottom */
   .basket-stats { order: 3; width: 100%; justify-content: space-between; gap: 8px; }
   .basket-guard { order: 4; flex-basis: 100%; min-width: 0; }
+  .basket-guard-line { font-size: 11px; min-height: 22px; }
   .basket-actions { order: 5; width: 100%; justify-content: flex-end; }
+  .basket-clear, .basket-build { padding-top: 9px; padding-bottom: 9px; }
   .pf-row-replace { margin-left: auto; }
   .pf-replace-pop { flex-basis: 100%; }
 }
@@ -551,7 +554,7 @@ button { font-family: inherit; }
    health card on the left, sources + policy stacked on the right, and the
    event feed full width beneath. */
 
-.d-split { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); align-items: start; }
+.d-split { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit,minmax(min(320px,100%),1fr)); align-items: start; }
 .d-aside { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .d-card {
   min-width: 0; padding: 20px 22px; border-radius: 30px; background: var(--color-surface);
@@ -621,3 +624,32 @@ a.d-src:hover { background: var(--color-neutral-200); }
 .d-ev-chip.ev-src { border: 1px solid var(--color-divider); opacity: .65; }
 .d-feed-more { padding: 10px 0 2px; text-align: center; }
 .d-feed-more .pill-outline { padding: 9px 20px; font-size: 13px; }
+
+/* ── phones: consolidated overrides ────────────────────────────────
+   Lives at the END of the file on purpose: every rule here must outrank
+   (by source order) the base component rules above. An earlier attempt
+   placed these in the 640px block next to the topnav rules and the base
+   rules -- same specificity, later in the file -- silently won. */
+@media (max-width: 640px) {
+  /* readouts: one row that scrolls inside itself instead of stacking into
+     a ~240px sticky header; compact pills, still >= 32px tall for touch */
+  .topbar { padding: 10px 16px; }
+  .topbar-readouts { flex: 1 1 100%; flex-wrap: nowrap; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .topbar-readouts::-webkit-scrollbar { display: none; }
+  .readout { flex: none; padding: 9px 12px; }
+  /* inline text links: bigger tap area without shifting the text line */
+  .det-note a, .pf-card-note a, .pf-cbr-note a, .d-card-note a, .d-policy-body a,
+  .det-event-text a, .d-ev-text a, .pf-check-t a { display: inline-block; padding: 8px 0; margin: -8px 0; }
+  /* drawer tiles: 24px values overflow a 3-across track at phone width
+     (min-content of "359,7%" + padding > the ~103px track at 375px) */
+  .det-tile { padding: 10px; }
+  .det-tile-v { font-size: 17px; }
+  /* small controls up to touch size */
+  .chip, .seg-btn, .axis-pill, .pf-pill { padding-top: 9px; padding-bottom: 9px; }
+  .pick { width: 28px; height: 28px; }
+  .basket-guard-toggle { padding: 8px 0; }
+  /* event-feed source chips: their 30ch cap exceeds the narrow date+body
+     row at phone width -- clamp to the row and ellipsize instead */
+  .d-ev-chip { max-width: 100%; min-width: 0; }
+  .d-ev-chip.ev-src { overflow: hidden; text-overflow: ellipsis; }
+}
