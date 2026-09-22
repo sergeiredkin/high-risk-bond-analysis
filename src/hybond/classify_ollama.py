@@ -59,7 +59,7 @@ PROMPT_TEMPLATE = """/no_think
 - routine: плановые раскрытия без кредитного содержания — списки аффилированных лиц, уведомления об ОСА, стандартная квартальная отчётность, подтверждающая ожидания
 
 Правила severity (critical > high > medium > low > noise):
-- noise: ТОЛЬКО для category=routine, и для планового купона, выплаченного по графику
+- noise: ТОЛЬКО для category=routine, и для планового купона, выплаченного по графику. Категории "noise" НЕ существует: если кредитного сигнала нет, верни category="routine" и severity="noise"
 - low: повышение рейтинга, благоприятный контракт
 - medium: обычная ротация совета директоров, снижение прогноза (guidance), типовое capital_action (новый выпуск, финансирование)
 - high: понижение рейтинга/негативный прогноз, отставка аудитора, внезапный уход финдиректора, waiver по ковенанту, крупный дивиденд у закредитованного эмитента, оферта/put, потеря ключевого клиента, санкции
@@ -165,7 +165,7 @@ BATCH_PROMPT_TEMPLATE = """/no_think
 - routine: плановые раскрытия без кредитного содержания — списки аффилированных лиц, уведомления об ОСА, стандартная квартальная отчётность, подтверждающая ожидания
 
 Правила severity (critical > high > medium > low > noise):
-- noise: ТОЛЬКО для category=routine, и для планового купона, выплаченного по графику
+- noise: ТОЛЬКО для category=routine, и для планового купона, выплаченного по графику. Категории "noise" НЕ существует: если кредитного сигнала нет, верни category="routine" и severity="noise"
 - low: повышение рейтинга, благоприятный контракт
 - medium: обычная ротация совета директоров, снижение прогноза (guidance), типовое capital_action (новый выпуск, финансирование)
 - high: понижение рейтинга/негативный прогноз, отставка аудитора, внезапный уход финдиректора, waiver по ковенанту, крупный дивиденд у закредитованного эмитента, оферта/put, потеря ключевого клиента, санкции
@@ -198,7 +198,16 @@ BATCH_PROMPT_TEMPLATE = """/no_think
 def _validate_result(result: dict) -> dict:
     """Shared per-item validation -- same rules classify_filing() applies,
     factored out so classify_filings_batch() can apply them to each array
-    element independently (one malformed item must not discard the batch)."""
+    element independently (one malformed item must not discard the batch).
+
+    A model answer of category="noise" (the taxonomy reserves "noise" for
+    severity only; its designated category companion is "routine") is
+    coerced to "routine" instead of failing validation: live qwen3.5 emits
+    it for smart-lab forum chatter, and a hard assert here left such items
+    queued forever -- hourly bursts failed 14/14 on exactly this
+    (2026-09-22)."""
+    if result["category"] == "noise":
+        result["category"] = "routine"
     assert result["category"] in VALID_CATEGORIES
     assert result["severity"] in VALID_SEVERITIES
     assert 0.0 <= float(result["confidence"]) <= 1.0

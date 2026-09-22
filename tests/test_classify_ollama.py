@@ -42,6 +42,22 @@ def test_markdown_fenced_response_stripped():
     assert result["severity"] == "noise"
 
 
+def test_noise_category_coerced_to_routine():
+    # Live qwen3.5 answers category="noise" for smart-lab forum chatter even
+    # though the taxonomy reserves "noise" for severity only (its designated
+    # category companion is "routine"). _validate_result must coerce, not
+    # reject: a hard failure left the item queued forever and every hourly
+    # burst re-failed it (14/14, 2026-09-22).
+    body = ('{"category": "noise", "severity": "noise", "confidence": 0.95, '
+            '"summary": "Форумное обсуждение облигаций без кредитного сигнала"}')
+    with patch("hybond.classify_ollama.requests.post") as mock_post:
+        mock_post.return_value = _mock_response(body)
+        result = classify_filing("Облигации АПРИ форум", "http://smart-lab.ru", "АПРИ")
+    assert result is not None
+    assert result["category"] == "routine"
+    assert result["severity"] == "noise"
+
+
 def test_invalid_category_returns_none():
     # Not in the real taxonomy (this is the OLD task-prompt category we
     # deliberately did not use) -- must fail validation, not silently pass.
