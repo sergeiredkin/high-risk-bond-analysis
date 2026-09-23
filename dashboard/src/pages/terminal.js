@@ -58,10 +58,7 @@ const TERM_AXES = [
   ['curve', 'Кривая ОФЗ'],
 ];
 
-const TERM_LAYOUT_NOTE = {
-  A: 'A: карта и таблица делят экран пополам. Рамка на карте и строка в таблице всегда рядом — удобно сравнивать глазами, но таблица узкая.',
-  B: 'B: карта сжата в полосу-фильтр над таблицей. Выделение задаётся быстро, зато на таблицу уходит вся ширина — читаются все колонки сразу.',
-};
+const TERM_LAYOUT_NOTE = 'Карта и таблица делят экран пополам. Рамка на карте и строка в таблице всегда рядом — удобно сравнивать глазами, но таблица узкая.';
 
 const TERM_LEGEND = [
   ['#c67139', 'спред выше справедливого'],
@@ -71,7 +68,6 @@ const TERM_LEGEND = [
 ];
 
 const S = {
-  layout: 'A',
   axis: 'spread',
   filter: 'Все',
   custom: null,     // ad-hoc chip from "Показать похожие на карте": { label, test }
@@ -128,14 +124,9 @@ function termInvalidate() { visibleCache = null; }
 
 // ── rendering ───────────────────────────────────────────────────────────
 function termShellHtml() {
-  const seg = on => `class="seg-btn${on ? ' is-on' : ''}"`;
   return `<div class="page-terminal">
 
     <div class="term-toolbar">
-      <div class="seg-group">
-        <button type="button" data-layout-btn="A" ${seg(S.layout === 'A')}>Раскладка A · сплит</button>
-        <button type="button" data-layout-btn="B" ${seg(S.layout === 'B')}>Раскладка B · полоса</button>
-      </div>
       <div class="term-layout-note" id="termLayoutNote"></div>
       <div class="term-axis-pills" id="termAxisPills">
         ${TERM_AXES.map(([k, label]) =>
@@ -290,18 +281,16 @@ function termRenderBasket() {
 }
 
 function termRenderChrome() {
-  document.getElementById('termLayoutNote').textContent = TERM_LAYOUT_NOTE[S.layout];
-  document.querySelectorAll('[data-layout-btn]').forEach(b => b.classList.toggle('is-on', b.dataset.layoutBtn === S.layout));
+  document.getElementById('termLayoutNote').textContent = TERM_LAYOUT_NOTE;
   document.querySelectorAll('[data-axis]').forEach(b => b.classList.toggle('is-on', b.dataset.axis === S.axis));
   termRenderChips();
   const split = document.getElementById('termSplit');
-  split.dataset.layout = S.layout;
   if (S.focus) split.dataset.focus = S.focus; else delete split.dataset.focus;
   // Enlarge controls: the side-by-side layout only. The enlarged card's own
   // button returns to the even split; the other card's button swaps.
   document.querySelectorAll('[data-focus-btn]').forEach(btn => {
     const which = btn.dataset.focusBtn;
-    btn.hidden = S.layout !== 'A';
+    btn.hidden = false;
     btn.textContent = S.focus === which ? '⇆ Вернуть сплит' : which === 'map' ? '⤢ Развернуть карту' : '⤢ Развернуть таблицу';
     btn.setAttribute('aria-pressed', S.focus === which ? 'true' : 'false');
   });
@@ -395,11 +384,6 @@ function termSetFocus(next) {
 // ── wiring ──────────────────────────────────────────────────────────────
 function termOnClick(e) {
   const t = e.target;
-
-  // NB: [data-layout-btn], not [data-layout] -- #termSplit carries
-  // data-layout for CSS and would swallow every click inside the split.
-  const lay = t.closest('[data-layout-btn]');
-  if (lay) { S.layout = lay.dataset.layoutBtn; S.brush = null; S.focus = null; termRenderChrome(); TerminalMap.rebuild(false); termRefresh(); return; }
 
   const focus = t.closest('[data-focus-btn]');
   if (focus) { termSetFocus(S.focus === focus.dataset.focusBtn ? null : focus.dataset.focusBtn); return; }

@@ -188,16 +188,15 @@ button { font-family: inherit; }
 .axis-pill:hover { background: var(--color-neutral-200); }
 .axis-pill.is-on { border-color: transparent; background: var(--color-accent); color: var(--color-bg); }
 
-.term-split { display: grid; gap: 12px; align-items: start; grid-template-columns: minmax(0,1fr); }
-.term-split[data-layout="A"] { grid-template-columns: minmax(0,1.05fr) minmax(0,1fr); transition: grid-template-columns .5s cubic-bezier(.22,1,.36,1); }
+.term-split { display: grid; gap: 12px; align-items: start; grid-template-columns: minmax(0,1.05fr) minmax(0,1fr); transition: grid-template-columns .5s cubic-bezier(.22,1,.36,1); }
 /* enlarge one side: the chosen card takes most of the width, the other stays readable */
-.term-split[data-layout="A"][data-focus="map"] { grid-template-columns: minmax(0,3.6fr) minmax(0,1fr); }
-.term-split[data-layout="A"][data-focus="screener"] { grid-template-columns: minmax(0,1fr) minmax(0,3.6fr); }
+.term-split[data-focus="map"] { grid-template-columns: minmax(0,3.6fr) minmax(0,1fr); }
+.term-split[data-focus="screener"] { grid-template-columns: minmax(0,1fr) minmax(0,3.6fr); }
 @media (max-width: 1020px) {
-  .term-split[data-layout="A"], .term-split[data-layout="A"][data-focus] { grid-template-columns: minmax(0,1fr); }
+  .term-split, .term-split[data-focus] { grid-template-columns: minmax(0,1fr); }
   [data-focus-btn] { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .term-split[data-layout="A"] { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .term-split { transition: none; } }
 
 .term-card {
   min-width: 0; border-radius: 30px; background: var(--color-surface);
@@ -251,7 +250,6 @@ button { font-family: inherit; }
 .chip.is-custom { border-style: dashed; }
 
 .screener-scroll { overflow: auto; max-height: 430px; }
-.term-split[data-layout="B"] .screener-scroll { max-height: 520px; }
 .screener { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .screener th {
   padding: 6px 6px 8px; text-align: right; font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
@@ -276,7 +274,6 @@ button { font-family: inherit; }
 .c-ticker { font-family: var(--font-heading); font-size: 13.5px; }
 .c-name-text { min-width: 0; }
 .c-issuer { font-size: 10.5px; opacity: .55; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
-.term-split[data-layout="B"] .c-issuer { max-width: 320px; }
 .c-aey { font-family: var(--font-heading); font-size: 13.5px; }
 .v-up { color: var(--color-accent-700); }
 .v-down { color: var(--color-neutral-600); }

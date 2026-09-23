@@ -166,6 +166,17 @@ def test_yield_guard_keeps_map_unfiltered_by_default():
     assert "['Доходность ≤ порога'" in terminal
 
 
+def test_terminal_keeps_only_split_layout():
+    terminal = (SRC / "pages" / "terminal.js").read_text(encoding="utf-8")
+    terminal_map = (SRC / "pages" / "terminal-map.js").read_text(encoding="utf-8")
+    css = (SRC / "app.css").read_text(encoding="utf-8")
+    assert "Раскладка A · сплит" not in terminal  # layout switcher is gone
+    assert "Раскладка B · полоса" not in terminal
+    assert "data-layout-btn" not in terminal
+    assert 'data-layout="B"' not in css
+    assert "S.layout" not in terminal_map
+
+
 def test_screener_removes_deprecated_sector_chips():
     terminal = (SRC / "pages" / "terminal.js").read_text(encoding="utf-8")
     for label in ("Лизинг", "Недвижимость", "Диверсифицированный холдинг"):
@@ -478,12 +489,12 @@ def test_map_and_screener_can_be_enlarged_with_an_animated_split():
     terminal = _strip_comments((SRC / "pages" / "terminal.js").read_text(encoding="utf-8"))
     assert 'data-focus-btn="map"' in terminal and 'data-focus-btn="screener"' in terminal
     assert "⇆ Вернуть сплит" in terminal                          # the way back to the even split
-    assert "S.focus = null;" in terminal                          # a layout switch resets it
     assert "TerminalMap.holdResize();" in terminal and "TerminalMap.releaseResize();" in terminal
     css = (SRC / "app.css").read_text(encoding="utf-8")
     assert "transition: grid-template-columns .5s cubic-bezier(.22,1,.36,1)" in css   # the design's own ease
-    assert '.term-split[data-layout="A"][data-focus="map"]' in css
-    assert '.term-split[data-layout="A"][data-focus="screener"]' in css
+    assert '.term-split[data-focus="map"]' in css
+    assert '.term-split[data-focus="screener"]' in css
+    assert 'data-layout="B"' not in css
     assert "prefers-reduced-motion" in css
     tmap = (SRC / "pages" / "terminal-map.js").read_text(encoding="utf-8")
     assert "if (resizeHeld) return;" in tmap                     # no per-frame redraw during the move

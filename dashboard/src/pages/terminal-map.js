@@ -398,7 +398,7 @@ const TerminalMap = (() => {
     g.selectAll('*').remove();
     const S = ctl.state;
     const shown = new Set();
-    if (S.layout === 'A' && axis !== 'curve') {
+    if (axis !== 'curve') {
       // the most liquid bonds in view get a name, like the reference's liq > 800 rule
       BONDS.filter(b => on.has(b.secid) && base.has(b.secid))
         .filter(b => {
