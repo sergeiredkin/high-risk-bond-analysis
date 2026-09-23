@@ -194,6 +194,7 @@ def test_map_brush_proposes_candidates_only_after_confirmation():
     assert "slice(0, 30)" in terminal
     assert "!target.held.has(b.secid)" in terminal
     assert "Подтвердить и открыть черновик" in terminal
+    assert "proposalClose.matches('button')" in terminal
     assert "Существующие позиции не заменяются" in terminal
     assert "if (ids.length) { pfShowBasket(); goPage('portfolio'); }" in terminal
 

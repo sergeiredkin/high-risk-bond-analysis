@@ -3029,7 +3029,11 @@ function termSetFocus(next) {
 function termOnClick(e) {
   const t = e.target;
 
-  if (t.closest('[data-proposal-close]')) {
+  const proposalPanel = t.closest('.term-proposal');
+  const proposalClose = t.closest('[data-proposal-close]');
+  // The backdrop carries data-proposal-close too; clicks inside the dialog
+  // must still reach checkbox/target/confirm handlers below.
+  if (proposalClose && (!proposalPanel || proposalClose.matches('button'))) {
     S.proposal = null;
     termRenderProposal();
     return;
