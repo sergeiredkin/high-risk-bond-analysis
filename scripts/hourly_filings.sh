@@ -57,5 +57,8 @@ PYTHONPATH=src python -m hybond google-news >> "$LOG" 2>&1
 # successful (non-dry-run) completion -- rebuild_dashboard.sh reads the
 # timestamp to know when a catch-up burst is needed, and its own auto-classify
 # call waits on the same shared lock this scrape step just held.
-PYTHONPATH=src python -m hybond auto-classify --limit 30 >> "$LOG" 2>&1
+# 2026-09-23: live trial of the pure-stdlib CPU classifier (--engine rules,
+# models/cpu_classifier.json) — no GPU, instant per item. Revert by deleting
+# the flag (default engine is ollama).
+PYTHONPATH=src python -m hybond auto-classify --engine rules --limit 30 >> "$LOG" 2>&1
 echo "=== done $(date) ===" >> "$LOG"

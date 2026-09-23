@@ -41,7 +41,7 @@ fi
 
 if [ "$run_burst" -eq 1 ]; then
     log "classify stale or never run -- starting catch-up burst (--limit 30 --pause 8)"
-    PYTHONPATH=src python -m hybond auto-classify --limit 30 --pause 8 >> "$LOG" 2>&1 \
+    PYTHONPATH=src python -m hybond auto-classify --engine rules --limit 30 --pause 8 >> "$LOG" 2>&1 \
         || log "classify burst failed (non-fatal, continuing to rebuild)"
     log "classify burst done"
 fi
