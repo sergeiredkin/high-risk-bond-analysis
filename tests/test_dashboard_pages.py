@@ -495,6 +495,10 @@ def test_map_and_screener_can_be_enlarged_with_an_animated_split():
     assert '.term-split[data-focus="map"]' in css
     assert '.term-split[data-focus="screener"]' in css
     assert 'data-layout="B"' not in css
+    assert "height: calc(100dvh - 58px)" in css
+    assert ".term-map-card .map-root" in css and ".term-screener-card .screener-scroll" in css
+    assert "grid-template-rows: minmax(420px, 1fr) minmax(420px, 1fr)" in css
+    assert "[data-focus-btn] { display: inline-block; }" in css
     assert "prefers-reduced-motion" in css
     tmap = (SRC / "pages" / "terminal-map.js").read_text(encoding="utf-8")
     assert "if (resizeHeld) return;" in tmap                     # no per-frame redraw during the move

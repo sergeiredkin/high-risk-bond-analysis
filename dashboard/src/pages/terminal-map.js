@@ -82,7 +82,12 @@ const TerminalMap = (() => {
   const plotW = () => MW - PL - PR;
   const durT = d => Math.log(d + 0.5);
 
-  function mapHeight(layout) { return layout === 'A' ? 430 : 230; }
+  function mapHeight() {
+    // The split owns the viewport height on desktop and each stacked panel
+    // owns a touch-sized slice on mobile; follow the actual root instead of
+    // the removed layout-B height switch.
+    return root && root.clientHeight > 0 ? Math.max(360, Math.round(root.clientHeight)) : 430;
+  }
   function measureWidth() {
     const w = root ? Math.round(root.clientWidth) : 0;
     return w ? Math.max(MW_MIN, Math.min(MW_MAX, w)) : MW;
@@ -167,7 +172,7 @@ const TerminalMap = (() => {
 
   function rebuild(animate) {
     if (!hasD3() || !root) return;
-    const newH = mapHeight(ctl.state.layout), newMW = measureWidth();
+    const newH = mapHeight(), newMW = measureWidth();
     const layoutChanged = newH !== H || newMW !== MW || !svg;
     const prevPos = animate && !layoutChanged ? new Map(base) : null;
     if (newMW !== MW && ctl.state.brush) ctl.state.brush = rescaleBrush(ctl.state.brush, MW, newMW);
@@ -327,7 +332,7 @@ const TerminalMap = (() => {
     g.selectAll('*').remove();
     const ax = AXES[axis];
     const ys = transform.rescaleY(yBase);
-    ys.ticks(ctl.state.layout === 'A' ? 7 : 4).forEach(v => {
+    ys.ticks(7).forEach(v => {
       const y = ys(v);
       if (y < PT - 1 || y > H - PB + 1) return;
       g.append('line').attr('x1', PL - 6).attr('x2', MW - PR).attr('y1', y).attr('y2', y)
