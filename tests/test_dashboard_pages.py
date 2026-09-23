@@ -183,6 +183,19 @@ def test_screener_removes_deprecated_sector_chips():
         assert f"['{label}'" not in terminal
 
 
+def test_map_brush_proposes_candidates_only_after_confirmation():
+    terminal = (SRC / "pages" / "terminal.js").read_text(encoding="utf-8")
+    open_flow = terminal.split("function termOpenProposal", 1)[1].split("function termRenderProposal", 1)[0]
+    assert 'id="termProposeBtn" hidden' in terminal
+    assert "termProposalRows" in open_flow and "new Set(rows.map(b => b.secid))" in open_flow
+    assert "BASKET.toggle" not in open_flow
+    assert "slice(0, 30)" in terminal
+    assert "!target.held.has(b.secid)" in terminal
+    assert "Подтвердить и добавить в корзину" in terminal
+    assert "Существующие позиции не заменяются" in terminal
+    assert "if (ids.length) { pfShowBasket(); goPage('portfolio'); }" in terminal
+
+
 def test_portfolio_scenario_chart_renders_percentage_ticks():
     pf = (SRC / "pages" / "portfolio.js").read_text(encoding="utf-8")
     assert "const ticks = [0, 1, 2, 3, 4]" in pf

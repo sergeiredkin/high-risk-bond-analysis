@@ -58,7 +58,7 @@ const TERM_AXES = [
   ['curve', 'Кривая ОФЗ'],
 ];
 
-const TERM_LAYOUT_NOTE = 'Карта и таблица делят экран пополам. Рамка на карте и строка в таблице всегда рядом — удобно сравнивать глазами, но таблица узкая.';
+const TERM_LAYOUT_NOTE = 'Карта и таблица занимают весь экран. Рамка на карте и строки в таблице всегда рядом — удобно сравнивать глазами.';
 
 const TERM_LEGEND = [
   ['#c67139', 'спред выше справедливого'],
@@ -77,7 +77,8 @@ const S = {
   sel: null,        // secid of the bond whose drawer is open
   shown: SCREENER_PAGE,
   zoomed: false,
-  focus: null,      // layout A only: 'map' | 'screener' enlarged, null = even split
+  focus: null,      // 'map' | 'screener' enlarged, null = even split
+  proposal: null,    // open, unconfirmed map-selection proposal
 };
 
 const TERM_FOCUS_MS = 700;      // fallback if transitionend never fires (reduced motion, stacked layout)
@@ -122,6 +123,108 @@ function termVisible() {
 
 function termInvalidate() { visibleCache = null; }
 
+// ── map-selection proposal ──────────────────────────────────────────────
+// This is deliberately a browser-side proposal, not a portfolio rebuild. It
+// ranks only the current brush, excludes the chosen target's existing bonds,
+// and changes BASKET only after the user confirms the checked rows.
+function termProposalTargets() {
+  const targets = [{ id: 'basket', name: 'Новая корзина', held: new Set(BASKET.ids()) }];
+  (DATA.portfolios || []).forEach(p => {
+    const held = ((p.allocation && p.allocation.bonds) || []).map(b => b.isin);
+    targets.push({ id: String(p.id), name: p.name || `Портфель ${p.id}`, held: new Set(held) });
+  });
+  return targets;
+}
+
+function termProposalTarget(id) {
+  return termProposalTargets().find(t => t.id === id) || termProposalTargets()[0];
+}
+
+function termRankPoints(rows, get, higher = true) {
+  const sorted = rows.slice().sort((a, b) => {
+    const x = get(a), y = get(b);
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    return (higher ? y - x : x - y);
+  });
+  const out = new Map();
+  sorted.forEach((row, i) => out.set(row.secid, (sorted.length - i) / sorted.length));
+  return out;
+}
+
+function termProposalRows(targetId) {
+  const target = termProposalTarget(targetId);
+  const pool = BONDS.filter(b => S.brush && TerminalMap.inBrush(b)
+    && !target.held.has(b.secid)
+    && b.yieldZone !== 'negative_ev');
+  const spread = termRankPoints(pool, b => b.gs);
+  const quality = termRankPoints(pool, b => b.score);
+  const ratingOrder = DATA.rating_order || [];
+  const rating = termRankPoints(pool, b => {
+    const i = b.rating ? ratingOrder.indexOf(b.rating) : -1;
+    return i < 0 ? null : -i;
+  });
+  const liquidity = termRankPoints(pool, b => b.vol);
+  const zone = b => b.yieldZone === 'green' ? 1 : b.yieldZone === 'caution' ? .5 : 0;
+  const rows = pool.map(b => Object.assign({}, b, {
+    proposalScore: .35 * (spread.get(b.secid) || 0)
+      + .30 * (quality.get(b.secid) || 0)
+      + .20 * (rating.get(b.secid) || 0)
+      + .10 * (liquidity.get(b.secid) || 0)
+      + .05 * zone(b),
+  }));
+  return rows.sort((a, b) => b.proposalScore - a.proposalScore || (b.gs == null ? -Infinity : b.gs) - (a.gs == null ? -Infinity : a.gs)).slice(0, 30);
+}
+
+function termProposalWeakest(targetId) {
+  const target = termProposalTarget(targetId);
+  if (target.id === 'basket') return [];
+  const order = DATA.rating_order || [];
+  return BONDS.filter(b => target.held.has(b.secid)).sort((a, b) => {
+    const zone = x => x.yieldZone === 'negative_ev' ? 0 : x.yieldZone === 'caution' ? 1 : 2;
+    const ar = a.rating ? order.indexOf(a.rating) : 999, br = b.rating ? order.indexOf(b.rating) : 999;
+    return zone(a) - zone(b) || (a.score == null ? -1 : b.score == null ? 1 : a.score - b.score)
+      || br - ar || (a.gap || 0) - (b.gap || 0);
+  });
+}
+
+function termOpenProposal() {
+  if (!S.brush) return;
+  const target = termProposalTargets()[0];
+  const rows = termProposalRows(target.id);
+  S.proposal = { target: target.id, rows, selected: new Set(rows.map(b => b.secid)) };
+  termRenderProposal();
+}
+
+function termRenderProposal() {
+  const root = document.getElementById('termProposalRoot');
+  if (!root) return;
+  if (!S.proposal) { root.innerHTML = ''; return; }
+  const target = termProposalTarget(S.proposal.target);
+  const rows = S.proposal.rows;
+  const weakest = termProposalWeakest(target.id);
+  const selected = S.proposal.selected;
+  root.innerHTML = `<div class="term-proposal-backdrop" data-proposal-close>
+    <section class="term-proposal" role="dialog" aria-modal="true" aria-labelledby="termProposalTitle">
+      <div class="term-proposal-head">
+        <div><div class="term-proposal-kicker">Предложение по выделению</div><h2 id="termProposalTitle">Кандидаты в портфель</h2></div>
+        <button type="button" class="detail-close" data-proposal-close aria-label="Закрыть">×</button>
+      </div>
+      <p class="term-proposal-note">Выбрано ${fmtNum(rows.length, 0)} бумаг. Ранжирование: G-спред, качество бизнеса и фундаментальные показатели. Ничего не меняется без подтверждения.</p>
+      <div class="term-proposal-targets"><span>С чем сравнить:</span>${termProposalTargets().map(t => `<button type="button" class="pf-pill${t.id === target.id ? ' is-on' : ''}" data-proposal-target="${escapeHtml(t.id)}">${escapeHtml(t.name)}${t.id === 'basket' ? ` (${fmtNum(t.held.size, 0)})` : ''}</button>`).join('')}</div>
+      ${target.id !== 'basket' ? `<div class="term-proposal-warning">Существующие позиции не заменяются. Ниже показаны только новые бумаги из выделения; подпись «вместо» — ориентир для ручного сравнения.</div>` : ''}
+      <div class="term-proposal-list">
+        ${rows.length ? rows.map((b, i) => {
+          const replacement = weakest[i];
+          return `<label class="term-proposal-row"><input type="checkbox" data-proposal-pick="${escapeHtml(b.secid)}"${selected.has(b.secid) ? ' checked' : ''}><span class="term-proposal-main"><b>${escapeHtml(b.t)}</b><small>${escapeHtml(b.n)}${replacement ? ` · вместо ${escapeHtml(replacement.t)}` : ''}</small></span><span class="term-proposal-metrics"><b>${b.gs == null ? DASH : fmtBpSigned(b.gs)}</b><small>G-спред · AEY ${fmtPct(b.aey, 1)} · балл ${b.score == null ? DASH : fmtNum(b.score, 1)}</small></span></label>`;
+        }).join('') : '<div class="term-proposal-empty">В выделении нет новых подходящих кандидатов для этого портфеля.</div>'}
+      </div>
+      <div class="term-proposal-actions"><span>${fmtNum(selected.size, 0)} выбрано</span><button type="button" class="pill-outline" data-proposal-close>Отмена</button><button type="button" class="pill-primary" data-proposal-confirm${selected.size ? '' : ' disabled'}>Подтвердить и добавить в корзину</button></div>
+    </section>
+  </div>`;
+}
+
 // ── rendering ───────────────────────────────────────────────────────────
 function termShellHtml() {
   return `<div class="page-terminal">
@@ -142,6 +245,7 @@ function termShellHtml() {
           <div class="term-card-hint">Протяните рамку по карте — скринер справа отфильтруется на лету. Клик по точке открывает разбор бумаги. Колесо — зум, Shift+перетаскивание — сдвиг.</div>
           <button type="button" class="chip-clear" id="termClearBrush" hidden>Сбросить выделение</button>
           <button type="button" class="chip-clear" id="termResetZoom" hidden>Сбросить зум</button>
+          <button type="button" class="chip-clear" id="termProposeBtn" hidden>Предложить в портфель</button>
           <button type="button" class="chip-clear" data-focus-btn="map"></button>
         </div>
         <div class="map-root" id="termMapRoot"></div>
@@ -172,6 +276,7 @@ function termShellHtml() {
     </div>
 
     <div class="basket-bar" id="termBasket" hidden></div>
+    <div id="termProposalRoot"></div>
   </div>`;
 }
 
@@ -297,6 +402,9 @@ function termRenderChrome() {
   document.getElementById('termMapTitle').textContent = TerminalMap.title(S.axis);
   document.getElementById('termClearBrush').hidden = !S.brush;
   document.getElementById('termResetZoom').hidden = !S.zoomed;
+  const propose = document.getElementById('termProposeBtn');
+  propose.hidden = !S.brush;
+  propose.textContent = S.brush ? 'Предложить в портфель' : '';
 
   const off = TerminalMap.offAxisCount();
   const plotted = TerminalMap.plottedCount();
@@ -312,6 +420,7 @@ function termRefresh({ rows = true, chrome = true } = {}) {
   if (chrome) termRenderChrome();
   if (rows) { termRenderHead(); termRenderRows(); }
   termRenderBasket();
+  termRenderProposal();
   TerminalMap.refresh();
 }
 
@@ -384,6 +493,36 @@ function termSetFocus(next) {
 // ── wiring ──────────────────────────────────────────────────────────────
 function termOnClick(e) {
   const t = e.target;
+
+  if (t.closest('[data-proposal-close]')) {
+    S.proposal = null;
+    termRenderProposal();
+    return;
+  }
+  const proposalTarget = t.closest('[data-proposal-target]');
+  if (proposalTarget && S.proposal) {
+    const target = proposalTarget.dataset.proposalTarget;
+    const rows = termProposalRows(target);
+    S.proposal = { target, rows, selected: new Set(rows.map(b => b.secid)) };
+    termRenderProposal();
+    return;
+  }
+  const proposalPick = t.closest('[data-proposal-pick]');
+  if (proposalPick && S.proposal) {
+    const id = proposalPick.dataset.proposalPick;
+    if (S.proposal.selected.has(id)) S.proposal.selected.delete(id); else S.proposal.selected.add(id);
+    termRenderProposal();
+    return;
+  }
+  if (t.closest('[data-proposal-confirm]') && S.proposal) {
+    const ids = Array.from(S.proposal.selected);
+    ids.forEach(id => { if (!BASKET.has(id)) BASKET.toggle(id); });
+    S.proposal = null;
+    termRenderProposal();
+    if (ids.length) { pfShowBasket(); goPage('portfolio'); }
+    return;
+  }
+  if (t.closest('#termProposeBtn')) { termOpenProposal(); return; }
 
   const focus = t.closest('[data-focus-btn]');
   if (focus) { termSetFocus(S.focus === focus.dataset.focusBtn ? null : focus.dataset.focusBtn); return; }

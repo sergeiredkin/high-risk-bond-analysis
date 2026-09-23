@@ -26,8 +26,8 @@ const TerminalMap = (() => {
   const PL = 54, PR = 26, PT = 28, PB = 30;
   // The viewBox is sized to the container so one SVG unit is one CSS pixel:
   // a fixed 760-unit viewBox would magnify every label when the card is
-  // wider (layout B is full-width), which the reference's own 760 assumes
-  // away because its map never leaves the split.
+  // wider than the reference's compact map, so labels stay readable at the
+  // dashboard's viewport width.
   const MW_MIN = 520, MW_MAX = 1800;
   let MW = 760;
   const INK = '#201e1d', BG = '#f5ead8', ACC = '#c67139', ACC2 = '#7a8a5e', GREY = '#8a8478', MUTED = '#c0b6a5';
