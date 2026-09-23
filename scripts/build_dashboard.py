@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -64,7 +65,13 @@ def main() -> None:
     company_scan_payload = json.dumps(COMPANY_SCAN_PROMPT.read_text(encoding="utf-8"), ensure_ascii=False)
     company_scan_payload = company_scan_payload.replace("</script", "<\\/script")
 
-    for template_path, out_path in BUILDS:
+    # --no-legacy: skip the pre-redesign fallback build (1 GB VPS profile --
+    # halves one write and the legacy page is not served there). Default is
+    # unchanged: both builds, since the legacy page is the live-cutover
+    # fallback and must keep building on the production checkout.
+    builds = ([b for b in BUILDS if "legacy" not in str(b[1])]
+              if "--no-legacy" in sys.argv[1:] else BUILDS)
+    for template_path, out_path in builds:
         template = inline_includes(template_path.read_text(encoding="utf-8"), template_path.parent)
         html = template.replace("/*__DASHBOARD_DATA__*/", payload)
         html = html.replace("/*__NARRATIVE_PROMPT__*/", prompt_payload)

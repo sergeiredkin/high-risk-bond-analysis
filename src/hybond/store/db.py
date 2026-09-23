@@ -142,12 +142,16 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     # mid-transaction -- the default rollback-journal mode serializes ALL
     # access, which is the actual cause of the recurring "database is
     # locked" errors hit repeatedly this session. busy_timeout makes any
-    # genuine writer-vs-writer collision retry for 5s instead of failing
+    # genuine writer-vs-writer collision retry instead of failing
     # immediately. In-memory paths (tests use ":memory:") don't support WAL
     # and don't need it -- skip there rather than let the pragma no-op.
     if str(path) != ":memory:":
         con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA busy_timeout=5000")
+    # 30s (was 5s): the 2026-09-22/23 live incidents -- a universe INSERT
+    # stalling >5s behind the hourly classify burst's batch commits -- are
+    # exactly what this pragma exists to absorb; 5s was too tight on a
+    # busy 1 vCPU box.
+    con.execute("PRAGMA busy_timeout=30000")
     return con
 
 

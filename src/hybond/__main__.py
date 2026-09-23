@@ -340,8 +340,22 @@ def _chunked(items: list, size: int) -> list[list]:
 
 
 def _auto_classify_pass(con, args) -> dict:
-    from .classify_ollama import MODEL, classify_filing, needs_review
+    from .classify_ollama import needs_review
     from .store import db
+
+    # Engine switch (2026-09-23): 'rules' is the pure-stdlib CPU classifier
+    # (classify_rules.py + models/cpu_classifier.json) -- the no-Ollama path
+    # for the 1 GB VPS. 'ollama' keeps the local-GPU behavior unchanged.
+    # The rules engine has no transient failures and never returns None;
+    # below the 0.65 confidence gate it writes with needs_review=1 instead
+    # of skipping -- nothing may stall forever on a box with no GPU retry.
+    engine = getattr(args, "engine", "ollama")
+    if engine == "rules":
+        from .classify_rules import classify_filing, model_label
+        ENGINE_MODEL = model_label()
+    else:
+        from .classify_ollama import MODEL as ENGINE_MODEL, classify_filing
+    classified_by = f"{engine}:{ENGINE_MODEL}"
 
     stats = {"processed": 0, "classified": 0, "skipped_noise": 0,
              "skipped_confidence": 0, "failed": 0, "needs_review": 0,
@@ -406,18 +420,19 @@ def _auto_classify_pass(con, args) -> dict:
             if result is None:
                 stats["failed"] += 1
                 continue
-            if result["confidence"] < 0.65:
+            if result["confidence"] < 0.65 and engine == "ollama":
                 print(f"Low confidence ({result['confidence']:.2f}) — skipping: {filing['title']}")
                 stats["skipped_confidence"] += 1
                 continue
 
-            review = needs_review(result["severity"], result["confidence"])
+            review = (needs_review(result["severity"], result["confidence"])
+                      or (engine == "rules" and result["confidence"] < 0.65))
             if not args.dry_run:
                 db.insert_event(
                     con, issuer_id=filing["issuer_id"], occurred=filing["published"],
                     category=result["category"], severity=result["severity"],
                     summary=result["summary"], source_url=filing["url"],
-                    classified_by=f"ollama:{MODEL}", confidence=result["confidence"],
+                    classified_by=classified_by, confidence=result["confidence"],
                     needs_review=1 if review else 0)
                 db.mark_classified(con, filing["body_hash"])
 
@@ -439,12 +454,13 @@ def _auto_classify_pass(con, args) -> dict:
             if result is None:
                 stats["failed"] += 1
                 continue
-            if result["confidence"] < 0.65:
+            if result["confidence"] < 0.65 and engine == "ollama":
                 print(f"Low confidence ({result['confidence']:.2f}) — skipping: {note['title']}")
                 stats["skipped_confidence"] += 1
                 continue
 
-            review = needs_review(result["severity"], result["confidence"])
+            review = (needs_review(result["severity"], result["confidence"])
+                      or (engine == "rules" and result["confidence"] < 0.65))
             # market_note has no needs_review column (Part 1 only extended
             # `event`) -- confidence still gates the write above.
             # classified_by (Google News Noise Pre-Filter task, 2026-08-24)
@@ -455,7 +471,7 @@ def _auto_classify_pass(con, args) -> dict:
                 db.set_market_note_classification(
                     con, note["note_id"], severity=result["severity"],
                     category=result["category"], confidence=result["confidence"],
-                    classified_by=f"ollama:{MODEL}")
+                    classified_by=classified_by)
 
             if result["severity"] == "noise":
                 stats["skipped_noise"] += 1
@@ -1702,6 +1718,12 @@ def main(argv=None) -> int:
                       help="only process rows classify_utils.queue_bucket() marks 'priority'")
     pac.add_argument("--source", choices=["filing", "market_note"], default=None,
                       help="restrict to one queue (default: both)")
+    pac.add_argument("--engine", choices=["ollama", "rules"], default="ollama",
+                     help="classification engine: 'ollama' = local GPU qwen3.5 "
+                          "(default, unchanged); 'rules' = pure-stdlib CPU "
+                          "classifier (models/cpu_classifier.json, no GPU/no "
+                          "Ollama) -- instant, and low-confidence results go "
+                          "to needs_review instead of being skipped")
     pac.add_argument("--pause", type=int, default=None,
                       help="burst mode: classify --limit items, close the DB "
                            "connection, sleep this many seconds, repeat until "
