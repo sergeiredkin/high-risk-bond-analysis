@@ -107,6 +107,11 @@ function pfAllPositions() {
 // The positions every tile, share and check is computed over: the preset
 // minus what the user removed (the basket's removals already left the basket).
 function pfPositions() {
+  // Basket removals are already applied to BASKET itself. Filtering the
+  // browser's historical removal log a second time made a re-added bond
+  // disappear from the portfolio forever. Presets keep their separate
+  // removal overlay because their pipeline allocation is immutable here.
+  if (PF.source === 'basket') return pfAllPositions();
   const removed = PF_REMOVED.list(pfRemovalKey());
   return pfAllPositions().filter(p => !removed.includes(p.secid));
 }
@@ -214,7 +219,7 @@ function pfCompositionHtml(positions) {
   const shown = PF.expanded ? sorted : sorted.slice(0, PF_ROWS_SHOWN);
   const noData = positions.filter(p => !p.bond).length;
 
-  const title = PF.source === 'basket' ? 'Портфель из корзины' : `${cur ? cur.name : ''} портфель`;
+  const title = PF.source === 'basket' ? 'Черновик из корзины' : `${cur ? cur.name : ''} портфель`;
   let note;
   if (PF.source === 'basket') {
     note = `Собран из ${positions.length} ${plural(positions.length, ['бумаги', 'бумаг', 'бумаг'])}, отобранных в скринере. `
@@ -588,7 +593,7 @@ function pfSourceButtons() {
   const n = BASKET.ids().length;
   const btns = PF_PRESETS.map(p =>
     `<button type="button" class="pf-pill${PF.source === p.id ? ' is-on' : ''}" data-pf-source="${p.id}">${escapeHtml(p.name)}</button>`);
-  btns.push(`<button type="button" class="pf-pill${PF.source === 'basket' ? ' is-on' : ''}${n ? '' : ' is-empty'}" data-pf-source="basket">Из корзины (${n})</button>`);
+  btns.push(`<button type="button" class="pf-pill${PF.source === 'basket' ? ' is-on' : ''}${n ? '' : ' is-empty'}" data-pf-source="basket">Черновик из корзины (${n})</button>`);
   return btns.join('');
 }
 

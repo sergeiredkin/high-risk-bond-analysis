@@ -128,7 +128,7 @@ function termInvalidate() { visibleCache = null; }
 // ranks only the current brush, excludes the chosen target's existing bonds,
 // and changes BASKET only after the user confirms the checked rows.
 function termProposalTargets() {
-  const targets = [{ id: 'basket', name: 'Новая корзина', held: new Set(BASKET.ids()) }];
+  const targets = [{ id: 'basket', name: 'Новый портфель (черновик)', held: new Set(BASKET.ids()) }];
   (DATA.portfolios || []).forEach(p => {
     const held = ((p.allocation && p.allocation.bonds) || []).map(b => b.isin);
     targets.push({ id: String(p.id), name: p.name || `Портфель ${p.id}`, held: new Set(held) });
@@ -220,7 +220,7 @@ function termRenderProposal() {
           return `<label class="term-proposal-row"><input type="checkbox" data-proposal-pick="${escapeHtml(b.secid)}"${selected.has(b.secid) ? ' checked' : ''}><span class="term-proposal-main"><b>${escapeHtml(b.t)}</b><small>${escapeHtml(b.n)}${replacement ? ` · вместо ${escapeHtml(replacement.t)}` : ''}</small></span><span class="term-proposal-metrics"><b>${b.gs == null ? DASH : fmtBpSigned(b.gs)}</b><small>G-спред · AEY ${fmtPct(b.aey, 1)} · балл ${b.score == null ? DASH : fmtNum(b.score, 1)}</small></span></label>`;
         }).join('') : '<div class="term-proposal-empty">В выделении нет новых подходящих кандидатов для этого портфеля.</div>'}
       </div>
-      <div class="term-proposal-actions"><span>${fmtNum(selected.size, 0)} выбрано</span><button type="button" class="pill-outline" data-proposal-close>Отмена</button><button type="button" class="pill-primary" data-proposal-confirm${selected.size ? '' : ' disabled'}>Подтвердить и добавить в корзину</button></div>
+      <div class="term-proposal-actions"><span>${fmtNum(selected.size, 0)} выбрано</span><button type="button" class="pill-outline" data-proposal-close>Отмена</button><button type="button" class="pill-primary" data-proposal-confirm${selected.size ? '' : ' disabled'}>Подтвердить и открыть черновик</button></div>
     </section>
   </div>`;
 }

@@ -2661,7 +2661,7 @@ function termInvalidate() { visibleCache = null; }
 // ranks only the current brush, excludes the chosen target's existing bonds,
 // and changes BASKET only after the user confirms the checked rows.
 function termProposalTargets() {
-  const targets = [{ id: 'basket', name: 'Новая корзина', held: new Set(BASKET.ids()) }];
+  const targets = [{ id: 'basket', name: 'Новый портфель (черновик)', held: new Set(BASKET.ids()) }];
   (DATA.portfolios || []).forEach(p => {
     const held = ((p.allocation && p.allocation.bonds) || []).map(b => b.isin);
     targets.push({ id: String(p.id), name: p.name || `Портфель ${p.id}`, held: new Set(held) });
@@ -2753,7 +2753,7 @@ function termRenderProposal() {
           return `<label class="term-proposal-row"><input type="checkbox" data-proposal-pick="${escapeHtml(b.secid)}"${selected.has(b.secid) ? ' checked' : ''}><span class="term-proposal-main"><b>${escapeHtml(b.t)}</b><small>${escapeHtml(b.n)}${replacement ? ` · вместо ${escapeHtml(replacement.t)}` : ''}</small></span><span class="term-proposal-metrics"><b>${b.gs == null ? DASH : fmtBpSigned(b.gs)}</b><small>G-спред · AEY ${fmtPct(b.aey, 1)} · балл ${b.score == null ? DASH : fmtNum(b.score, 1)}</small></span></label>`;
         }).join('') : '<div class="term-proposal-empty">В выделении нет новых подходящих кандидатов для этого портфеля.</div>'}
       </div>
-      <div class="term-proposal-actions"><span>${fmtNum(selected.size, 0)} выбрано</span><button type="button" class="pill-outline" data-proposal-close>Отмена</button><button type="button" class="pill-primary" data-proposal-confirm${selected.size ? '' : ' disabled'}>Подтвердить и добавить в корзину</button></div>
+      <div class="term-proposal-actions"><span>${fmtNum(selected.size, 0)} выбрано</span><button type="button" class="pill-outline" data-proposal-close>Отмена</button><button type="button" class="pill-primary" data-proposal-confirm${selected.size ? '' : ' disabled'}>Подтвердить и открыть черновик</button></div>
     </section>
   </div>`;
 }
@@ -3984,6 +3984,11 @@ function pfAllPositions() {
 // The positions every tile, share and check is computed over: the preset
 // minus what the user removed (the basket's removals already left the basket).
 function pfPositions() {
+  // Basket removals are already applied to BASKET itself. Filtering the
+  // browser's historical removal log a second time made a re-added bond
+  // disappear from the portfolio forever. Presets keep their separate
+  // removal overlay because their pipeline allocation is immutable here.
+  if (PF.source === 'basket') return pfAllPositions();
   const removed = PF_REMOVED.list(pfRemovalKey());
   return pfAllPositions().filter(p => !removed.includes(p.secid));
 }
@@ -4091,7 +4096,7 @@ function pfCompositionHtml(positions) {
   const shown = PF.expanded ? sorted : sorted.slice(0, PF_ROWS_SHOWN);
   const noData = positions.filter(p => !p.bond).length;
 
-  const title = PF.source === 'basket' ? 'Портфель из корзины' : `${cur ? cur.name : ''} портфель`;
+  const title = PF.source === 'basket' ? 'Черновик из корзины' : `${cur ? cur.name : ''} портфель`;
   let note;
   if (PF.source === 'basket') {
     note = `Собран из ${positions.length} ${plural(positions.length, ['бумаги', 'бумаг', 'бумаг'])}, отобранных в скринере. `
@@ -4465,7 +4470,7 @@ function pfSourceButtons() {
   const n = BASKET.ids().length;
   const btns = PF_PRESETS.map(p =>
     `<button type="button" class="pf-pill${PF.source === p.id ? ' is-on' : ''}" data-pf-source="${p.id}">${escapeHtml(p.name)}</button>`);
-  btns.push(`<button type="button" class="pf-pill${PF.source === 'basket' ? ' is-on' : ''}${n ? '' : ' is-empty'}" data-pf-source="basket">Из корзины (${n})</button>`);
+  btns.push(`<button type="button" class="pf-pill${PF.source === 'basket' ? ' is-on' : ''}${n ? '' : ' is-empty'}" data-pf-source="basket">Черновик из корзины (${n})</button>`);
   return btns.join('');
 }
 

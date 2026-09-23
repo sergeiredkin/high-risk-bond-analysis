@@ -96,6 +96,7 @@ def test_portfolio_consumes_the_basket_the_screener_persists(template_text):
     # The stage-2 handoff: one localStorage key, one BASKET object.
     assert "'kl.basket'" in template_text
     assert "BASKET.ids()" in (SRC / "pages" / "portfolio.js").read_text(encoding="utf-8")
+    assert "if (PF.source === 'basket') return pfAllPositions();" in (SRC / "pages" / "portfolio.js").read_text(encoding="utf-8")
 
 
 def test_build_portfolio_button_selects_the_basket_explicitly():
@@ -192,7 +193,7 @@ def test_map_brush_proposes_candidates_only_after_confirmation():
     assert "BASKET.toggle" not in open_flow
     assert "slice(0, 30)" in terminal
     assert "!target.held.has(b.secid)" in terminal
-    assert "Подтвердить и добавить в корзину" in terminal
+    assert "Подтвердить и открыть черновик" in terminal
     assert "Существующие позиции не заменяются" in terminal
     assert "if (ids.length) { pfShowBasket(); goPage('portfolio'); }" in terminal
 
