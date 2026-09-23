@@ -166,6 +166,12 @@ def test_yield_guard_keeps_map_unfiltered_by_default():
     assert "['Доходность ≤ порога'" in terminal
 
 
+def test_screener_removes_deprecated_sector_chips():
+    terminal = (SRC / "pages" / "terminal.js").read_text(encoding="utf-8")
+    for label in ("Лизинг", "Недвижимость", "Диверсифицированный холдинг"):
+        assert f"['{label}'" not in terminal
+
+
 def test_portfolio_scenario_chart_renders_percentage_ticks():
     pf = (SRC / "pages" / "portfolio.js").read_text(encoding="utf-8")
     assert "const ticks = [0, 1, 2, 3, 4]" in pf

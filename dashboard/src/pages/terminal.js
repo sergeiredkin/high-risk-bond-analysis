@@ -30,9 +30,6 @@ const TERM_CHIPS = [
   [`Балл ≥ ${SIMILAR_MIN_SCORE}`, b => b.score != null && b.score >= SIMILAR_MIN_SCORE], // 51
   ['Ликвидные', b => b.vol != null && b.vol >= LIQUID_VOLUME_RUB],            // 83
   ['Доходность ≤ порога', b => b.aey != null && b.aey <= YIELD_GUARD.threshold],
-  ['Лизинг', b => b.sector === 'leasing'],                                    // 47
-  ['Недвижимость', b => b.sector === 'real_estate'],                          // 43
-  ['Диверсифицированный холдинг', b => b.sector === 'holding_diversified'],   // 40
 ];
 
 // [label, sort key, alignment]. Reference colDef, with its mock-only
