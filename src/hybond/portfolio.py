@@ -544,7 +544,11 @@ PRESETS: dict[str, dict] = {
         "max_ytm": 0.40,
         "max_aey": None,
         "health_allowed": ["GREEN", "YELLOW", "ORANGE", "RED"],
-        "max_per_issuer": 0.03,
+        # 3% is mathematically infeasible for the current full-universe
+        # sector mix: even one bond per issuer would require at least 34
+        # names, while the 20% sector cap currently permits only 32. 4%
+        # remains a tight aggressive cap and makes the 28--35 range feasible.
+        "max_per_issuer": 0.04,
         "sector_cap": 0.20,
     },
 }
@@ -722,13 +726,13 @@ def _g_spread_delta_30d(con, secid: str, latest_date: str,
 
 
 def _gather_candidates(con) -> list[BondCandidate]:
-    """Every vdo_scope=1 bond in the latest universe_snapshot with a
-    health_status already computed (Universe Health Scan, 2026-08-29) --
-    not just tier=1 watchlist bonds, so a preset can draw on tier=2 and
-    universe-only bonds too when the watchlist alone can't fill it. Rating
-    filtering happens in build_preset(), not here, since an unrated/
-    too-low-rated bond is still a legitimate "candidate" for this
-    function's purposes (build_preset() decides what to do with it).
+    """Every non-excluded bond in the latest full universe_snapshot with a
+    health_status already computed (Universe Health Scan). VDO is a
+    classification flag/subset, not a portfolio-universe gate: high-grade
+    Sberbank, RZD and other non-VDO bonds must remain available to the
+    conservative and balanced presets. Rating filtering happens in
+    build_preset(), not here, since an unrated/too-low-rated bond is still a
+    legitimate candidate for this function's purposes.
 
     LEFT JOIN issuer: a universe bond may have no issuer row at all (never
     added to the watchlist in any tier) -- watchlist_tier is COALESCEd to
@@ -749,12 +753,10 @@ def _gather_candidates(con) -> list[BondCandidate]:
     aey_base has no PD adjustment at all -- using it here would silently
     drop risk-adjustment for every candidate, watchlist bonds included, a
     real methodology regression the task's own draft query would have
-    introduced. In practice this substitution costs nothing: every one of
-    the ~190 pure universe-only bonds (no issuer row) is unrated (confirmed
-    against the live DB), so they fail every preset's rating-floor filter
-    below regardless of which AEY field they carry -- the actual "full
-    universe" expansion this task delivers is tier=2's ~48 rated issuers,
-    for whom aey_base_risk_adj is populated for the large majority.
+    introduced. Rated bonds without an issuer row are valid full-universe
+    candidates when the snapshot carries their rating and risk-adjusted AEY;
+    genuinely unrated rows still fail each preset's rating-floor filter in
+    build_preset().
 
     commodity_linked/sector_moex columns named in the task's draft query
     don't exist anywhere in this schema (confirmed via PRAGMA table_info --
@@ -789,28 +791,14 @@ def _gather_candidates(con) -> list[BondCandidate]:
         "FROM universe_snapshot us "
         "LEFT JOIN issuer i ON us.emitent_inn = i.issuer_id "
         "WHERE us.snap_date = (SELECT MAX(snap_date) FROM universe_snapshot) "
-        # vdo_scope=1 gates entry ONLY for bonds not already on the
-        # watchlist. vdo_scope is the broad ВДО (junk-bond) screen -- by
-        # construction it excludes higher-rated bonds (confirmed against
-        # the live DB: literally every tier=1 bond rated ruBBB- or better
-        # has vdo_scope=0), so requiring it unconditionally (the task's own
-        # draft query) would silently drop every well-rated watchlist bond
-        # and make the conservative preset's ruBBB- floor permanently
-        # unsatisfiable -- caught via DoD #11's own live-DB build, not
-        # asserted from the query alone. A tier=1/tier=2 bond is eligible
-        # by watchlist membership regardless of vdo_scope, matching the
-        # pre-2026-08-29 code's own behavior for tier=1.
-        "  AND (i.watchlist_tier IN (1, 2) OR us.vdo_scope = 1) "
-        # health_status: scan-universe-health only computes
-        # universe_snapshot.health_status for vdo_scope=1 rows -- a
-        # well-rated tier=1 bond (vdo_scope=0) never gets one. Falling
-        # back to issuer.health_status covers exactly that gap:
-        # scan-watchlist-health computes it for ALL 34 tier=1 issuers
-        # unconditionally, regardless of any bond's vdo_scope. No such
-        # fallback exists for tier=2/universe-only, where
-        # universe_snapshot.health_status stays authoritative (NULL means
-        # genuinely not yet scanned, not a gap to paper over).
-        "  AND COALESCE(us.health_status, i.health_status) IS NOT NULL "
+        # VDO is deliberately NOT a gate here. It remains available to the
+        # dedicated vdo-screen/promote flows and as a dashboard label, while
+        # the portfolio builder sees the complete rated universe.
+        # health_status is populated for all non-excluded rows by
+        # scan-universe-health; the tier=1 fallback preserves compatibility
+        # with a DB captured before that scan ran.
+        "  AND COALESCE(us.health_status, "
+        "              CASE WHEN i.watchlist_tier = 1 THEN i.health_status END) IS NOT NULL "
         "  AND us.signal_excluded = 0 "
         "  AND us.secid IS NOT NULL "
         # Defensive, same as the pre-2026-08-29 code's explicit active check
@@ -857,10 +845,10 @@ def _gather_candidates(con) -> list[BondCandidate]:
 def build_preset(preset_type: str, sizing_mode: str | None = None,
                   user_filters: dict | None = None, db=None,
                   dry_run: bool = False) -> dict:
-    """Build a portfolio preset from the full vdo_scope universe (Portfolio
-    preset from full universe task, 2026-08-29) -- tier=1 watchlist bonds
-    first, then tier=2/universe-only bonds only as needed to reach the
-    preset's bond_count floor (see _gather_candidates()'s sort).
+    """Build a portfolio preset from the full screened MOEX universe.
+    `vdo_scope` remains a high-risk subset/label and is not a limiting factor
+    for portfolio construction; rating, yield, AEY, liquidity, health and
+    concentration rules decide eligibility.
 
     Args:
         preset_type: 'conservative' | 'balanced' | 'aggressive'
@@ -973,23 +961,17 @@ def build_preset(preset_type: str, sizing_mode: str | None = None,
             f"only {len(eligible)} bonds passed {preset_type} filters, "
             f"need at least {min_count}")
 
-    # Reviewed bonds first (2026-08-29): tier=1 fully-reviewed bonds fill
-    # preset slots ahead of tier=2/universe-only ones, and within a tier,
-    # a real full-signal health computation ranks ahead of a bare
-    # quantitative threshold check -- universe/quantitative bonds only get
-    # used when the watchlist alone can't reach the preset's bond_count
-    # floor. AEY descending is still the final tiebreaker within each
-    # (tier, health_source) group.
+    # 2026-09-23 owner decision: quality-first means the strongest rating
+    # first, then the lowest AEY. Watchlist/VDO membership is intentionally a
+    # reporting/source attribute, not a priority that can crowd out Sberbank,
+    # RZD or other high-grade non-VDO issuers. Health-source and watchlist
+    # status are only tie-breakers after credit quality and AEY.
     if preset.get("select_order") == "quality_first":
-        # 2026-09-23 owner decision: conservative/balanced fill from the
-        # SAFEST end of the allowed band -- rating rank first, then lowest
-        # AEY -- instead of the old AEY-descending order that made
-        # 'conservative' walk straight up to its own yield ceiling.
         eligible.sort(key=lambda c: (
-            c.watchlist_tier,
-            _HEALTH_SOURCE_RANK.get(c.health_source, 2),
             -(RATING_RANK.get(c.rating) or 0),
             c.aey if c.aey is not None else float("inf"),
+            _HEALTH_SOURCE_RANK.get(c.health_source, 2),
+            c.watchlist_tier,
         ))
     else:
         eligible.sort(key=lambda c: (

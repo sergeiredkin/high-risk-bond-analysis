@@ -689,7 +689,7 @@ def test_cmd_scan_universe_health_skips_bonds_with_no_data(tmp_path, monkeypatch
     assert row["health_source"] is None
 
 
-def test_cmd_scan_universe_health_ignores_non_vdo_scope_bonds(tmp_path, monkeypatch):
+def test_cmd_scan_universe_health_includes_non_vdo_scope_bonds(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.sqlite")
     con = db.connect()
     db.init_db(con)
@@ -719,5 +719,5 @@ def test_cmd_scan_universe_health_ignores_non_vdo_scope_bonds(tmp_path, monkeypa
         "SELECT health_status, health_source FROM universe_snapshot WHERE secid='U3'",
     ).fetchone()
     con.close()
-    assert row["health_status"] is None
-    assert row["health_source"] is None
+    assert row["health_status"] == "green"
+    assert row["health_source"] == "quantitative"

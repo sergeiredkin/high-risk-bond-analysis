@@ -1486,13 +1486,13 @@ def init_universe(con) -> None:
     # annual) on the Рынок tab. Retrofit, same pattern.
     if "coupon_period" not in cols:
         con.execute("ALTER TABLE universe_snapshot ADD COLUMN coupon_period INTEGER")
-    # health_status/health_source (Universe Health Scan, 2026-08-29): every
-    # vdo_scope=1 bond gets a health color, not just the 34 tier=1 issuers
-    # scan-watchlist-health covers. health_source distinguishes a real
-    # full-signal computation ('full', copied from issuer.health_status)
-    # from a quantitative-only one ('quantitative', YTM/G-spread thresholds
-    # -- see watchlist_health.compute_universe_bond_health()). Retrofit,
-    # same pattern.
+    # health_status/health_source (Universe Health Scan, expanded
+    # 2026-09-23): every non-excluded full-universe bond gets a health color,
+    # not just the VDO subset or the 34 tier=1 issuers scan-watchlist-health
+    # covers. health_source distinguishes a real full-signal computation
+    # ('full', copied from issuer.health_status) from a quantitative-only one
+    # ('quantitative', YTM/G-spread thresholds -- see
+    # watchlist_health.compute_universe_bond_health()). Retrofit, same pattern.
     if "health_status" not in cols:
         con.execute("ALTER TABLE universe_snapshot ADD COLUMN health_status TEXT")
     if "health_source" not in cols:

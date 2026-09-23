@@ -512,12 +512,51 @@ function pfChecks(positions) {
       return i >= 0 && i > floor;
     });
     const unrated = positions.filter(p => p.bond && !p.bond.rating).length;
-    out.push({ g: below.length ? '!' : '✓', tone: below.length ? 'warn' : 'ok',
-      ids: below.map(p => p.secid),
+    const ratingBad = below.length + unrated;
+    out.push({ g: ratingBad ? '!' : '✓', tone: ratingBad ? 'warn' : 'ok',
+      ids: below.concat(positions.filter(p => p.bond && !p.bond.rating)).map(p => p.secid),
       t: (below.length
         ? `${below.length} ${plural(below.length, ['позиция', 'позиции', 'позиций'])} ниже рейтингового пола пресета ${cons.min_rating}: ${below.slice(0, 3).map(p => p.bond.t).join(', ')}.`
         : `Ни одна позиция не опускается ниже рейтингового пола пресета ${cons.min_rating}.`)
-        + (unrated ? ` ${unrated} без рейтинга — пол к ним неприменим.` : '') });
+        + (unrated ? ` ${unrated} без рейтинга — пресет их не допускает.` : '') });
+  }
+
+  // 6b. current preset construction limits. Saved portfolios can drift after
+  // construction; surface that explicitly instead of presenting a stale
+  // portfolio as if it still satisfied the current PRESETS definition.
+  if (cons) {
+    const band = Array.isArray(cons.bond_count) ? cons.bond_count : null;
+    const countBad = band && (positions.length < band[0] || positions.length > band[1]);
+    out.push({ g: countBad ? '!' : '✓', tone: countBad ? 'warn' : 'ok',
+      t: band
+        ? `${positions.length} позиций при диапазоне пресета ${band[0]}–${band[1]}.${countBad ? ' Состав требует пересборки.' : ' Размер соответствует пресету.'}`
+        : `В портфеле ${positions.length} позиций.` });
+
+    if (cons.max_ytm != null) {
+      const cap = cons.max_ytm * 100;
+      const bad = positions.filter(p => p.bond && p.bond.ytm != null && p.bond.ytm > cap + 1e-9);
+      out.push({ g: bad.length ? '!' : '✓', tone: bad.length ? 'warn' : 'ok', ids: bad.map(p => p.secid),
+        t: bad.length
+          ? `${bad.length} ${plural(bad.length, ['позиция', 'позиции', 'позиций'])} выше лимита YTM ${fmtPct(cap, 1)}.`
+          : `Все известные YTM не выше лимита пресета ${fmtPct(cap, 1)}.` });
+    }
+
+    if (cons.max_aey != null) {
+      const cap = cons.max_aey * 100;
+      const bad = positions.filter(p => p.bond && p.bond.aey != null && p.bond.aey > cap + 1e-9);
+      out.push({ g: bad.length ? '!' : '✓', tone: bad.length ? 'warn' : 'ok', ids: bad.map(p => p.secid),
+        t: bad.length
+          ? `${bad.length} ${plural(bad.length, ['позиция', 'позиции', 'позиций'])} выше лимита AEY ${fmtPct(cap, 1)}.`
+          : `Все известные AEY не выше лимита пресета ${fmtPct(cap, 1)}.` });
+    }
+
+    if (cons.min_num_trades != null) {
+      const bad = positions.filter(p => p.bond && p.bond.trades != null && p.bond.trades < cons.min_num_trades);
+      out.push({ g: bad.length ? '!' : '✓', tone: bad.length ? 'warn' : 'ok', ids: bad.map(p => p.secid),
+        t: bad.length
+          ? `${bad.length} ${plural(bad.length, ['позиция', 'позиции', 'позиций'])} ниже минимума ${fmtNum(cons.min_num_trades, 0)} сделок.`
+          : `Все известные позиции проходят минимум ${fmtNum(cons.min_num_trades, 0)} сделок.` });
+    }
   }
 
   // 7. data coverage -- always last, always stated

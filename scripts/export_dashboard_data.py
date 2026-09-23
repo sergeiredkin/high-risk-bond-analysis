@@ -190,14 +190,15 @@ def export_portfolio_allocation(con, portfolio_id: int | None = None) -> dict:
     export_all_active_portfolios() below, which drives the Портфель tab's
     new Сравнение sub-tab.
 
-    Joins portfolio_bond.isin -> issuer_bond.secid -> issuer (sector,
-    health_status) for sector/health, and universe_snapshot (latest
-    snap_date only -- it's one row per (secid, snap_date), so joining
-    without that filter would fan out across every historical snapshot)
-    for rating/aey_base. isin and secid are the same string for every bond
-    in this DB (confirmed: 0 mismatches across the `bond` table) -- Russian
-    corporate bonds use ISIN as their MOEX SECID, so no extra join through
-    `bond` is needed.
+    Resolves portfolio_bond.isin through issuer_bond when the bond is on
+    the watchlist, but keeps universe-only bonds via LEFT JOIN and their
+    latest universe_snapshot row. Issuer metadata supplies sector/health
+    when present; full-universe rows fall back to their emitent INN/title
+    and quantitative health stored in universe_snapshot. The snapshot join
+    is restricted to the latest snap_date -- it is one row per
+    (secid, snap_date), so joining without that filter would fan out across
+    every historical snapshot. isin and secid are the same string for every
+    bond in this DB (confirmed: 0 mismatches across the `bond` table).
 
     avg_aey (per bucket and overall) is weighted by each bond's own
     portfolio weight, computed only over bonds with a known aey_base
@@ -224,11 +225,14 @@ def export_portfolio_allocation(con, portfolio_id: int | None = None) -> dict:
 
     latest_snap = db.latest_universe_snap_date(con)
     bond_rows = con.execute(
-        "SELECT pb.isin, pb.weight, i.sector, i.health_status, i.name AS issuer_name, "
-        "ib.issuer_id, us.rating, us.aey_base, us.short_name, us.mod_dur "
+        "SELECT pb.isin, pb.weight, COALESCE(i.sector, 'other') AS sector, "
+        "       COALESCE(i.health_status, us.health_status) AS health_status, "
+        "       COALESCE(i.name, us.emitent_title) AS issuer_name, "
+        "       COALESCE(ib.issuer_id, us.emitent_inn) AS issuer_id, "
+        "       us.rating, us.aey_base, us.short_name, us.mod_dur "
         "FROM portfolio_bond pb "
-        "JOIN issuer_bond ib ON ib.secid = pb.isin "
-        "JOIN issuer i ON i.issuer_id = ib.issuer_id "
+        "LEFT JOIN issuer_bond ib ON ib.secid = pb.isin "
+        "LEFT JOIN issuer i ON i.issuer_id = ib.issuer_id "
         "LEFT JOIN universe_snapshot us ON us.secid = pb.isin AND us.snap_date = ? "
         "WHERE pb.portfolio_id = ?",
         (latest_snap, portfolio_id)).fetchall()

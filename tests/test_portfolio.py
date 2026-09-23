@@ -494,7 +494,8 @@ def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None,
                 ytm=0.20, g_spread_bp=500.0, mod_dur=1.5,
                 prior_g_spread_bp=None, mat_date="2028-01-01",
                 secid=None, short_name=None, watchlist_tier=1,
-                health_source="full", offer_date=None, active=1, num_trades=10):
+                health_source="full", offer_date=None, active=1, num_trades=10,
+                vdo_scope=1, universe_rating=None):
     """One issuer + one bond, seeded into BOTH the legacy tables (issuer/
     rating/issuer_bond/bond/spread_snapshot -- still read directly by
     monitor_portfolios()'s own tests elsewhere in this file) AND
@@ -517,10 +518,9 @@ def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None,
     short_name = short_name or f"Bond{idx}"
     isin = f"RU{idx:06d}"
     # A genuine universe-only bond (watchlist_tier=None) has no issuer row
-    # at all -- confirmed against the live DB, every one of those is also
-    # unrated (rating/issuer_bond both FK to issuer.issuer_id, so a rating
-    # can't exist without an issuer row either; matches reality, not just
-    # a schema accident).
+    # at all. Real full-universe snapshots can nevertheless carry a rating
+    # directly (for example Sberbank/RZD rows), so tests may pass
+    # universe_rating explicitly.
     if watchlist_tier is not None:
         db.add_issuer_at_tier(con, issuer_id, f"Issuer {idx}", watchlist_tier=watchlist_tier, sector=sector)
         db.set_issuer_health_status(con, issuer_id, health)
@@ -546,7 +546,7 @@ def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None,
                                    tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=g_spread_bp,
                                    mod_dur=mod_dur, convexity=None)
     else:
-        rating = None
+        rating = universe_rating
 
     delta_rate = portfolio.get_rate_scenarios(con)["base"]
     aey_base = portfolio.bond_aey(ytm, mod_dur, delta_rate)
@@ -561,7 +561,7 @@ def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None,
         rating=rating, implied_fair_spread_bp=None, mispricing_bp=None,
         in_watchlist=1 if watchlist_tier is not None else 0, signal_excluded=0,
         mod_dur=mod_dur, aey_base=aey_base, aey_stress=aey_base, aey_bull=aey_base,
-        aey_base_risk_adj=aey_base_risk_adj, vdo_scope=1)
+        aey_base_risk_adj=aey_base_risk_adj, vdo_scope=vdo_scope)
     con.execute(
         "UPDATE universe_snapshot SET health_status=?, health_source=? "
         "WHERE secid=? AND snap_date=?",
@@ -833,15 +833,33 @@ def test_build_preset_fewer_than_min_raises(tmp_path):
         portfolio.build_preset("conservative", db=con)
 
 
+def test_build_preset_aggressive_handles_full_universe_sector_mix(tmp_path):
+    con = _preset_con(tmp_path)
+    sectors = (['other'] * 7 + ['leasing'] * 5 + ['real_estate'] * 5
+               + ['holding_diversified'] * 2 + ['debt_collection'] * 2
+               + ['mobility_tech'] * 2
+               + ['trading', 'forestry_paper', 'pawnshop_resale', 'energy',
+                  'gold_mining', 'retail', 'agriculture', 'construction', 'metals'])
+    for i, sector in enumerate(sectors):
+        _seed_bond(con, i, rating="ruB+", health="orange", ytm=0.35,
+                   sector=sector)
+
+    result = portfolio.build_preset("aggressive", sizing_mode="equal", db=con)
+
+    assert 28 <= result["summary"]["n_bonds"] <= 35
+    assert max(result["weights"].values()) <= portfolio.PRESETS["aggressive"]["max_per_issuer"]
+    sector_weights = {
+        s: sum(result["weights"][c.isin] for c in result["bonds"] if c.sector == s)
+        for s in {c.sector for c in result["bonds"]}
+    }
+    assert all(w <= portfolio.PRESETS["aggressive"]["sector_cap"] + 1e-9
+               for w in sector_weights.values())
+
+
 def test_build_preset_red_issuer_included_when_eligible(tmp_path):
     con = _preset_con(tmp_path)
-    # 40, not the 28-bond floor: aggressive's max_per_issuer=0.03 combined
-    # with one-bond-per-issuer equal weighting needs N>=34 (1/34<3%) to be
-    # satisfiable at all -- 28 alone (equal weight 3.57%) is mathematically
-    # incompatible with its own 3% cap under equal sizing, a real tension in
-    # the preset's own numbers, not a fixture bug. See build_preset()'s cap
-    # enforcement, which correctly raises rather than silently violating the
-    # cap when a caller's candidate pool can't support it.
+    # 40 candidates provide enough issuer diversification for the aggressive
+    # cap and leave room for the RED eligibility case.
     _seed_watchlist(con, 40, rating="ruB+", health="orange", ytm=0.35)
     # One RED issuer clearing every red_issuer_eligibility gate: rating
     # ruBB+ (>= floor, PD 2.95% < 3%), G-spread flat (no spike). ytm=0.38
@@ -860,13 +878,8 @@ def test_build_preset_red_issuer_included_when_eligible(tmp_path):
 
 def test_build_preset_red_issuer_excluded_when_gspread_spikes(tmp_path):
     con = _preset_con(tmp_path)
-    # 40, not the 28-bond floor: aggressive's max_per_issuer=0.03 combined
-    # with one-bond-per-issuer equal weighting needs N>=34 (1/34<3%) to be
-    # satisfiable at all -- 28 alone (equal weight 3.57%) is mathematically
-    # incompatible with its own 3% cap under equal sizing, a real tension in
-    # the preset's own numbers, not a fixture bug. See build_preset()'s cap
-    # enforcement, which correctly raises rather than silently violating the
-    # cap when a caller's candidate pool can't support it.
+    # 40 candidates provide enough issuer diversification for the aggressive
+    # cap and leave room for the RED eligibility case.
     _seed_watchlist(con, 40, rating="ruB+", health="orange", ytm=0.35)
     # Same eligible rating/PD as the included case above, but a >=200bp 30d
     # widening must still keep it out.
@@ -1233,21 +1246,30 @@ def test_gather_candidates_includes_tier2_and_universe_only_bonds(tmp_path):
     assert tiers == {1, 2, 99}
 
 
-def test_gather_candidates_sorts_tier1_full_before_tier2_quantitative(tmp_path):
+def test_gather_candidates_includes_rated_non_vdo_universe_bonds(tmp_path):
     con = _preset_con(tmp_path)
-    # Higher AEY on the tier=2 bond -- if sorting were AEY-only (the old
-    # behavior), it would come first. Tier/health_source priority must win.
+    _seed_bond(con, 1, watchlist_tier=None, universe_rating="ruAAA",
+               vdo_scope=0, health_source="quantitative")
+
+    candidates = portfolio._gather_candidates(con)
+
+    assert len(candidates) == 1
+    assert candidates[0].rating == "ruAAA"
+    assert candidates[0].watchlist_tier == 99
+    assert candidates[0].health_source == "quantitative"
+
+
+def test_gather_candidates_preserves_source_metadata(tmp_path):
+    con = _preset_con(tmp_path)
     _seed_bond(con, 1, rating="ruBBB+", health="green", watchlist_tier=1, ytm=0.15)
     _seed_bond(con, 2, rating="ruBBB+", health="green", watchlist_tier=2,
                health_source="quantitative", ytm=0.40)
 
     candidates = portfolio._gather_candidates(con)
-    candidates.sort(key=lambda c: (
-        c.watchlist_tier, portfolio._HEALTH_SOURCE_RANK.get(c.health_source, 2), -c.aey))
+    by_tier = {c.watchlist_tier: c for c in candidates}
 
-    assert candidates[0].watchlist_tier == 1
-    assert candidates[0].health_source == "full"
-    assert candidates[1].watchlist_tier == 2
+    assert by_tier[1].health_source == "full"
+    assert by_tier[2].health_source == "quantitative"
 
 
 def test_gather_candidates_excludes_inactive_issuer(tmp_path):
@@ -1293,12 +1315,11 @@ def test_build_preset_includes_red_full_bond_when_eligible(tmp_path):
     assert result["summary"]["n_red_included"] == 1
 
 
-def test_build_preset_conservative_fills_from_tier2_when_tier1_insufficient(tmp_path):
-    """Tier=1 alone is under the 20-bond floor; tier=2 (quantitative
-    health_source, still GREEN so conservative-eligible) makes up the
-    difference. Exercises the actual "full universe" expansion this task
-    delivers -- see _gather_candidates()'s own docstring on why genuinely
-    unrated universe-only bonds can never contribute here."""
+def test_build_preset_conservative_uses_full_screened_universe(tmp_path):
+    """Tier=2 (quantitative health_source, still GREEN so
+    conservative-eligible) and tier=1 bonds share the full screened pool.
+    Quality-first may prefer the lower-AEY tier=2 rows; watchlist membership
+    is no longer a selection priority."""
     con = _preset_con(tmp_path)
     for i in range(10):
         _seed_bond(con, i, rating="ruA-", health="green", ytm=0.20, watchlist_tier=1)
@@ -1310,14 +1331,26 @@ def test_build_preset_conservative_fills_from_tier2_when_tier1_insufficient(tmp_
 
     n_min, n_max = portfolio.PRESETS["conservative"]["bond_count"]
     assert n_min <= result["summary"]["n_bonds"] <= n_max
-    assert result["source_breakdown"]["watchlist"] == 10
-    assert result["source_breakdown"]["universe"] >= 1
+    assert result["source_breakdown"]["watchlist"] == 3
+    assert result["source_breakdown"]["universe"] == 15
     assert result["source_breakdown"]["watchlist"] + result["source_breakdown"]["universe"] \
         == result["summary"]["n_bonds"]
-    # Every tier=1 bond must be included before any tier=2 bond is needed.
-    included_ids = {c.issuer_id for c in result["bonds"]}
-    tier1_ids = {f"ISS{i:04d}" for i in range(10)}
-    assert tier1_ids.issubset(included_ids)
+
+
+def test_conservative_quality_first_prefers_rated_non_vdo_bonds(tmp_path):
+    con = _preset_con(tmp_path)
+    for i in range(14):
+        _seed_bond(con, i, rating="ruA-", health="green", ytm=0.20)
+    for i in range(14, 20):
+        _seed_bond(con, i, watchlist_tier=None, universe_rating="ruAAA",
+                   vdo_scope=0, health_source="quantitative", ytm=0.15)
+
+    result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
+    ratings = [c.rating for c in result["bonds"]]
+
+    assert ratings.count("ruAAA") == 6
+    assert ratings.count("ruA-") == 12
+    assert result["source_breakdown"]["universe"] == 6
 
 
 def test_build_preset_source_breakdown_all_watchlist(tmp_path):

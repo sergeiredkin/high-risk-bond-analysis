@@ -1096,20 +1096,19 @@ def cmd_scan_watchlist_health(args) -> int:
 
 
 def cmd_scan_universe_health(args) -> int:
-    """Universe Health Scan (2026-08-29): assigns health_status to every
-    vdo_scope=1 bond in the latest universe_snapshot, not just the 34
-    tier=1 issuers scan-watchlist-health covers.
+    """Universe Health Scan (2026-08-29, expanded 2026-09-23): assigns
+    health_status to every non-excluded bond in the latest full
+    universe_snapshot, not only the VDO subset.
 
     Two-tier: bonds whose issuer is watchlist_tier=1 get health_source=
     'full', copied from issuer.health_status (a real full-signal
     computation -- YTM + G-spread trajectory + filing events -- that
-    scan-watchlist-health just ran). Every other vdo_scope=1 bond
-    (universe-only, or tier=2 in_watchlist) gets health_source=
+    scan-watchlist-health just ran). Every other bond gets health_source=
     'quantitative', computed from YTM/G-spread level alone via
-    watchlist_health.compute_universe_bond_health() -- tier=2 issuers'
-    issuer.health_status is never actually computed by anything (only
-    scan_watchlist() scans tier=1), so copying it would stamp an
-    uncomputed schema-default 'green' as if it were a real signal."""
+    watchlist_health.compute_universe_bond_health() -- tier=2 and
+    non-watchlist issuers' issuer.health_status is not computed by
+    scan_watchlist(), so copying it would stamp an uncomputed schema-default
+    'green' as if it were a real signal."""
     from . import watchlist_health
     from .store import db
 
@@ -1129,7 +1128,7 @@ def cmd_scan_universe_health(args) -> int:
 
     rows = con.execute(
         "SELECT secid, emitent_inn, ytm, g_spread_bp, rating "
-        "FROM universe_snapshot WHERE snap_date = ? AND vdo_scope = 1",
+        "FROM universe_snapshot WHERE snap_date = ? AND signal_excluded = 0",
         (snap_date,)).fetchall()
 
     counts = {"green": 0, "yellow": 0, "orange": 0, "red": 0, "skipped": 0}
@@ -1153,7 +1152,7 @@ def cmd_scan_universe_health(args) -> int:
     con.commit()
     con.close()
 
-    print(f"Universe health scan ({snap_date}): {len(rows)} vdo_scope=1 bonds -- "
+    print(f"Universe health scan ({snap_date}): {len(rows)} full-universe bonds -- "
           f"{counts['green']} green, {counts['yellow']} yellow, "
           f"{counts['orange']} orange, {counts['red']} red, "
           f"{counts['skipped']} skipped (null YTM and G-spread).")
@@ -1880,8 +1879,8 @@ def main(argv=None) -> int:
                                 "`hybond run`, no confirmation prompts)")
     pswh.set_defaults(func=cmd_scan_watchlist_health)
     psuh = sub.add_parser("scan-universe-health",
-                           help="Assign health_status to every vdo_scope=1 universe bond "
-                                "(not just tier=1 issuers) -- 'full' copied from "
+                           help="Assign health_status to every non-excluded full-universe "
+                                "bond (not just tier=1 issuers) -- 'full' copied from "
                                 "issuer.health_status for tier=1, 'quantitative' from "
                                 "YTM/G-spread thresholds for everything else. Run after "
                                 "`hybond universe` and `scan-watchlist-health`")

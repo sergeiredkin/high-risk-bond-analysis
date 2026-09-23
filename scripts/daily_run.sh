@@ -108,9 +108,9 @@ PYTHONPATH=src python -m hybond ofz >> "$LOG" 2>&1 \
 # after `hybond run` would check YTM against yesterday's snapshot.
 PYTHONPATH=src python -m hybond scan-watchlist-health >> "$LOG" 2>&1
 
-# Universe health scan (2026-08-29): assigns health_status to every
-# vdo_scope=1 bond, not just the 34 tier=1 issuers scan-watchlist-health
-# covers. Placed after scan-watchlist-health, not immediately after
+# Universe health scan (2026-08-29, expanded 2026-09-23): assigns
+# health_status to every non-excluded bond in the full universe, not only
+# the VDO subset. Placed after scan-watchlist-health, not immediately after
 # `hybond universe` -- tier=1 bonds' health_source='full' is copied from
 # issuer.health_status, which the step just above this one just computed;
 # running it before scan-watchlist-health would copy yesterday's value.

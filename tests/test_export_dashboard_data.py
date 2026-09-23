@@ -720,6 +720,26 @@ def test_export_portfolio_allocation_basic_shape(tmp_path):
     assert abs(health["green"]["weight"] - 2 / 3) < 1e-9
 
 
+def test_export_portfolio_allocation_includes_universe_only_bond(tmp_path):
+    con = _pa_con(tmp_path)
+    db.insert_universe_snapshot(con, **_snapshot_row(
+        secid="U1", short_name="Rated universe bond", emitent_inn="PASSIVE",
+        emitent_title="Passive issuer", rating="ruAAA", aey_base=0.12,
+        aey_base_risk_adj=0.12, in_watchlist=0))
+    pid = db.create_portfolio(con, "Тест", "conservative", status="active")
+    db.add_portfolio_bond(con, pid, "U1", weight=1.0)
+    con.commit()
+
+    result = export_portfolio_allocation(con)
+
+    assert result["summary"]["total_bonds"] == 1
+    assert result["summary"]["n_issuers"] == 1
+    assert result["bonds"][0]["issuer_id"] == "PASSIVE"
+    assert result["bonds"][0]["sector"] == "other"
+    assert result["bonds"][0]["rating"] == "ruAAA"
+    assert result["bonds"][0]["aey_base"] == 0.12
+
+
 def test_export_portfolio_allocation_missing_rating_excluded_from_n_ratings(tmp_path):
     con = _pa_con(tmp_path)
     _pa_bond(con, "B1", "leasing", "green", "ruBBB", 0.25)
