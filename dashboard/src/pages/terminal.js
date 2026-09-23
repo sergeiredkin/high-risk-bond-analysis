@@ -245,7 +245,7 @@ function termShellHtml() {
           <div class="term-card-hint">Протяните рамку по карте — скринер справа отфильтруется на лету. Клик по точке открывает разбор бумаги. Колесо — зум, Shift+перетаскивание — сдвиг.</div>
           <button type="button" class="chip-clear" id="termClearBrush" hidden>Сбросить выделение</button>
           <button type="button" class="chip-clear" id="termResetZoom" hidden>Сбросить зум</button>
-          <button type="button" class="chip-clear" id="termProposeBtn" hidden>Предложить в портфель</button>
+          <button type="button" class="chip-clear" id="termProposeBtn" disabled>Предложить из выделения</button>
           <button type="button" class="chip-clear" data-focus-btn="map"></button>
         </div>
         <div class="map-root" id="termMapRoot"></div>
@@ -403,8 +403,10 @@ function termRenderChrome() {
   document.getElementById('termClearBrush').hidden = !S.brush;
   document.getElementById('termResetZoom').hidden = !S.zoomed;
   const propose = document.getElementById('termProposeBtn');
-  propose.hidden = !S.brush;
-  propose.textContent = S.brush ? 'Предложить в портфель' : '';
+  propose.hidden = false;
+  propose.disabled = !S.brush;
+  propose.textContent = S.brush ? 'Предложить в портфель' : 'Выделите область → предложение';
+  propose.title = S.brush ? 'Открыть предложение по бумагам в рамке' : 'Сначала протяните рамку по карте';
 
   const off = TerminalMap.offAxisCount();
   const plotted = TerminalMap.plottedCount();

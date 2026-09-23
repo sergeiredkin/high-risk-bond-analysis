@@ -223,6 +223,7 @@ button { font-family: inherit; }
   font-size: 11.5px; color: var(--color-text); cursor: pointer; flex: none;
 }
 .chip-clear:hover { background: var(--color-neutral-200); }
+.chip-clear:disabled { cursor: not-allowed; opacity: .55; }
 
 /* ── map ─────────────────────────────────────────────────────────────── */
 .map-root { position: relative; }

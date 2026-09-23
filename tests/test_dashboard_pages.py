@@ -186,7 +186,8 @@ def test_screener_removes_deprecated_sector_chips():
 def test_map_brush_proposes_candidates_only_after_confirmation():
     terminal = (SRC / "pages" / "terminal.js").read_text(encoding="utf-8")
     open_flow = terminal.split("function termOpenProposal", 1)[1].split("function termRenderProposal", 1)[0]
-    assert 'id="termProposeBtn" hidden' in terminal
+    assert 'id="termProposeBtn" disabled' in terminal
+    assert "Выделите область → предложение" in terminal
     assert "termProposalRows" in open_flow and "new Set(rows.map(b => b.secid))" in open_flow
     assert "BASKET.toggle" not in open_flow
     assert "slice(0, 30)" in terminal
