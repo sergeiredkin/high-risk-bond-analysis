@@ -523,6 +523,7 @@ PRESETS: dict[str, dict] = {
         "max_per_issuer": 0.30,   # 6 issuers qualify at ruA-: 1/6 = 16.7% floor
         "sector_cap": 0.60,
         "min_num_trades": 5,
+        "exclude_commodity_linked": True,   # SELGOLD/SELSILV: yield lens invalid
         "select_order": "quality_first",
         "sizing_mode": "aey_low",
     },
@@ -935,6 +936,11 @@ def build_preset(preset_type: str, sizing_mode: str | None = None,
             continue
         min_nt = preset.get("min_num_trades")
         if min_nt is not None and (c.num_trades or 0) < min_nt:
+            continue
+        if preset.get("exclude_commodity_linked") and _is_commodity_linked(c.secid, None):
+            # SELGOLD/SELSILV: the return lives in metal appreciation, so a
+            # low nominal yield/AEY is not a low-risk signal (see the id-list
+            # docstring) -- never admit them into a conservative book.
             continue
         if c.health not in health_allowed:
             continue

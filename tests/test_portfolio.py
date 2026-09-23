@@ -1370,3 +1370,12 @@ def test_conservative_defaults_to_aey_low_sizing(tmp_path):
     _seed_watchlist(con, 14, rating="ruA-", health="green", ytm=0.20)
     result = portfolio.build_preset("conservative", db=con)  # no sizing_mode
     assert result["sizing_mode"] == "aey_low"
+
+
+def test_conservative_excludes_commodity_linked(tmp_path):
+    con = _preset_con(tmp_path)
+    _seed_watchlist(con, 14, rating="ruA-", health="green", ytm=0.20)
+    gold = _seed_bond(con, 900, rating="ruA-", health="green", ytm=0.12,
+                      secid="SELGOLD002")
+    result = portfolio.build_preset("conservative", db=con)
+    assert all(c.isin != gold for c in result["bonds"])
