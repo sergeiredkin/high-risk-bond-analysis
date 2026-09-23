@@ -494,7 +494,7 @@ def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None,
                 ytm=0.20, g_spread_bp=500.0, mod_dur=1.5,
                 prior_g_spread_bp=None, mat_date="2028-01-01",
                 secid=None, short_name=None, watchlist_tier=1,
-                health_source="full", offer_date=None, active=1):
+                health_source="full", offer_date=None, active=1, num_trades=10):
     """One issuer + one bond, seeded into BOTH the legacy tables (issuer/
     rating/issuer_bond/bond/spread_snapshot -- still read directly by
     monitor_portfolios()'s own tests elsewhere in this file) AND
@@ -556,7 +556,7 @@ def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None,
         emitent_inn=issuer_id, emitent_title=f"Issuer {idx}", mat_date=mat_date,
         offer_date=offer_date, coupon_pct=15.0, list_level=3, qualified=1,
         last_pct=100.0, yield_moex=ytm * 100, yield_to_offer=None, accrued_int=0.0,
-        volume=1000.0, num_trades=10, duration_moex=mod_dur * 365.0, ytm=ytm,
+        volume=1000.0, num_trades=num_trades, duration_moex=mod_dur * 365.0, ytm=ytm,
         tenor_yrs=2.0, rf_rate=0.14, g_spread_bp=g_spread_bp, yield_source="moex",
         rating=rating, implied_fair_spread_bp=None, mispricing_bp=None,
         in_watchlist=1 if watchlist_tier is not None else 0, signal_excluded=0,
@@ -570,7 +570,7 @@ def _seed_bond(con, idx, rating="ruBBB+", health="green", sector=None,
     return isin
 
 
-def _seed_watchlist(con, n, rating="ruBBB+", health="green", ytm=0.20,
+def _seed_watchlist(con, n, rating="ruA-", health="green", ytm=0.20,
                      g_spread_bp=500.0, start=0):
     """n bonds cycling across SECTORS, all otherwise identical -- the
     "happy path, plenty of diversified candidates" fixture shape."""
@@ -718,14 +718,16 @@ def test_build_preset_unknown_type_raises(tmp_path):
 
 def test_build_preset_dry_run_success(tmp_path):
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     result = portfolio.build_preset("conservative", sizing_mode="equal", db=con, dry_run=True)
-    assert result == {"success": True, "bond_count": 25, "reason": None}
+    assert result == {"success": True,
+                      "bond_count": portfolio.PRESETS["conservative"]["bond_count"][1],
+                      "reason": None}
 
 
 def test_build_preset_dry_run_failure_never_raises(tmp_path):
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 5, rating="ruBBB+", health="green", ytm=0.20)  # need 20
+    _seed_watchlist(con, 5, rating="ruA-", health="green", ytm=0.20)  # need 12
     result = portfolio.build_preset("conservative", sizing_mode="equal", db=con, dry_run=True)
     assert result["success"] is False
     assert result["bond_count"] == 0
@@ -743,7 +745,7 @@ def test_build_preset_dry_run_writes_nothing(tmp_path):
     """dry_run is a pure computation, same as a normal build_preset() call
     -- save_portfolio() is the only writer in this module."""
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     portfolio.build_preset("conservative", db=con, dry_run=True)
     assert db.list_portfolios(con) == []
 
@@ -754,7 +756,7 @@ def test_build_preset_excludes_commodity_linked_bond_by_secid(tmp_path, caplog):
     even when it would otherwise be the highest-AEY candidate, and the
     exclusion must be logged."""
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     _seed_bond(con, 100, rating="ruBBB+", health="green", ytm=0.35,
                secid="SELSILV01", short_name="SELSILV01")
     with caplog.at_level("INFO"):
@@ -768,7 +770,7 @@ def test_build_preset_excludes_commodity_linked_bond_by_short_name(tmp_path):
     commodity-linked bond whose MOEX secid isn't itself in the id list but
     whose short_name is (SELGOLD002/SELGOLD003 pattern)."""
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     _seed_bond(con, 101, rating="ruBBB+", health="green", ytm=0.35,
                secid="RU000A106XD7", short_name="SELGOLD002")
     result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
@@ -781,7 +783,7 @@ def test_build_preset_excludes_inactive_tier1_issuer(tmp_path):
     eligible (defensive hardening, 2026-08-27; no such row exists in the
     real DB today, but the schema allows it)."""
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     inactive_isin = _seed_bond(con, 200, rating="ruBBB+", health="green", ytm=0.15)
     con.execute("UPDATE issuer SET active=0 WHERE issuer_id='ISS0200'")
     con.commit()
@@ -792,15 +794,15 @@ def test_build_preset_excludes_inactive_tier1_issuer(tmp_path):
 
 def test_build_preset_conservative_happy_path(tmp_path):
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
     n_min, n_max = portfolio.PRESETS["conservative"]["bond_count"]
     assert n_min <= result["summary"]["n_bonds"] <= n_max
     assert sum(result["weights"].values()) == pytest.approx(1.0)
     for c in result["bonds"]:
         assert c.health in ("green", "yellow")
-        assert c.ytm <= 0.30
-        assert c.aey <= 0.35
+        assert c.ytm <= portfolio.PRESETS["conservative"]["max_ytm"]
+        assert c.aey <= portfolio.PRESETS["conservative"]["max_aey"]
 
 
 def test_build_preset_balanced_happy_path(tmp_path):
@@ -811,7 +813,7 @@ def test_build_preset_balanced_happy_path(tmp_path):
     assert n_min <= result["summary"]["n_bonds"] <= n_max
     for c in result["bonds"]:
         assert c.health in ("green", "yellow", "orange")
-        assert c.ytm <= 0.35
+        assert c.ytm <= portfolio.PRESETS["balanced"]["max_ytm"]
 
 
 def test_build_preset_aggressive_happy_path(tmp_path):
@@ -826,7 +828,7 @@ def test_build_preset_aggressive_happy_path(tmp_path):
 
 def test_build_preset_fewer_than_min_raises(tmp_path):
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 5, rating="ruBBB+", health="green", ytm=0.20)  # need 20
+    _seed_watchlist(con, 5, rating="ruA-", health="green", ytm=0.20)  # need 12
     with pytest.raises(ValueError):
         portfolio.build_preset("conservative", db=con)
 
@@ -877,7 +879,7 @@ def test_build_preset_red_issuer_excluded_when_gspread_spikes(tmp_path):
 
 def test_build_preset_red_not_allowed_outside_aggressive(tmp_path):
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     _seed_bond(con, 900, rating="ruBB+", health="red", ytm=0.20,
                g_spread_bp=510.0, prior_g_spread_bp=500.0, sector="finance")
     result = portfolio.build_preset("conservative", db=con)
@@ -886,7 +888,7 @@ def test_build_preset_red_not_allowed_outside_aggressive(tmp_path):
 
 def test_build_preset_sizing_modes_all_valid(tmp_path):
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     for mode in ("equal", "aey_high", "aey_low"):
         result = portfolio.build_preset("conservative", sizing_mode=mode, db=con)
         assert sum(result["weights"].values()) == pytest.approx(1.0)
@@ -899,9 +901,9 @@ def test_build_preset_sector_cap_enforced(tmp_path):
     # other-sector bonds to still reach the 20-bond floor after the cap
     # trims the dominant sector down to <=12%.
     for i in range(20):
-        _seed_bond(con, i, rating="ruBBB+", health="green", ytm=0.20, sector="finance")
+        _seed_bond(con, i, rating="ruA-", health="green", ytm=0.20, sector="finance")
     for i in range(20, 40):
-        _seed_bond(con, i, rating="ruBBB+", health="green", ytm=0.20,
+        _seed_bond(con, i, rating="ruA-", health="green", ytm=0.20,
                    sector=SECTORS[i % len(SECTORS)])
     result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
     by_sector: dict[str, float] = {}
@@ -914,7 +916,7 @@ def test_build_preset_sector_cap_enforced(tmp_path):
 
 def test_build_preset_max_per_issuer_enforced(tmp_path):
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
     by_issuer: dict[str, float] = {}
     for c in result["bonds"]:
@@ -926,7 +928,7 @@ def test_build_preset_max_per_issuer_enforced(tmp_path):
 
 def test_build_preset_user_filters_override_sector_cap(tmp_path):
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     result = portfolio.build_preset(
         "conservative", db=con, user_filters={"sector_cap": 0.30})
     assert result["filters"]["sector_cap"] == 0.30
@@ -936,7 +938,7 @@ def test_build_preset_user_filters_override_sector_cap(tmp_path):
 
 def test_save_portfolio_round_trip(tmp_path):
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     built = portfolio.build_preset("conservative", db=con)
     portfolio_id = portfolio.save_portfolio(con, "Тест", built)
     row = db.get_portfolio(con, portfolio_id)
@@ -1299,9 +1301,9 @@ def test_build_preset_conservative_fills_from_tier2_when_tier1_insufficient(tmp_
     unrated universe-only bonds can never contribute here."""
     con = _preset_con(tmp_path)
     for i in range(10):
-        _seed_bond(con, i, rating="ruBBB+", health="green", ytm=0.20, watchlist_tier=1)
+        _seed_bond(con, i, rating="ruA-", health="green", ytm=0.20, watchlist_tier=1)
     for i in range(10, 25):
-        _seed_bond(con, i, rating="ruBBB+", health="green", ytm=0.18,
+        _seed_bond(con, i, rating="ruA-", health="green", ytm=0.18,
                    watchlist_tier=2, health_source="quantitative")
 
     result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
@@ -1320,7 +1322,51 @@ def test_build_preset_conservative_fills_from_tier2_when_tier1_insufficient(tmp_
 
 def test_build_preset_source_breakdown_all_watchlist(tmp_path):
     con = _preset_con(tmp_path)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     result = portfolio.build_preset("conservative", sizing_mode="equal", db=con)
     assert result["source_breakdown"]["watchlist"] == result["summary"]["n_bonds"]
     assert result["source_breakdown"]["universe"] == 0
+
+
+# ---- 2026-09-23 preset re-specification (owner decision: ruA- floor) ----
+
+def test_conservative_rating_floor_excludes_ruBBB_plus(tmp_path):
+    con = _preset_con(tmp_path)
+    # ruA- qualifies; ruBBB+ (one notch below the new floor) must not --
+    # even with a juicier yield that would have ranked it first.
+    _seed_watchlist(con, 14, rating="ruA-", health="green", ytm=0.20)
+    _seed_bond(con, 900, rating="ruBBB+", health="green", ytm=0.24)
+    result = portfolio.build_preset("conservative", db=con)
+    assert all(c.rating != "ruBBB+" for c in result["bonds"])
+
+
+def test_conservative_min_num_trades_floor(tmp_path):
+    con = _preset_con(tmp_path)
+    _seed_watchlist(con, 14, rating="ruA-", health="green", ytm=0.20)
+    illiquid = _seed_bond(con, 900, rating="ruA-", health="green", ytm=0.22,
+                          num_trades=2)
+    result = portfolio.build_preset("conservative", db=con)
+    assert all(c.isin != illiquid for c in result["bonds"])
+
+
+def test_quality_first_order_prefers_rating_over_aey(tmp_path):
+    con = _preset_con(tmp_path)
+    # 10 ruA- bonds with HIGH aey vs 6 ruAA bonds with LOW aey; only 12
+    # slots (bond_count max) -- quality-first must keep every ruAA name and
+    # cut from the ruA- tail instead of maximizing aey.
+    for i in range(14):
+        _seed_bond(con, i, rating="ruA-", health="green", ytm=0.24)
+    for i in range(14, 20):
+        _seed_bond(con, i, rating="ruAA", health="green", ytm=0.10)
+    result = portfolio.build_preset("conservative", db=con)
+    ratings = [c.rating for c in result["bonds"]]
+    assert ratings.count("ruAA") == 6          # every quality name kept
+    assert len(result["bonds"]) == 18          # target size, not pool size
+    assert ratings.count("ruA-") == 12         # cut came from the ruA- tail
+
+
+def test_conservative_defaults_to_aey_low_sizing(tmp_path):
+    con = _preset_con(tmp_path)
+    _seed_watchlist(con, 14, rating="ruA-", health="green", ytm=0.20)
+    result = portfolio.build_preset("conservative", db=con)  # no sizing_mode
+    assert result["sizing_mode"] == "aey_low"

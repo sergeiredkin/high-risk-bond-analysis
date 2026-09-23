@@ -81,7 +81,7 @@ def test_portfolio_build_dry_run_does_not_write(tmp_path, monkeypatch, capsys):
     db.init_rating(con)
     db.init_universe(con)
     db.init_cbr(con)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     con.close()
 
     rc = cli.cmd_portfolio_build(_args("conservative", save=False))
@@ -103,7 +103,7 @@ def test_portfolio_build_save_requires_name(tmp_path, monkeypatch, capsys):
     db.init_rating(con)
     db.init_universe(con)
     db.init_cbr(con)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     con.close()
 
     rc = cli.cmd_portfolio_build(_args("conservative", save=True, name=None))
@@ -122,7 +122,7 @@ def test_portfolio_build_save_writes_active_portfolio(tmp_path, monkeypatch, cap
     db.init_rating(con)
     db.init_universe(con)
     db.init_cbr(con)
-    _seed_watchlist(con, 25, rating="ruBBB+", health="green", ytm=0.20)
+    _seed_watchlist(con, 25, rating="ruA-", health="green", ytm=0.20)
     con.close()
 
     rc = cli.cmd_portfolio_build(_args("conservative", save=True, name="CLI Test"))
@@ -134,7 +134,7 @@ def test_portfolio_build_save_writes_active_portfolio(tmp_path, monkeypatch, cap
     assert rows[0]["name"] == "CLI Test"
     assert rows[0]["status"] == "active"
     bonds = db.list_portfolio_bonds(con, rows[0]["id"])
-    assert len(bonds) >= 20
+    assert len(bonds) >= portfolio.PRESETS["conservative"]["bond_count"][0]
     con.close()
 
 
@@ -146,7 +146,7 @@ def test_portfolio_build_fewer_than_min_bonds_errors(tmp_path, monkeypatch, caps
     db.init_rating(con)
     db.init_universe(con)
     db.init_cbr(con)
-    _seed_watchlist(con, 5, rating="ruBBB+", health="green", ytm=0.20)  # need 20
+    _seed_watchlist(con, 5, rating="ruA-", health="green", ytm=0.20)  # need 20
     con.close()
 
     rc = cli.cmd_portfolio_build(_args("conservative"))
@@ -168,7 +168,7 @@ def test_portfolio_build_user_filter_overrides_applied(tmp_path, monkeypatch, ca
     # this test passes; the CLI override must be what makes this buildable.
     four_sectors = SECTORS[:4]
     for i in range(20):
-        _seed_bond(con, i, rating="ruBBB+", health="green", ytm=0.20,
+        _seed_bond(con, i, rating="ruA-", health="green", ytm=0.20,
                    sector=four_sectors[i % 4])
     con.close()
 

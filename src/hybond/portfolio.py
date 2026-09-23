@@ -504,31 +504,38 @@ RATING_RANK: dict[str, int] = {
     "ruB+": 7, "ruB": 6, "ruB-": 5, "ruCCC": 4, "ruCC": 3, "ruC": 2, "ruD": 1,
 }
 
-# NOTE on 'conservative'.min_rating: the task spec that defined this table
-# gives the value 'ruBBB-' but its own inline comment says "ruBBB+ and
-# above" -- those are NOT the same threshold (ruBBB- ranks two notches below
-# ruBBB+). Implemented against the literal field value (rank >= ruBBB-'s 11),
-# since that's the actual data driving the filter; flagging the comment
-# discrepancy here rather than silently picking whichever reading seemed
-# stricter. Confirm with whoever wrote the spec if 'ruBBB+' was intended.
+# NOTE on 'conservative'.min_rating (RESOLVED 2026-09-23, owner decision):
+# the original spec said ruBBB- in the field and "ruBBB+ and above" in its
+# comment -- neither, as it turns out. The owner set the floor to **ruA-**
+# (a top-tier book) and simultaneously tightened the yield band, added a
+# liquidity floor, and flipped selection to quality-first. Live-DB math at
+# that floor: only ~40 bonds / 6 issuers qualify, so bond_count drops to
+# (12, 18) and max_per_issuer rises to 0.15 -- a 25-bond book at 5%/issuer
+# is mathematically unsatisfiable on 6 issuers (the cap relaxation loop
+# would gut its own cap).
 PRESETS: dict[str, dict] = {
     "conservative": {
-        "bond_count": (20, 25),
-        "min_rating": "ruBBB-",
-        "max_ytm": 0.30,
-        "max_aey": 0.35,
+        "bond_count": (12, 18),
+        "min_rating": "ruA-",
+        "max_ytm": 0.25,
+        "max_aey": 0.25,
         "health_allowed": ["GREEN", "YELLOW"],
-        "max_per_issuer": 0.05,
-        "sector_cap": 0.12,
+        "max_per_issuer": 0.30,   # 6 issuers qualify at ruA-: 1/6 = 16.7% floor
+        "sector_cap": 0.60,
+        "min_num_trades": 5,
+        "select_order": "quality_first",
+        "sizing_mode": "aey_low",
     },
     "balanced": {
         "bond_count": (25, 30),
         "min_rating": "ruBB-",
-        "max_ytm": 0.35,
+        "max_ytm": 0.30,
         "max_aey": None,
         "health_allowed": ["GREEN", "YELLOW", "ORANGE"],
-        "max_per_issuer": 0.04,
-        "sector_cap": 0.15,
+        "max_per_issuer": 0.12,   # 14 issuers qualify at ruBB-/ytm30
+        "sector_cap": 0.35,
+        "select_order": "quality_first",
+        "sizing_mode": "equal",
     },
     "aggressive": {
         "bond_count": (28, 35),
@@ -581,6 +588,7 @@ class BondCandidate:
     # Portfolio preset from full universe task (2026-08-29):
     watchlist_tier: int        # 1/2 from issuer.watchlist_tier, 99 if no issuer row at all
     health_source: str | None  # 'full' (tier=1, real signal) | 'quantitative' | None
+    num_trades: int | None = None  # today's trade count -- preset liquidity floor
     flags: dict = field(default_factory=dict)
 
 
@@ -774,6 +782,7 @@ def _gather_candidates(con) -> list[BondCandidate]:
         "                CASE WHEN i.watchlist_tier = 1 THEN 'full' END) AS health_source, "
         "       us.aey_base_risk_adj AS aey, "
         "       us.ytm, us.g_spread_bp, us.mat_date, us.offer_date, us.rating, "
+        "       us.num_trades, "
         "       COALESCE(i.watchlist_tier, 99) AS watchlist_tier, "
         "       us.snap_date "
         "FROM universe_snapshot us "
@@ -839,11 +848,12 @@ def _gather_candidates(con) -> list[BondCandidate]:
             aey=r["aey"], ytm=r["ytm"], g_spread_bp=r["g_spread_bp"],
             g_spread_delta_30d_bp=g_spread_delta, mat_date=r["mat_date"], offer_date=r["offer_date"],
             watchlist_tier=r["watchlist_tier"], health_source=r["health_source"],
+            num_trades=r["num_trades"],
         ))
     return candidates
 
 
-def build_preset(preset_type: str, sizing_mode: str = "equal",
+def build_preset(preset_type: str, sizing_mode: str | None = None,
                   user_filters: dict | None = None, db=None,
                   dry_run: bool = False) -> dict:
     """Build a portfolio preset from the full vdo_scope universe (Portfolio
@@ -904,6 +914,8 @@ def build_preset(preset_type: str, sizing_mode: str = "equal",
         for key in ("sector_cap", "max_per_issuer", "health_allowed"):
             if user_filters.get(key) is not None:
                 preset[key] = user_filters[key]
+    if sizing_mode is None:
+        sizing_mode = preset.get("sizing_mode", "equal")
 
     min_rank = RATING_RANK.get(preset["min_rating"])
     health_allowed = {str(h).lower() for h in preset["health_allowed"]}
@@ -920,6 +932,9 @@ def build_preset(preset_type: str, sizing_mode: str = "equal",
         if c.aey is None:
             continue
         if preset["max_aey"] is not None and c.aey > preset["max_aey"]:
+            continue
+        min_nt = preset.get("min_num_trades")
+        if min_nt is not None and (c.num_trades or 0) < min_nt:
             continue
         if c.health not in health_allowed:
             continue
@@ -959,11 +974,23 @@ def build_preset(preset_type: str, sizing_mode: str = "equal",
     # used when the watchlist alone can't reach the preset's bond_count
     # floor. AEY descending is still the final tiebreaker within each
     # (tier, health_source) group.
-    eligible.sort(key=lambda c: (
-        c.watchlist_tier,
-        _HEALTH_SOURCE_RANK.get(c.health_source, 2),
-        -c.aey,
-    ))
+    if preset.get("select_order") == "quality_first":
+        # 2026-09-23 owner decision: conservative/balanced fill from the
+        # SAFEST end of the allowed band -- rating rank first, then lowest
+        # AEY -- instead of the old AEY-descending order that made
+        # 'conservative' walk straight up to its own yield ceiling.
+        eligible.sort(key=lambda c: (
+            c.watchlist_tier,
+            _HEALTH_SOURCE_RANK.get(c.health_source, 2),
+            -(RATING_RANK.get(c.rating) or 0),
+            c.aey if c.aey is not None else float("inf"),
+        ))
+    else:
+        eligible.sort(key=lambda c: (
+            c.watchlist_tier,
+            _HEALTH_SOURCE_RANK.get(c.health_source, 2),
+            -c.aey,
+        ))
     target_n = min(max_count, len(eligible))
 
     # Slot-based approximation of the weight caps (max_per_issuer/
