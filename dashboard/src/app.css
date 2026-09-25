@@ -376,6 +376,10 @@ button { font-family: inherit; }
 .term-proposal-warning { padding: 10px 13px; border-radius: 16px; background: var(--color-accent-100); color: var(--color-accent-900); opacity: 1; }
 .term-proposal-targets { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 11.5px; }
 .term-proposal-targets > span { opacity: .58; }
+.term-proposal-criteria { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11.5px; }
+.term-proposal-criteria > span { opacity: .58; }
+.term-proposal-criteria label { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--color-divider); border-radius: 999px; cursor: pointer; }
+.term-proposal-criteria input { accent-color: var(--color-accent-700); }
 .term-proposal-list { min-height: 0; overflow: auto; border-top: 1px solid var(--color-divider); border-bottom: 1px solid var(--color-divider); }
 .term-proposal-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid var(--color-divider); cursor: pointer; }
 .term-proposal-row:last-child { border-bottom: 0; }

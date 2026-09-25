@@ -198,8 +198,11 @@ def test_map_brush_proposes_candidates_only_after_confirmation():
     assert "Выделите область → предложение" in terminal
     assert "termProposalRows" in open_flow and "new Set(rows.map(b => b.secid))" in open_flow
     assert "BASKET.toggle" not in open_flow
-    assert "slice(0, 30)" in terminal
+    assert "chosen.length < 30" in terminal
     assert "!target.held.has(b.secid)" in terminal
+    assert "TERM_PROPOSAL_CRITERIA" in terminal
+    for criterion in ("diversification", "liquidity", "spread", "rating"):
+        assert f"['{criterion}'" in terminal
     assert "Подтвердить и открыть черновик" in terminal
     assert "proposalClose.matches('button')" in terminal
     assert "Существующие позиции не заменяются" in terminal

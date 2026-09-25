@@ -153,28 +153,57 @@ function termRankPoints(rows, get, higher = true) {
   return out;
 }
 
-function termProposalRows(targetId) {
+const TERM_PROPOSAL_CRITERIA = [
+  ['diversification', 'Диверсификация', 'разбавляет эмитентов и отрасли'],
+  ['liquidity', 'Ликвидность', 'выше оборот за сессию'],
+  ['spread', 'G-спред', 'выше компенсация к ОФЗ'],
+  ['rating', 'Рейтинг', 'выше кредитное качество'],
+];
+
+function termProposalRows(targetId, criteria) {
+  const c = Object.assign({ diversification: true, liquidity: true, spread: true, rating: true }, criteria || {});
   const target = termProposalTarget(targetId);
   const pool = BONDS.filter(b => S.brush && TerminalMap.inBrush(b)
     && !target.held.has(b.secid)
     && b.yieldZone !== 'negative_ev');
   const spread = termRankPoints(pool, b => b.gs);
-  const quality = termRankPoints(pool, b => b.score);
   const ratingOrder = DATA.rating_order || [];
   const rating = termRankPoints(pool, b => {
     const i = b.rating ? ratingOrder.indexOf(b.rating) : -1;
     return i < 0 ? null : -i;
   });
   const liquidity = termRankPoints(pool, b => b.vol);
-  const zone = b => b.yieldZone === 'green' ? 1 : b.yieldZone === 'caution' ? .5 : 0;
-  const rows = pool.map(b => Object.assign({}, b, {
-    proposalScore: .35 * (spread.get(b.secid) || 0)
-      + .30 * (quality.get(b.secid) || 0)
-      + .20 * (rating.get(b.secid) || 0)
-      + .10 * (liquidity.get(b.secid) || 0)
-      + .05 * zone(b),
-  }));
-  return rows.sort((a, b) => b.proposalScore - a.proposalScore || (b.gs == null ? -Infinity : b.gs) - (a.gs == null ? -Infinity : a.gs)).slice(0, 30);
+  const maps = [];
+  if (c.spread) maps.push(spread);
+  if (c.rating) maps.push(rating);
+  if (c.liquidity) maps.push(liquidity);
+  // With every ranking switch off, keep the proposal deterministic and safe;
+  // the user can still deselect rows before confirming.
+  const fallback = termRankPoints(pool, b => b.score);
+  if (!maps.length) maps.push(fallback);
+  const staticScore = b => maps.reduce((sum, m) => sum + (m.get(b.secid) || 0), 0) / maps.length;
+  const chosen = [];
+  const remaining = pool.slice();
+  while (remaining.length && chosen.length < 30) {
+    let best = null, bestScore = -Infinity;
+    remaining.forEach(b => {
+      let score = staticScore(b);
+      if (c.diversification) {
+        const issuerN = chosen.filter(x => x.inn && b.inn && x.inn === b.inn).length;
+        const sectorN = chosen.filter(x => x.sector && b.sector && x.sector === b.sector).length;
+        // Diversity is a soft penalty, not an invented hard cap: the next
+        // best issuer/sector remains eligible when its other signals win.
+        score += .35 / (1 + issuerN) + .20 / (1 + sectorN);
+      }
+      if (score > bestScore || (score === bestScore && (b.gs || -Infinity) > (best && best.gs || -Infinity))) {
+        best = b; bestScore = score;
+      }
+    });
+    best.proposalScore = bestScore;
+    chosen.push(best);
+    remaining.splice(remaining.indexOf(best), 1);
+  }
+  return chosen;
 }
 
 function termProposalWeakest(targetId) {
@@ -192,8 +221,9 @@ function termProposalWeakest(targetId) {
 function termOpenProposal() {
   if (!S.brush) return;
   const target = termProposalTargets()[0];
-  const rows = termProposalRows(target.id);
-  S.proposal = { target: target.id, rows, selected: new Set(rows.map(b => b.secid)) };
+  const criteria = { diversification: true, liquidity: true, spread: true, rating: true };
+  const rows = termProposalRows(target.id, criteria);
+  S.proposal = { target: target.id, criteria, rows, selected: new Set(rows.map(b => b.secid)) };
   termRenderProposal();
 }
 
@@ -205,14 +235,17 @@ function termRenderProposal() {
   const rows = S.proposal.rows;
   const weakest = termProposalWeakest(target.id);
   const selected = S.proposal.selected;
+  const criteria = S.proposal.criteria;
+  const activeCriteria = TERM_PROPOSAL_CRITERIA.filter(([key]) => criteria[key]).map(([, label]) => label).join(', ');
   root.innerHTML = `<div class="term-proposal-backdrop" data-proposal-close>
     <section class="term-proposal" role="dialog" aria-modal="true" aria-labelledby="termProposalTitle">
       <div class="term-proposal-head">
         <div><div class="term-proposal-kicker">Предложение по выделению</div><h2 id="termProposalTitle">Кандидаты в портфель</h2></div>
         <button type="button" class="detail-close" data-proposal-close aria-label="Закрыть">×</button>
       </div>
-      <p class="term-proposal-note">Выбрано ${fmtNum(rows.length, 0)} бумаг. Ранжирование: G-спред, качество бизнеса и фундаментальные показатели. Ничего не меняется без подтверждения.</p>
+      <p class="term-proposal-note">Автоматически выбраны ${fmtNum(rows.length, 0)} лучших бумаг из выделения по критериям: ${escapeHtml(activeCriteria || 'базовое качество')}. Отбор мягкий: можно изменить критерии и снять отдельные галочки. Ничего не меняется без подтверждения.</p>
       <div class="term-proposal-targets"><span>С чем сравнить:</span>${termProposalTargets().map(t => `<button type="button" class="pf-pill${t.id === target.id ? ' is-on' : ''}" data-proposal-target="${escapeHtml(t.id)}">${escapeHtml(t.name)}${t.id === 'basket' ? ` (${fmtNum(t.held.size, 0)})` : ''}</button>`).join('')}</div>
+      <div class="term-proposal-criteria"><span>Критерии автоподбора:</span>${TERM_PROPOSAL_CRITERIA.map(([key, label, hint]) => `<label title="${escapeHtml(hint)}"><input type="checkbox" data-proposal-criterion="${key}"${criteria[key] ? ' checked' : ''}>${escapeHtml(label)}</label>`).join('')}</div>
       ${target.id !== 'basket' ? `<div class="term-proposal-warning">Существующие позиции не заменяются. Ниже показаны только новые бумаги из выделения; подпись «вместо» — ориентир для ручного сравнения.</div>` : ''}
       <div class="term-proposal-list">
         ${rows.length ? rows.map((b, i) => {
@@ -508,8 +541,18 @@ function termOnClick(e) {
   const proposalTarget = t.closest('[data-proposal-target]');
   if (proposalTarget && S.proposal) {
     const target = proposalTarget.dataset.proposalTarget;
-    const rows = termProposalRows(target);
-    S.proposal = { target, rows, selected: new Set(rows.map(b => b.secid)) };
+    const rows = termProposalRows(target, S.proposal.criteria);
+    S.proposal = { target, criteria: S.proposal.criteria, rows, selected: new Set(rows.map(b => b.secid)) };
+    termRenderProposal();
+    return;
+  }
+  const proposalCriterion = t.closest('[data-proposal-criterion]');
+  if (proposalCriterion && S.proposal) {
+    const key = proposalCriterion.dataset.proposalCriterion;
+    S.proposal.criteria[key] = !S.proposal.criteria[key];
+    const rows = termProposalRows(S.proposal.target, S.proposal.criteria);
+    S.proposal.rows = rows;
+    S.proposal.selected = new Set(rows.map(b => b.secid));
     termRenderProposal();
     return;
   }
