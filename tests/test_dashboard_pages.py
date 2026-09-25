@@ -83,6 +83,13 @@ def test_pages_are_still_separate_source_files_not_one_template():
     assert len(TEMPLATE.read_text(encoding="utf-8").splitlines()) < 150
 
 
+def test_market_band_distinguishes_current_and_week_ago_spreads():
+    text = (SRC / "pages" / "overview-market-band.js").read_text(encoding="utf-8")
+    assert "DATA.universe_now" in text and "DATA.universe_week_ago" in text
+    assert "медианный G-спред".lower() in text.lower()
+    assert "неделю назад" in text
+
+
 def test_d3_is_still_an_external_script_with_a_fallback(template_text):
     # Stage 2's constraint: D3 comes from the CDN and the page degrades when
     # it cannot load. Inlining it, or dropping the fallback, breaks both.
