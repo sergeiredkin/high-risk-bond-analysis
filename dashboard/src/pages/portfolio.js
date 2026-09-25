@@ -175,7 +175,11 @@ function pfStats(positions) {
   const nAey = pfCoverage(positions, b => b.aey);
   const dur = pfWeightedMean(positions, b => b.dur);
   const nDur = pfCoverage(positions, b => b.dur);
-  const scores = positions.map(p => p.bond && p.bond.score).filter(v => v != null);
+  // A partially populated issuer record can carry a non-finite pillar
+  // average. Ignore that value rather than letting Math.min() become NaN and
+  // make the tile look as if recalculation stopped after basket edits.
+  const scores = positions.map(p => p.bond && p.bond.score)
+    .filter(v => v != null && isFinite(v));
   const inns = new Set(positions.map(p => p.bond && p.bond.inn).filter(Boolean));
   const sectors = new Set(positions.map(p => p.bond && p.bond.sector).filter(Boolean));
   const noData = positions.filter(p => !p.bond).length;
@@ -203,7 +207,7 @@ function pfStats(positions) {
     { k: 'Минимальный балл', v: scores.length ? `${fmtNum(Math.min.apply(null, scores), 1)} / 10` : DASH,
       note: scores.length
         ? `слабейшая опора по портфелю · балл есть у ${scores.length} из ${positions.length}`
-        : 'балл РСБУ считается только для эмитентов под мониторингом' },
+        : `нет числового балла по ${positions.length} ${plural(positions.length, ['позиции', 'позициям', 'позициям'])}; балл РСБУ есть только у эмитентов под мониторингом` },
     { k: 'Бумаг', v: fmtNum(positions.length, 0),
       note: `${inns.size} ${plural(inns.size, ['эмитент', 'эмитента', 'эмитентов'])} · ${sectors.size} ${plural(sectors.size, ['отрасль', 'отрасли', 'отраслей'])}`
         + (noData ? ` · ${noData} без котировки` : '')

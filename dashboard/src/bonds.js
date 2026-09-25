@@ -42,7 +42,10 @@ const PILLARS = [
 
 function pillarScore(sixPillars) {
   if (!sixPillars) return null;
-  const v = PILLARS.map(([k]) => sixPillars[k]).filter(x => x != null);
+  const v = PILLARS.map(([k]) => sixPillars[k])
+    .filter(x => x != null)
+    .map(Number)
+    .filter(x => isFinite(x));
   return v.length ? v.reduce((a, c) => a + c, 0) / v.length / 10 : null;
 }
 

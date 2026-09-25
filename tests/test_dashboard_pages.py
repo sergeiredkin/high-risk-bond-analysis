@@ -133,6 +133,14 @@ def test_portfolio_reads_only_weight_off_the_stored_allocation():
     assert "BOND_BY_SECID.get(b.isin)" in code
 
 
+def test_portfolio_minimum_score_ignores_nonfinite_values_and_reacts_to_basket_edits():
+    pf = (SRC / "pages" / "portfolio.js").read_text(encoding="utf-8")
+    bonds = (SRC / "bonds.js").read_text(encoding="utf-8")
+    assert ".filter(v => v != null && isFinite(v))" in pf
+    assert ".map(Number)" in bonds and ".filter(x => isFinite(x))" in bonds
+    assert "if (PF.source === 'basket' || !BASKET.ids().length) pfRender();" in pf
+
+
 def test_portfolio_checks_use_exported_preset_constraints():
     # Thresholds come from the rules build_preset() actually enforced, not
     # from the design reference's mock 18% / 200 млн ₽ numbers.
