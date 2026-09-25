@@ -24,7 +24,7 @@ function renderOverviewMarketBand(el) {
   const spreadTile = {
     k: 'Медианный G-спред', v: medG != null ? `${fmtNum(Math.round(medG), 0)} б.п.` : DASH,
     note: medPrev != null
-      ? `неделю назад · снимок ${fmtDate(prev.snap_date)}: ${fmtNum(Math.round(medPrev), 0)} б.п.`
+      ? `текущий снимок ${fmtDate(now.snap_date)} · неделю назад: ${fmtDate(prev.snap_date)}, ${fmtNum(Math.round(medPrev), 0)} б.п.`
       : 'предыдущего снимка для сравнения нет',
   };
 
