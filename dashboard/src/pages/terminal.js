@@ -182,18 +182,30 @@ function termProposalRows(targetId, criteria) {
   const fallback = termRankPoints(pool, b => b.score);
   if (!maps.length) maps.push(fallback);
   const staticScore = b => maps.reduce((sum, m) => sum + (m.get(b.secid) || 0), 0) / maps.length;
+  const sectorKey = b => b.sector || '__unknown__';
+  const sectorCounts = new Map();
+  BONDS.filter(b => target.held.has(b.secid)).forEach(b => {
+    const key = sectorKey(b);
+    sectorCounts.set(key, (sectorCounts.get(key) || 0) + 1);
+  });
   const chosen = [];
   const remaining = pool.slice();
   while (remaining.length && chosen.length < 30) {
+    // With diversification enabled, fill the least represented available
+    // sector first. This guarantees a balanced sector mix when the brush
+    // actually contains several sectors, without inventing a hard sector cap.
+    let eligible = remaining;
+    if (c.diversification) {
+      const counts = remaining.map(b => sectorCounts.get(sectorKey(b)) || 0);
+      const minCount = Math.min.apply(null, counts);
+      eligible = remaining.filter(b => (sectorCounts.get(sectorKey(b)) || 0) === minCount);
+    }
     let best = null, bestScore = -Infinity;
-    remaining.forEach(b => {
+    eligible.forEach(b => {
       let score = staticScore(b);
       if (c.diversification) {
         const issuerN = chosen.filter(x => x.inn && b.inn && x.inn === b.inn).length;
-        const sectorN = chosen.filter(x => x.sector && b.sector && x.sector === b.sector).length;
-        // Diversity is a soft penalty, not an invented hard cap: the next
-        // best issuer/sector remains eligible when its other signals win.
-        score += .35 / (1 + issuerN) + .20 / (1 + sectorN);
+        score += .35 / (1 + issuerN);
       }
       if (score > bestScore || (score === bestScore && (b.gs || -Infinity) > (best && best.gs || -Infinity))) {
         best = b; bestScore = score;
@@ -201,8 +213,12 @@ function termProposalRows(targetId, criteria) {
     });
     best.proposalScore = bestScore;
     chosen.push(best);
+    const key = sectorKey(best);
+    sectorCounts.set(key, (sectorCounts.get(key) || 0) + 1);
     remaining.splice(remaining.indexOf(best), 1);
   }
+  chosen.availableSectors = Array.from(new Set(pool.map(sectorKey)));
+  chosen.sectorKey = sectorKey;
   return chosen;
 }
 
@@ -216,6 +232,17 @@ function termProposalWeakest(targetId) {
     return zone(a) - zone(b) || (a.score == null ? -1 : b.score == null ? 1 : a.score - b.score)
       || br - ar || (a.gap || 0) - (b.gap || 0);
   });
+}
+
+function termProposalSectorMix(rows, selected) {
+  const mix = new Map();
+  rows.filter(b => selected.has(b.secid)).forEach(b => {
+    const key = b.sectorLabel || b.sector || 'Без отрасли';
+    mix.set(key, (mix.get(key) || 0) + 1);
+  });
+  const total = rows.filter(b => selected.has(b.secid)).length || 1;
+  return Array.from(mix.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru'))
+    .map(([name, n]) => `<span>${escapeHtml(name)} · ${fmtNum(n, 0)} (${fmtNum(n / total * 100, 0)}%)</span>`).join('');
 }
 
 function termOpenProposal() {
@@ -237,6 +264,8 @@ function termRenderProposal() {
   const selected = S.proposal.selected;
   const criteria = S.proposal.criteria;
   const activeCriteria = TERM_PROPOSAL_CRITERIA.filter(([key]) => criteria[key]).map(([, label]) => label).join(', ');
+  const sectorMix = termProposalSectorMix(rows, selected);
+  const availableSectors = rows.availableSectors || [];
   root.innerHTML = `<div class="term-proposal-backdrop" data-proposal-close>
     <section class="term-proposal" role="dialog" aria-modal="true" aria-labelledby="termProposalTitle">
       <div class="term-proposal-head">
@@ -246,6 +275,7 @@ function termRenderProposal() {
       <p class="term-proposal-note">Автоматически выбраны ${fmtNum(rows.length, 0)} лучших бумаг из выделения по критериям: ${escapeHtml(activeCriteria || 'базовое качество')}. Отбор мягкий: можно изменить критерии и снять отдельные галочки. Ничего не меняется без подтверждения.</p>
       <div class="term-proposal-targets"><span>С чем сравнить:</span>${termProposalTargets().map(t => `<button type="button" class="pf-pill${t.id === target.id ? ' is-on' : ''}" data-proposal-target="${escapeHtml(t.id)}">${escapeHtml(t.name)}${t.id === 'basket' ? ` (${fmtNum(t.held.size, 0)})` : ''}</button>`).join('')}</div>
       <div class="term-proposal-criteria"><span>Критерии автоподбора:</span>${TERM_PROPOSAL_CRITERIA.map(([key, label, hint]) => `<label title="${escapeHtml(hint)}"><input type="checkbox" data-proposal-criterion="${key}"${criteria[key] ? ' checked' : ''}>${escapeHtml(label)}</label>`).join('')}</div>
+      <div class="term-proposal-sectors"><b>Отрасли в подборе:</b><div>${sectorMix || 'нет данных по отрасли'}</div><small>В выделении доступны ${fmtNum(availableSectors.length, 0)} ${plural(availableSectors.length, ['отрасль', 'отрасли', 'отраслей'])}. Если их меньше, карта физически не может дать более широкий секторный состав.</small></div>
       ${target.id !== 'basket' ? `<div class="term-proposal-warning">Существующие позиции не заменяются. Ниже показаны только новые бумаги из выделения; подпись «вместо» — ориентир для ручного сравнения.</div>` : ''}
       <div class="term-proposal-list">
         ${rows.length ? rows.map((b, i) => {

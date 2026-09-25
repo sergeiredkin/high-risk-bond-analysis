@@ -216,6 +216,17 @@ function pfStats(positions) {
 }
 
 // ── composition ─────────────────────────────────────────────────────────
+function pfSectorMixHtml(positions) {
+  const mix = new Map();
+  positions.forEach(p => {
+    const key = p.bond ? (p.bond.sectorLabel || p.bond.sector || 'Без отрасли') : 'Нет живой отрасли';
+    mix.set(key, (mix.get(key) || 0) + 1);
+  });
+  const total = positions.length || 1;
+  const items = Array.from(mix.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru'));
+  return `<div class="pf-sector-mix"><div class="pf-sector-mix-title">Распределение по отраслям · ${fmtNum(positions.length, 0)} бумаг</div><div class="pf-sector-mix-list">${items.length ? items.map(([name, n]) => `<span>${escapeHtml(name)} <b>${fmtNum(n, 0)} · ${fmtNum(n / total * 100, 0)}%</b></span>`).join('') : '<span>нет позиций</span>'}</div></div>`;
+}
+
 function pfCompositionHtml(positions) {
   const cur = pfCurrent();
   const total = positions.reduce((a, p) => a + (p.weight || 0), 0) || 1;
@@ -291,6 +302,7 @@ function pfCompositionHtml(positions) {
     <div class="pf-card-title">${escapeHtml(title)}</div>
     ${pfGuardControlsHtml()}
     <div class="pf-card-note">${escapeHtml(note)}</div>
+    ${pfSectorMixHtml(positions)}
     <div class="pf-bar">${bars}</div>
     <div class="pf-rows">${rows}</div>
     ${more}

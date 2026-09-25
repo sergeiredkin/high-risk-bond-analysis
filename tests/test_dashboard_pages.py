@@ -139,6 +139,10 @@ def test_portfolio_minimum_score_ignores_nonfinite_values_and_reacts_to_basket_e
     assert ".filter(v => v != null && isFinite(v))" in pf
     assert ".map(Number)" in bonds and ".filter(x => isFinite(x))" in bonds
     assert "if (PF.source === 'basket' || !BASKET.ids().length) pfRender();" in pf
+    assert "function pfSectorMixHtml(positions)" in pf
+    terminal = (SRC / "pages" / "terminal.js").read_text(encoding="utf-8")
+    assert "function termProposalSectorMix(rows, selected)" in terminal
+    assert "least represented available" in terminal
 
 
 def test_portfolio_checks_use_exported_preset_constraints():

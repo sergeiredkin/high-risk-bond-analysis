@@ -380,6 +380,10 @@ button { font-family: inherit; }
 .term-proposal-criteria > span { opacity: .58; }
 .term-proposal-criteria label { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--color-divider); border-radius: 999px; cursor: pointer; }
 .term-proposal-criteria input { accent-color: var(--color-accent-700); }
+.term-proposal-sectors { padding: 9px 12px; border-radius: 16px; background: var(--color-surface); font-size: 11.5px; line-height: 1.5; }
+.term-proposal-sectors > div { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 3px; }
+.term-proposal-sectors > div span { white-space: nowrap; }
+.term-proposal-sectors small { display: block; margin-top: 4px; opacity: .58; }
 .term-proposal-list { min-height: 0; overflow: auto; border-top: 1px solid var(--color-divider); border-bottom: 1px solid var(--color-divider); }
 .term-proposal-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid var(--color-divider); cursor: pointer; }
 .term-proposal-row:last-child { border-bottom: 0; }
@@ -512,6 +516,11 @@ button { font-family: inherit; }
 }
 .pf-card-title { font-family: var(--font-heading); font-size: 17px; }
 .pf-card-note { font-size: 12.5px; line-height: 1.6; opacity: .7; }
+.pf-sector-mix { padding: 10px 12px; border-radius: 18px; background: var(--color-bg); }
+.pf-sector-mix-title { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; opacity: .55; }
+.pf-sector-mix-list { display: flex; gap: 6px 12px; flex-wrap: wrap; margin-top: 5px; font-size: 11.5px; }
+.pf-sector-mix-list span { white-space: nowrap; }
+.pf-sector-mix-list b { font-family: var(--font-heading); font-weight: 400; }
 .pf-guard-inline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 10px 0 2px; padding: 10px 12px; border-radius: 18px; background: var(--color-accent-2-100); font-size: 11px; }
 .pf-guard-inline > div { display: flex; flex-direction: column; gap: 2px; flex: 1 1 200px; }
 .pf-guard-inline > div span { opacity: .65; }
