@@ -27,6 +27,8 @@ class DenseIndex:
         return cls(vectors, records, encoder)
 
     def search(self, question: str, limit: int = 8) -> list[SearchHit]:
+        if not self.records or limit <= 0:
+            return []
         query = self.encoder.encode([question])[0]
         scores = self.vectors @ query
         order = scores.argsort()[::-1][:limit]
@@ -53,8 +55,9 @@ def build_index(con, directory: Path, encoder: object) -> int:
                 "section": row[3] or "", "text": row[4],
                 "source_kind": row[5] or "unknown",
                 "authority_level": row[6] or "unknown"} for row in rows]
-    vectors = np.asarray(encoder.encode([record["text"] for record in records]), dtype="float32")
-    if len(records) and (vectors.ndim != 2 or vectors.shape[0] != len(records)):
+    vectors = (np.asarray(encoder.encode([record["text"] for record in records]), dtype="float32")
+               if records else np.empty((0, 0), dtype="float32"))
+    if records and (vectors.ndim != 2 or vectors.shape[0] != len(records)):
         raise ValueError("encoder returned an invalid vector matrix")
     directory.parent.mkdir(parents=True, exist_ok=True)
     temporary = directory.with_name(directory.name + ".tmp")

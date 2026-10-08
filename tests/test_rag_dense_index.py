@@ -4,6 +4,7 @@ import pytest
 
 from hybond.rag.dense_index import DenseIndex, build_index
 from hybond.rag.ingest import ingest_file
+from hybond.rag.search import hybrid_search
 from hybond.store import db
 
 
@@ -25,4 +26,21 @@ def test_dense_index_build_and_search(tmp_path: Path):
     assert build_index(con, out, FakeEncoder()) == 2
     index = DenseIndex.load(out, FakeEncoder())
     assert index.search("ликвидность", limit=1)[0].page_no == 1
+    hits = index.search("ликвидность", limit=2)
+    con.execute("UPDATE rag_documents SET issuer_inn='A'")
+    assert all(hit.chunk_id in {item.chunk_id for item in hybrid_search(
+        con, "ликвидность", dense_hits=hits, issuer_inn="A"
+    )} for hit in hits)
+    con.execute("UPDATE rag_documents SET issuer_inn='B'")
+    assert hybrid_search(con, "ликвидность", dense_hits=hits, issuer_inn="A") == []
+    con.close()
+
+
+def test_empty_dense_index_is_searchable(tmp_path: Path):
+    pytest.importorskip("numpy")
+    con = db.connect(Path(":memory:"))
+    db.init_db(con)
+    out = tmp_path / "empty-index"
+    assert build_index(con, out, FakeEncoder()) == 0
+    assert DenseIndex.load(out, FakeEncoder()).search("query") == []
     con.close()
