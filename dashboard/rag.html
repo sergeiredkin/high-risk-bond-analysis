@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HyBond — RAG Research</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#101214;color:#e8ecef}
+body{max-width:1100px;margin:0 auto;padding:32px 20px;background:#101214}h1{font-size:28px;margin:0 0 8px}p{color:#9da7ae}.card{background:#191d21;border:1px solid #30373d;border-radius:12px;padding:18px;margin:18px 0}textarea,input{width:100%;box-sizing:border-box;background:#0f1214;color:#f4f6f7;border:1px solid #46515a;border-radius:8px;padding:12px;font:inherit}textarea{min-height:90px;resize:vertical}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}button{margin-top:14px;background:#d7a84b;color:#161616;border:0;border-radius:8px;padding:11px 18px;font-weight:700;cursor:pointer}.examples{display:flex;flex-wrap:wrap;gap:8px}.example{background:#242b30;border:1px solid #3b464d;color:#cdd5da;border-radius:16px;padding:7px 11px;cursor:pointer}.hit{border-top:1px solid #343c42;padding:16px 0}.hit:first-child{border-top:0}.meta{font-size:12px;color:#c5a45e;margin-bottom:8px}.text{white-space:pre-wrap;line-height:1.5}.status{color:#9da7ae}.error{color:#ff8b8b}.fact{font-family:monospace;white-space:pre-wrap;color:#c8e6c9}.empty{color:#e5b7b7}
+@media(max-width:650px){.row{grid-template-columns:1fr}}
+</style></head>
+<body>
+<h1>HyBond · Документальный поиск</h1>
+<p>Локальный RAG по документам HyBond. Для вопросов об эмитенте укажите ИНН или ISIN — иначе поиск может объединить несколько источников. Ответы показывают исходные фрагменты и источники; это не инвестиционная рекомендация.</p>
+<div class="card">
+  <label for="question">Вопрос</label>
+  <textarea id="question" placeholder="Например: Какова причина неисполнения обязательства?"></textarea>
+  <div class="row"><label>Компания<br><input id="company" placeholder="например, Самолёт"></label><label>ИНН<br><input id="inn" placeholder="необязательно"></label></div><div style="margin-top:12px"><label>ISIN<br><input id="isin" placeholder="необязательно"></label></div><div style="margin-top:12px"><label>Источники<br><select id="source_scope"><option value="all">Все источники</option><option value="official">Только официальные и финансовые</option></select></label><label style="margin-left:16px">Тип документа<br><select id="doc_type"><option value="all">Все типы</option><option value="edisclosure_html">Раскрытие эмитента</option><option value="cbr_document">ЦБ РФ</option><option value="nalog_financials">Финансовые данные</option><option value="rating_agency_nkr">НКР</option><option value="rating_agency_nra">НРА</option><option value="hybond_factlist">Факт-листы HyBond</option></select></label></div>
+  <button id="ask">Найти доказательства</button>
+</div>
+<div class="card"><strong>5 стартовых вопросов</strong><div class="examples" id="examples"></div></div>
+<div id="status" class="status"></div><div id="results"></div>
+<script>
+const examples=[
+ 'Какова причина неисполнения обязательства?',
+ 'Что произошло с выплатой купона?',
+ 'Что такое G-спред и как он связан с риском дефолта?',
+ 'Как рассчитывается YTM и чем он отличается от текущей доходности?',
+ 'Какие документы подтверждают финансовый риск эмитента?'
+];
+const q=document.querySelector('#question'), out=document.querySelector('#results'), status=document.querySelector('#status');
+for(const text of examples){const b=document.createElement('button');b.className='example';b.textContent=text;b.onclick=()=>{q.value=text;q.focus()};document.querySelector('#examples').appendChild(b)}
+document.querySelector('#ask').onclick=async()=>{const question=q.value.trim();if(!question)return;status.textContent='Ищу по локальному индексу…';out.innerHTML='';try{const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,company:document.querySelector('#company').value.trim()||null,issuer_inn:document.querySelector('#inn').value.trim()||null,isin:document.querySelector('#isin').value.trim()||null,source_scope:document.querySelector('#source_scope').value,doc_type:document.querySelector('#doc_type').value})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка');if(data.route==='company_resolution'){status.textContent='Уточните компанию: найдено несколько совпадений';out.innerHTML='<div class="card">'+data.company_matches.map(x=>escapeHtml(x.name)+' ('+escapeHtml(x.issuer_id)+')').join('<br>')+'</div>';return}if(data.route==='scope_required'||data.route==='out_of_scope'){status.textContent='';out.innerHTML='<div class="card empty">'+escapeHtml(data.message)+'</div>';return}status.textContent=data.route==='current_risk'?'Текущая сводка HyBond по эмитенту':'Найдено до 3 наиболее релевантных фрагментов (ответ требует проверки)';if(data.route==='current_risk'&&data.answer){const a=data.answer;out.innerHTML='<div class="card"><h2>'+escapeHtml(a.issuer_name)+' · на '+escapeHtml(a.as_of||'н/д')+'</h2><p><b>Статус:</b> '+escapeHtml(a.health_status||'н/д')+'</p><h3>Сигналы</h3><ul>'+a.signals.map(x=>'<li>'+escapeHtml(x)+'</li>').join('')+'</ul><h3>Последние события высокой важности</h3><ul>'+a.recent_events.filter(x=>['high','critical'].includes(x.severity)).slice(0,5).map(x=>'<li>'+escapeHtml(x.occurred+' · '+x.summary)+'</li>').join('')+'</ul><p class="status">'+escapeHtml(a.disclaimer)+'</p></div>';return}if(data.answer){out.innerHTML='<div class="card fact">'+escapeHtml(JSON.stringify(data.answer,null,2))+'</div>';return}if(!data.hits.length){out.innerHTML='<div class="card empty">В документах не найдено. Уточните вопрос и, если это вопрос об эмитенте, укажите его название.</div>';return}out.innerHTML=data.hits.map((h,i)=>`<div class="card hit"><div class="meta">#${i+1} · ${escapeHtml(h.citation.source_kind)} · ${escapeHtml(h.citation.authority_level)} · страница ${h.citation.page} · citation ${h.citation.verified?'verified':'failed'}</div><div class="text">${escapeHtml(h.text)}</div></div>`).join('')+'<div class="feedback">Результат полезен? <button data-feedback="useful">Да</button><button data-feedback="irrelevant">Нерелевантен</button><button data-feedback="incorrect">Неверен</button><button data-feedback="missing_evidence">Не хватает доказательств</button></div>';document.querySelectorAll('[data-feedback]').forEach(b=>b.onclick=async()=>{await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query_id:data.query_id,label:b.dataset.feedback})});b.parentElement.textContent='Спасибо, отзыв сохранён.'})catch(e){status.textContent='';out.innerHTML='<div class="card error">'+escapeHtml(e.message)+'</div>'}}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+</script></body></html>
