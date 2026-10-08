@@ -75,8 +75,11 @@ def run(con, golden_path: Path, manifest_path: Path, *, k: int = 5,
         sparse = search(con, question.question, limit=k, issuer_inn=issuer_inn, isin=isin)
         baseline_results.append(_result(question, sparse, k))
         if dense_index is not None:
-            dense = dense_index.search(question.question, limit=k, issuer_inn=issuer_inn, isin=isin)
+            candidate_depth = max(k * 8, 32)
+            dense = dense_index.search(question.question, limit=candidate_depth,
+                                       issuer_inn=issuer_inn, isin=isin)
             hits = hybrid_search(con, question.question, limit=k, dense_hits=dense,
+                                 sparse_limit=candidate_depth,
                                  issuer_inn=issuer_inn, isin=isin)
         else:
             hits = sparse

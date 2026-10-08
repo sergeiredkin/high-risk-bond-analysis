@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,8 +45,16 @@ class DenseIndex:
                     })]
         if not eligible:
             return []
-        query = self.encoder.encode([question])[0]
-        scores = self.vectors[eligible] @ query
+        import numpy as np
+
+        query = np.asarray(self.encoder.encode([question])[0], dtype="float32")
+        query_norm = np.linalg.norm(query)
+        if query_norm:
+            query = query / query_norm
+        vectors = np.asarray(self.vectors, dtype="float32")
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        vectors = np.divide(vectors, norms, out=np.zeros_like(vectors), where=norms != 0)
+        scores = vectors[eligible] @ query
         order = scores.argsort()[::-1]
         hits = []
         seen_pages: set[tuple[str, int]] = set()
@@ -85,14 +95,21 @@ def build_index(con, directory: Path, encoder: object) -> int:
                if records else np.empty((0, 0), dtype="float32"))
     if records and (vectors.ndim != 2 or vectors.shape[0] != len(records)):
         raise ValueError("encoder returned an invalid vector matrix")
+    if records:
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        vectors = np.divide(vectors, norms, out=np.zeros_like(vectors), where=norms != 0)
     directory.parent.mkdir(parents=True, exist_ok=True)
-    temporary = directory.with_name(directory.name + ".tmp")
-    if temporary.exists() or directory.exists():
+    if directory.exists():
         raise FileExistsError("dense index output already exists; choose a new version path")
-    temporary.mkdir(parents=True, exist_ok=False)
-    np.savez_compressed(temporary / "vectors.npz", vectors=vectors)
-    (temporary / "records.json").write_text(
-        json.dumps(records, ensure_ascii=False), encoding="utf-8"
-    )
-    temporary.replace(directory)
+    temporary = Path(tempfile.mkdtemp(prefix=f"{directory.name}.", suffix=".tmp",
+                                      dir=directory.parent))
+    try:
+        np.savez_compressed(temporary / "vectors.npz", vectors=vectors)
+        (temporary / "records.json").write_text(
+            json.dumps(records, ensure_ascii=False), encoding="utf-8"
+        )
+        temporary.replace(directory)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
     return len(records)

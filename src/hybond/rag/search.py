@@ -150,14 +150,15 @@ def reciprocal_rank_fusion(*ranked_lists: list[SearchHit], limit: int = 8, k: in
 def hybrid_search(con: sqlite3.Connection, question: str, limit: int = 8,
                   dense_hits: list[SearchHit] | None = None,
                   *, issuer_inn: str | None = None, isin: str | None = None,
-                  source_scope: str = "all", doc_type: str | None = None) -> list[SearchHit]:
+                  source_scope: str = "all", doc_type: str | None = None,
+                  sparse_limit: int | None = None) -> list[SearchHit]:
     """Fuse sparse results with optional dense results using reciprocal rank fusion.
 
     The dense provider is deliberately injected. This keeps the default install
     offline and dependency-free while allowing BGE-M3 or another local model to
     be added in P2 without changing the answer layer.
     """
-    sparse_hits = search(con, question, limit, issuer_inn=issuer_inn, isin=isin,
+    sparse_hits = search(con, question, sparse_limit or limit, issuer_inn=issuer_inn, isin=isin,
                          source_scope=source_scope, doc_type=doc_type)
     if not dense_hits:
         return sparse_hits
