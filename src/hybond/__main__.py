@@ -1746,6 +1746,12 @@ def cmd_docs(args) -> int:
                 write_report(report, Path(args.out))
             print(json.dumps(report, ensure_ascii=False, indent=2))
             return 0
+        if args.docs_cmd == "dense-index":
+            from .rag.dense import LocalDenseEncoder
+            from .rag.dense_index import build_index
+            count = build_index(con, Path(args.out), LocalDenseEncoder(Path(args.model_path)))
+            print(json.dumps({"indexed_chunks": count, "path": args.out}, ensure_ascii=False))
+            return 0
         if args.docs_cmd == "eval-diff":
             from .rag.eval.diff import compare, load_report
             result = compare(load_report(Path(args.baseline)), load_report(Path(args.candidate)),
@@ -2155,6 +2161,10 @@ def main(argv=None) -> int:
     pde.add_argument("--k", type=int, default=5)
     pde.add_argument("--out")
     pde.set_defaults(func=cmd_docs)
+    pdi = docs_sub.add_parser("dense-index", help="Build an optional local dense chunk index")
+    pdi.add_argument("--model-path", required=True)
+    pdi.add_argument("--out", required=True)
+    pdi.set_defaults(func=cmd_docs)
     ped = docs_sub.add_parser("eval-diff", help="Fail when an eval report regresses")
     ped.add_argument("--baseline", required=True)
     ped.add_argument("--candidate", required=True)

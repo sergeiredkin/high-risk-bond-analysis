@@ -30,7 +30,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | Page-aware chunks and citations | **Partial** | page numbers work; no bounding boxes or reliable PDF elements |
 | FTS5/BM25 baseline | **Done** | `rag/search.py` |
 | Evaluation runner | **Partial** | retrieval/evidence metrics now include citation precision; no answer-generation evaluation |
-| Dense embeddings | **Scaffold only** | optional adapter; no local model/index currently built |
+| Dense embeddings | **Partial** | optional local encoder and versioned NumPy dense index builder/search now exist; no pinned model or quality comparison yet |
 | RRF hybrid retrieval | **Done** | injection seam exists; not validated against dense results |
 | Cross-encoder reranking | **Missing** | not implemented |
 | OCR for scanned Cyrillic PDFs | **Missing** | blank pages are marked scanned but not OCR'd |
