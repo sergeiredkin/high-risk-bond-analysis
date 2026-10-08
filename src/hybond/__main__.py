@@ -1741,7 +1741,16 @@ def cmd_docs(args) -> int:
             return 0
         if args.docs_cmd == "eval":
             from .rag.eval.runner import run, write_report
-            report = run(con, Path(args.golden), Path(args.manifest), k=args.k)
+            dense_index = None
+            if args.dense_index or args.model_path:
+                if not args.dense_index or not args.model_path:
+                    raise ValueError("--dense-index and --model-path must be used together")
+                from .rag.dense import LocalDenseEncoder
+                from .rag.dense_index import DenseIndex
+                dense_index = DenseIndex.load(Path(args.dense_index),
+                                              LocalDenseEncoder(Path(args.model_path)))
+            report = run(con, Path(args.golden), Path(args.manifest), k=args.k,
+                         dense_index=dense_index)
             if args.out:
                 write_report(report, Path(args.out))
             print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -2160,6 +2169,8 @@ def main(argv=None) -> int:
     pde.add_argument("--manifest", required=True)
     pde.add_argument("--k", type=int, default=5)
     pde.add_argument("--out")
+    pde.add_argument("--dense-index", help="Optional local dense index for a BM25-vs-hybrid comparison")
+    pde.add_argument("--model-path", help="Local encoder model path; required with --dense-index")
     pde.set_defaults(func=cmd_docs)
     pdi = docs_sub.add_parser("dense-index", help="Build an optional local dense chunk index")
     pdi.add_argument("--model-path", required=True)

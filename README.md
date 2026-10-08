@@ -172,6 +172,8 @@ hybond docs extract [--doc-sha256 SHA]
                                      extract conservative structured facts into SQLite
 hybond docs eval --golden FILE --manifest FILE [--k N] [--out FILE]
                                      retrieval/citation/abstention evaluation
+hybond docs eval --golden FILE --manifest FILE --dense-index DIR --model-path DIR
+                                     compare hybrid metrics with the FTS5 baseline
 hybond docs eval-diff --baseline FILE --candidate FILE [--max-drop X]
                                      fail when an eval report regresses
 hybond docs dense-index --model-path DIR --out DIR

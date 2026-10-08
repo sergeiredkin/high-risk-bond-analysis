@@ -29,7 +29,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | Incremental indexing | **Partial** | hourly bounded ingestion now hash-deduplicates multiple source directories; no index build/version switch |
 | Page-aware chunks and citations | **Partial** | page numbers work; no bounding boxes or reliable PDF elements |
 | FTS5/BM25 baseline | **Done** | `rag/search.py` |
-| Evaluation runner | **Partial** | retrieval/evidence metrics now include citation precision; no answer-generation evaluation |
+| Evaluation runner | **Partial** | retrieval/evidence metrics include citation precision; `docs eval --dense-index ... --model-path ...` reports hybrid metrics alongside the FTS5 baseline; no answer-generation evaluation |
 | Dense embeddings | **Partial** | optional local encoder/index is integrated into CLI/API retrieval via `HYBOND_RAG_DENSE_INDEX` + `HYBOND_RAG_MODEL_PATH`, with issuer/source/type filtering and RRF; no pinned model or quality comparison yet |
 | RRF hybrid retrieval | **Partial** | CLI/API fuse filtered local dense hits with FTS results; retrieval quality has not been compared against dense results |
 | Cross-encoder reranking | **Missing** | not implemented |
