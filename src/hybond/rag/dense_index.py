@@ -45,16 +45,23 @@ class DenseIndex:
             return []
         query = self.encoder.encode([question])[0]
         scores = self.vectors[eligible] @ query
-        order = scores.argsort()[::-1][:limit]
-        return [SearchHit(
-            self.records[eligible[int(index)]]["chunk_id"],
-            self.records[eligible[int(index)]]["doc_sha256"],
-            self.records[eligible[int(index)]]["page_no"],
-            self.records[eligible[int(index)]]["section"],
-            self.records[eligible[int(index)]]["text"], float(scores[index]),
-            self.records[eligible[int(index)]]["source_kind"],
-            self.records[eligible[int(index)]]["authority_level"],
-        ) for index in order]
+        order = scores.argsort()[::-1]
+        hits = []
+        seen_pages: set[tuple[str, int]] = set()
+        for index in order:
+            record = self.records[eligible[int(index)]]
+            page = (record["doc_sha256"], record["page_no"])
+            if page in seen_pages:
+                continue
+            seen_pages.add(page)
+            hits.append(SearchHit(
+                record["chunk_id"], record["doc_sha256"], record["page_no"],
+                record["section"], record["text"], float(scores[index]),
+                record["source_kind"], record["authority_level"],
+            ))
+            if len(hits) >= limit:
+                break
+        return hits
 
 
 def build_index(con, directory: Path, encoder: object) -> int:

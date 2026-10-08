@@ -48,6 +48,25 @@ def test_dense_index_build_and_search(tmp_path: Path):
     con.close()
 
 
+def test_dense_search_returns_best_chunk_per_page_before_limit():
+    pytest.importorskip("numpy")
+    import numpy as np
+
+    records = [
+        {"chunk_id": "a1", "doc_sha256": "a", "page_no": 1, "section": "", "text": "first", "source_kind": "x", "authority_level": "unknown"},
+        {"chunk_id": "a2", "doc_sha256": "a", "page_no": 1, "section": "", "text": "duplicate page", "source_kind": "x", "authority_level": "unknown"},
+        {"chunk_id": "b1", "doc_sha256": "b", "page_no": 1, "section": "", "text": "other page", "source_kind": "x", "authority_level": "unknown"},
+    ]
+
+    class RankedEncoder:
+        def encode(self, texts):
+            return [[1.0, 0.0]]
+
+    index = DenseIndex(np.asarray([[0.99, 0.01], [0.95, 0.05], [0.8, 0.2]]), records, RankedEncoder())
+    hits = index.search("question", limit=2)
+    assert [hit.chunk_id for hit in hits] == ["a1", "b1"]
+
+
 def test_empty_dense_index_is_searchable(tmp_path: Path):
     pytest.importorskip("numpy")
     con = db.connect(Path(":memory:"))
