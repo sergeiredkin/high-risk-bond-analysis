@@ -31,7 +31,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | FTS5/BM25 baseline | **Done** | `rag/search.py` |
 | Evaluation runner | **Partial** | retrieval/evidence metrics now include citation precision; no answer-generation evaluation |
 | Dense embeddings | **Partial** | optional local encoder/index is integrated into CLI/API retrieval via `HYBOND_RAG_DENSE_INDEX` + `HYBOND_RAG_MODEL_PATH`, with issuer/source/type filtering and RRF; no pinned model or quality comparison yet |
-| RRF hybrid retrieval | **Done** | injection seam exists; not validated against dense results |
+| RRF hybrid retrieval | **Partial** | CLI/API fuse filtered local dense hits with FTS results; retrieval quality has not been compared against dense results |
 | Cross-encoder reranking | **Missing** | not implemented |
 | OCR for scanned Cyrillic PDFs | **Missing** | blank pages are marked scanned but not OCR'd |
 | Tables as structured data | **Missing** | HTML is flattened to text |
@@ -56,7 +56,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 1. Expand the golden set to 60–100 questions across at least 10 issuers.
 2. Manually verify every expected value and evidence page.
 3. Continue improving Russian stemming/synonym handling and query intent routing; issuer/ISIN scope and basic stemming are now implemented.
-4. Implement dense index construction with a pinned locally cached multilingual model.
+4. Select and document a pinned locally cached multilingual model.
 5. Compare FTS5 vs hybrid retrieval on the frozen dev set.
 6. Set acceptance thresholds only after the corpus and questions are manually verified.
 

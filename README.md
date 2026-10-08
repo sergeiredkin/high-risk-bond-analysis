@@ -179,6 +179,11 @@ hybond docs dense-index --model-path DIR --out DIR
 hybond docs report                  corpus coverage and observed query value
 ```
 
+Dense retrieval is disabled by default. To opt in, build an index from a local
+model directory, then set `HYBOND_RAG_DENSE_INDEX` to that index and
+`HYBOND_RAG_MODEL_PATH` to the same local model directory for CLI/API retrieval.
+This path makes no cloud requests; NumPy and the encoder runtime are optional.
+
 See `docs/rag/PRODUCTION_READINESS_AUDIT.md` for the current RAG readiness limits; it is local-only and not an investment-decision answerer.
 
 ## Daily pipeline
