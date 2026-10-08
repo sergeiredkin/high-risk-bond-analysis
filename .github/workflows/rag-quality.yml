@@ -9,9 +9,14 @@ on:
       - 'src/hybond/__main__.py'
       - 'src/hybond/store/db.py'
       - 'scripts/rag_server.py'
+      - 'scripts/rag_ingest.sh'
+      - 'scripts/rag_ingest_sources.sh'
+      - 'scripts/hourly_filings.sh'
       - 'tests/test_rag_*.py'
       - 'dashboard/rag.html'
       - 'docs/rag/**'
+      - 'eval/corpus/**'
+      - 'eval/golden/**'
       - '.github/workflows/rag-quality.yml'
 
 jobs:
@@ -23,7 +28,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: pip
       - name: Install test dependencies
         run: python -m pip install pytest ruff requests
       - name: Lint RAG implementation
