@@ -1,11 +1,11 @@
 # HyBond RAG Production-Readiness Audit
 
-**Audit date:** 2026-10-07
+**Audit date:** 2026-10-08
 **Scope:** original `docs/rag/RAG_IMPLEMENTATION_PLAN.md` and current implementation
 
 ## Executive result
 
-**Not production-ready.** The current system is a useful P0/P1 retrieval prototype with an evaluation runner, but it is not yet a complete cited answering system. The first evaluation is intentionally a baseline and exposes weak retrieval/abstention behavior that must be fixed before adding a UI or trusting answers.
+**Not production-ready.** The current system is a useful P0/P1 retrieval prototype with an evaluation runner, but it is not yet a complete cited answering system. The evaluation is intentionally a baseline; its draft golden set and retrieval/abstention behavior are not sufficient to trust answers. A local research UI/API exists, but it does not generate answers.
 
 Baseline command:
 
@@ -46,7 +46,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | Tracing/access control | **Partial** | local query telemetry logs route, hit count, top-source authority, abstention, and feedback; access control remains intentionally local-only |
 | E-disclosure ingestion integration | **Partial** | incremental `docs ingest-dir` is now wired into hourly filings for recent local raw files; downloader/source coverage and historical backfill policy remain |
 | HyBond `spravka_vdo.md` reference corpus | **Done (bootstrap)** | indexed as `hybond_reference_spravka`; useful domain guidance, not an authoritative issuer-data source |
-| Evaluation CI and eval diff | **Partial** | `hybond docs eval-diff` compares baseline/candidate metrics and exits non-zero on regression; CI wiring remains |
+| Evaluation CI and eval diff | **Partial** | `hybond docs eval-diff` compares baseline/candidate metrics and exits non-zero on regression; the GitHub Actions workflow runs lint, compile checks, and offline pytest, but does not run eval-diff |
 | FastAPI/dashboard research interface | **Partial** | local-only stdlib RAG page/API at port 8779; no generated-answer panel or production auth |
 
 ## Required order to become production-ready
@@ -100,7 +100,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 3. Keep binaries outside SQLite; define retention and backup policy.
 4. Add tracing, latency/token metrics, and error audit logs.
 5. Add CLI eval-diff and CI regression gates.
-6. Expose a local-only API/dashboard panel only after the answer verifier passes.
+6. The local-only research API/dashboard exists; add generated answers only after the answer verifier passes.
 
 **Gate:** restart/rebuild/rollback tests pass and production cron cannot be blocked by indexing.
 
