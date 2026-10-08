@@ -36,6 +36,7 @@ src/hybond/
   scrape/smartlab.py      smart-lab.ru bonds feed (secondary source)
   scrape_pipeline.py      Slice 3 CLI glue
   financials_pipeline.py Slice 4 CLI glue
+  rag/                    Slice 5 local document registry, retrieval, facts, eval
   grade.py                Slice 2 detector grading/scorecard
   skills/classify_api.py  documented stub for automated classification (off by design)
   __main__.py             CLI entry point (see Commands below)
@@ -45,6 +46,7 @@ scripts/
   build_dashboard.py        renders dashboard/template.html against that JSON
   daily_run.sh               cron entry point: full pipeline, 3x/day
   weekly_financials.sh       cron entry point: Slice 4 refresh
+  rag_ingest*.sh             bounded local RAG document ingestion helpers
   seed_*.py, bulk_mark_routine.py, revert_board_decisions_routine.py  one-off/demo tooling
 
 dashboard/
@@ -58,6 +60,7 @@ dashboard/
                            ЦБ РФ), still built to legacy/index.html (gitignored)
                            until stages 2-3 port its logic
   index.html               built output (scripts/build_dashboard.py)
+  rag.html                 local-only RAG research page served by scripts/rag_server.py
 
 skills/                    Claude Code skills invoked manually at the LLM steps
   hy-event-classify, hy-daily-brief, hy-credit-scorecard, hy-thesis-check,
@@ -77,7 +80,7 @@ Run everything from the repo root with `src/` on the path (`PYTHONPATH=src`).
 
 ## Commands
 
-Full list (27 subcommands; `hybond <cmd> --help` for exact flags):
+Common commands (`hybond <cmd> --help` for exact flags):
 
 ```
 --- Slice 1: prices / spreads / universe ---
@@ -157,7 +160,24 @@ hybond scan-candidates [--key] [--limit] [--no-rescan]
 hybond scan-candidates-list [--no-rescan]
 hybond scan-company-store <query> --markdown FILE [--card FILE] [--model MODEL]
 hybond scan-company-decide <id> --decision avoid|hold|promote --reason REASON
+
+--- Slice 5: local document intelligence / RAG ---
+hybond docs ingest --path FILE [--doc-type TYPE] [--isin ISIN] [--issuer-inn INN]
+                                     register and index one local document
+hybond docs ingest-dir --root DIR [--pattern GLOB] [--limit N] [--since-days D]
+                                     hash-deduplicated bounded ingestion of local files
+hybond docs ask "ВОПРОС" [--company NAME] [--issuer-inn INN] [--isin ISIN]
+                                     search indexed documents or SQL facts and show citations
+hybond docs extract [--doc-sha256 SHA]
+                                     extract conservative structured facts into SQLite
+hybond docs eval --golden FILE --manifest FILE [--k N] [--out FILE]
+                                     retrieval/citation/abstention evaluation
+hybond docs eval-diff --baseline FILE --candidate FILE [--max-drop X]
+                                     fail when an eval report regresses
+hybond docs report                  corpus coverage and observed query value
 ```
+
+See `docs/rag/PRODUCTION_READINESS_AUDIT.md` for the current RAG readiness limits; it is local-only and not an investment-decision answerer.
 
 ## Daily pipeline
 

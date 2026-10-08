@@ -1,6 +1,6 @@
 # HyBond RAG Production-Readiness Audit
 
-**Audit date:** 2026-10-07  
+**Audit date:** 2026-10-07
 **Scope:** original `docs/rag/RAG_IMPLEMENTATION_PLAN.md` and current implementation
 
 ## Executive result
@@ -16,7 +16,7 @@ PYTHONPATH=src python3 -m hybond docs eval \
   --k 5 --out data/rag_eval_v1.json
 ```
 
-The current v3 bootstrap metrics are recorded in `data/rag_eval_v3.json`: page recall@5 0.70, MRR 0.70, answer-evidence match 0.29, abstention accuracy 0.33. These are not acceptance results: the set is only 10 auto-generated questions and has not been manually frozen.
+The current bootstrap metrics are generated locally under `data/` when `--out` is supplied. They are not acceptance results: the draft golden set has not been manually frozen.
 
 ## Plan coverage
 
@@ -39,7 +39,7 @@ The current v3 bootstrap metrics are recorded in `data/rag_eval_v3.json`: page r
 | Structured fact extraction | **Partial** | conservative rule extractor now stores INN/ISIN/explicit unpaid amounts; coupons, schedules, covenants, financials, and LLM-assisted extraction remain |
 | MOEX/HyBond reconciliation | **Partial** | INN/ISIN matching now marks match/mismatch; monetary facts remain unverifiable and full source-priority reconciliation is pending |
 | Numeric SQL answer path | **Partial** | `answer_fact()` routes matched/reconciled facts; current-risk questions now combine dated SQL risk signals with document retrieval, but full numeric schemas and reconciliation remain |
-| Query routing | **Partial** | Deterministic numeric/narrative/mixed/current-risk/out-of-scope router now selects safe paths; local answer generation remains missing |
+| Query routing | **Partial** | The local API/UI applies deterministic numeric/narrative/mixed/current-risk/out-of-scope routing; the CLI still exposes a lower-level fact-or-retrieval path and local answer generation remains missing |
 | Local answer generation | **Missing** | CLI returns retrieved evidence only |
 | Citation verification/abstention | **Partial** | retrieved citations now carry exact quotes and are checked against indexed document/page; claim-level generated-answer verification remains |
 | Versioned indexes/rollback | **Partial** | create/activate/rollback bookkeeping now exists; atomic index build/switch is still pending |

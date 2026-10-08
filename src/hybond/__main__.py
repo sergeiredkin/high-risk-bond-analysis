@@ -1659,7 +1659,8 @@ def cmd_moex_defaults(args) -> int:
 
 def cmd_docs(args) -> int:
     """Run the dependency-free document registry and retrieval commands."""
-    from .rag import ingest as rag_ingest, search as rag_search
+    from .rag import ingest as rag_ingest
+    from .rag import search as rag_search
     from .store import db
 
     con = db.connect()

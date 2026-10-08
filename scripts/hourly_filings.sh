@@ -6,12 +6,14 @@
 # Lightweight: static RSS pulls only (MOEX listing feed ~2.1MB, ~15s fetch),
 # no MOEX ISS API calls, no universe refresh.
 export PATH="/home/sergei/miniconda3/bin:$PATH"
+# shellcheck disable=SC1091
 source /home/sergei/miniconda3/etc/profile.d/conda.sh
 conda activate base
 set -e
 cd "/home/sergei/Documents/high risk bond analysis"
 LOG="data/logs/hybond_filings_$(date +%Y%m%d_%H%M%S).log"
 mkdir -p data/logs
+# shellcheck disable=SC2129
 echo "=== filings run $(date) ===" >> "$LOG"
 # scrape holds the shared data/logs/pipeline_running.lock (pipeline_lock.py)
 # for its duration -- if this run overlaps into rebuild_dashboard.sh's :00/

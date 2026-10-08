@@ -1,7 +1,7 @@
 # HyBond RAG / Document Intelligence — Planning Phase
 
-**Status:** phased implementation; P0 foundation started  
-**Date:** 2026-10-07  
+**Status:** phased implementation; P0 foundation started
+**Date:** 2026-10-07
 **Source:** [`00-source-note.md`](00-source-note.md), adapted to the existing HyBond architecture
 
 ### Progress
@@ -11,19 +11,19 @@
 - **P2 retrieval seam complete:** reciprocal-rank fusion and an optional local dense encoder are available; dense models remain opt-in and are not installed automatically.
 - **Corpus bootstrap complete:** 30 e-disclosure documents plus `spravka_vdo.md` are indexed; 23 e-disclosure documents received issuer metadata (INN/ISIN) from document content. The spravka is tagged `hybond_reference_spravka` and is guidance/reference material, not authoritative issuer data. Manifest copies are in `docs/rag/corpus_manifest_v1.jsonl` and `eval/corpus/manifest_v1.jsonl`.
 - **Golden bootstrap complete:** 10 draft Russian questions, including abstention cases, are in `eval/golden/ru_bonds_v1.jsonl`. They are explicitly marked for human review and are not yet a frozen benchmark.
-- **Evaluation runner complete:** `hybond docs eval` now reports page recall@k, MRR, evidence-match rate, abstention accuracy, per-question citations, and manual-review counts. A baseline report was generated at `data/rag_eval_v1.json`.
+- **Evaluation runner complete:** `hybond docs eval` now reports page recall@k, MRR, evidence-match rate, abstention accuracy, citation precision, per-question citations, and manual-review counts; reports are generated locally under `data/` when requested.
 - **Production audit added:** `docs/rag/PRODUCTION_READINESS_AUDIT.md` lists every planned capability, current status, and the remaining gates.
-- **Retrieval iteration complete:** issuer/ISIN-scoped search, lightweight Russian stemming, candidate reranking, and better metadata-aware evaluation improved the bootstrap page recall@5 from 0.30 to 0.70. The v3 report is `data/rag_eval_v3.json`.
-- **Golden bootstrap expanded:** 15 draft questions now cover issuer disclosures and the spravka reference material; the v4 evaluation report is `data/rag_eval_v4.json`.
+- **Retrieval iteration complete:** issuer/ISIN-scoped search, lightweight Russian stemming, candidate reranking, and better metadata-aware evaluation improved the bootstrap page recall@5 from 0.30 to 0.70 in local evaluation reports.
+- **Golden bootstrap expanded:** 15 draft questions now cover issuer disclosures and the spravka reference material.
 - **Facts bootstrap complete:** `hybond docs extract` populated provenance-bearing facts; facts remain `unverifiable` until reconciled with authoritative HyBond/MOEX data.
 - **Incremental ingestion wired:** `scripts/rag_ingest.sh` and the hourly filings job now hash-deduplicate recent e-disclosure HTML, ingest up to 100 new files per run, extract facts, and reconcile identifiers.
-- **Other-source ingestion wired:** `scripts/rag_ingest_sources.sh` now continuously processes CBR documents, NKR/NRA rating pages, Nalog financial JSON, and HyBond factlists with source authority levels. The live registry is now 247 documents, including 21 CBR, 48 Nalog, 2 rating-agency, and 100 factlist documents.
+- **Other-source ingestion wired:** `scripts/rag_ingest_sources.sh` continuously processes CBR documents, NKR/NRA rating pages, Nalog financial JSON, and HyBond factlists with source authority levels; use `hybond docs report` for live corpus counts.
 - **Source-aware retrieval and rollback bookkeeping added:** citations now expose source authority, retrieval applies a small authority tie-break, and index versions can be created, activated, and rolled back. Full atomic index builds remain future work.
 - **Value telemetry added:** `hybond docs report` shows corpus coverage, fact/chunk counts, and observed query evidence rate. Query logging starts with new CLI queries; explicit human usefulness feedback is still needed.
 - **Local interface added:** `dashboard/rag.html` plus `scripts/rag_server.py` provide a localhost-only research page/API on port 8779, with citations and source authority visible.
 - **Current-risk router added:** issuer-name scoped questions such as «какие риски у эмитента на данный момент?» now use dated HyBond SQL analytics (health, spreads, events, ratings) rather than expecting a document to contain a literal current-risk sentence.
 - **Research filters added:** the local API/UI can restrict retrieval to official/financial sources and a document type (e-disclosure, CBR, Nalog, rating, or HyBond factlist).
-- **Query router added:** deterministic routing now separates numeric facts, narrative evidence, mixed questions, current-risk SQL summaries, and out-of-scope requests before retrieval.
+- **Query router added:** the local API/UI deterministically separates numeric facts, narrative evidence, mixed questions, current-risk SQL summaries, and out-of-scope requests before retrieval; the CLI still exposes the lower-level fact-or-retrieval path.
 - **Citation verification added:** retrieved citations include the exact evidence quote and are checked against the indexed document/page; evaluation now reports citation precision separately from page recall.
 - **Evaluation regression gate added:** `hybond docs eval-diff --baseline RUN_A --candidate RUN_B` compares quality metrics and exits non-zero when a configured drop is exceeded.
 - **Remaining:** expand and manually verify the golden set, then add measured P1-vs-P2 evaluation runs and the missing answer/fact/OCR production layers.
@@ -49,7 +49,7 @@ HyBond already has the correct boundaries:
 - The e-disclosure pipeline already discovers filings and stores metadata.
 - The factlist assembler is the existing boundary between deterministic data and interpretation.
 - Ollama is already used locally for classification.
-- Existing tests are offline and extensive (`1039 passed` in the last check).
+- Existing tests are offline and extensive.
 
 The RAG layer should therefore **read and enrich existing records**, not create a second bond database or replace the current pipeline.
 
@@ -283,8 +283,8 @@ hybond docs ingest --from-edisclosure ISIN
 hybond docs index [--rebuild] [--visual]
 hybond docs extract [--isin ISIN]
 hybond docs ask "вопрос" [--isin ISIN] [--show-sources]
-hybond docs eval --golden ru_bonds_v1 --split dev
-hybond docs eval-diff RUN_A RUN_B
+hybond docs eval --golden eval/golden/ru_bonds_v1.jsonl --manifest eval/corpus/manifest_v1.jsonl --out data/rag_eval.json
+hybond docs eval-diff --baseline data/rag_eval_base.json --candidate data/rag_eval_candidate.json
 ```
 
 The first implementation should support `--path` and fixture documents before integrating more downloader behavior into the production scrape pipeline.
