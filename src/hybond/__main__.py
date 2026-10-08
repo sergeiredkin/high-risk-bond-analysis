@@ -1657,6 +1657,127 @@ def cmd_moex_defaults(args) -> int:
     return 0
 
 
+def cmd_docs(args) -> int:
+    """Run the dependency-free document registry and retrieval commands."""
+    from .rag import ingest as rag_ingest
+    from .rag import search as rag_search
+    from .store import db
+
+    con = db.connect()
+    db.init_db(con)
+    try:
+        if args.docs_cmd == "ingest-dir":
+            from . import pipeline_lock
+            from .rag.facts import extract_document_facts
+            from .rag.reconcile import reconcile_document_facts
+            root = Path(args.root)
+            files = sorted((path for path in root.glob(args.pattern) if path.is_file()),
+                           key=lambda path: path.stat().st_mtime)
+            if args.since_days is not None:
+                cutoff = time.time() - args.since_days * 86400
+                files = [path for path in files if path.stat().st_mtime >= cutoff]
+            known = {row[0] for row in con.execute("SELECT doc_sha256 FROM rag_documents")}
+            selected = []
+            for path in files:
+                from .rag.manifest import sha256_file
+                if sha256_file(path) not in known:
+                    selected.append(path)
+                if len(selected) >= args.limit:
+                    break
+            results = []
+            with pipeline_lock.held(wait_timeout=600):
+                for path in selected:
+                    result = rag_ingest.ingest_file(
+                        con, path, doc_type=args.doc_type,
+                        source_url=f"file://{path.resolve()}",
+                        source_kind=args.source_kind,
+                        authority_level=args.authority_level)
+                    extract_document_facts(con, result["doc_sha256"])
+                    result["reconciliation"] = reconcile_document_facts(con, result["doc_sha256"])
+                    results.append(result)
+            print(json.dumps({"scanned": len(files), "selected": len(selected),
+                              "ingested": results}, ensure_ascii=False, indent=2))
+            return 0
+        if args.docs_cmd == "ingest":
+            result = rag_ingest.ingest_file(
+                con, Path(args.path), doc_type=args.doc_type,
+                isin=args.isin, issuer_inn=args.issuer_inn,
+                source_url=args.source_url,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.docs_cmd == "ask":
+            from .rag.answer import answer_fact
+            from .rag.company import resolve_company
+            from .rag.report import log_query
+            if args.company:
+                candidates = resolve_company(con, args.company)
+                if len(candidates) != 1:
+                    print(json.dumps({"route": "company_resolution", "matches": candidates},
+                                     ensure_ascii=False, indent=2))
+                    return 0
+                args.issuer_inn = candidates[0]["issuer_id"]
+            fact_answer = answer_fact(con, args.question, isin=args.isin,
+                                       issuer_inn=args.issuer_inn)
+            if fact_answer is not None:
+                log_query(con, question=args.question, route="fact", hits=[],
+                          abstained=fact_answer["status"] != "found")
+                print(json.dumps(fact_answer, ensure_ascii=False, indent=2))
+                return 0
+            hits = rag_search.hybrid_search(
+                con, args.question, limit=args.limit,
+                issuer_inn=args.issuer_inn, isin=args.isin,
+            )
+            log_query(con, question=args.question, route="retrieval", hits=hits,
+                      abstained=not bool(hits))
+            result = [{
+                "text": hit.text, "section": hit.section, "score": hit.score,
+                "citation": {"doc_sha256": hit.doc_sha256, "page": hit.page_no,
+                              "source_kind": hit.source_kind,
+                              "authority_level": hit.authority_level},
+            } for hit in hits]
+            print(json.dumps({"question": args.question, "hits": result},
+                             ensure_ascii=False, indent=2))
+            return 0
+        if args.docs_cmd == "eval":
+            from .rag.eval.runner import run, write_report
+            report = run(con, Path(args.golden), Path(args.manifest), k=args.k)
+            if args.out:
+                write_report(report, Path(args.out))
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 0
+        if args.docs_cmd == "eval-diff":
+            from .rag.eval.diff import compare, load_report
+            result = compare(load_report(Path(args.baseline)), load_report(Path(args.candidate)),
+                             max_drop=args.max_drop)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["passed"] else 1
+        if args.docs_cmd == "report":
+            from .rag.report import coverage_report
+            print(json.dumps(coverage_report(con), ensure_ascii=False, indent=2))
+            return 0
+        if args.docs_cmd == "extract":
+            from .rag.facts import extract_document_facts
+            from .rag.reconcile import reconcile_document_facts
+            if args.doc_sha256:
+                documents = [args.doc_sha256]
+            else:
+                documents = [row[0] for row in con.execute(
+                    "SELECT doc_sha256 FROM rag_documents ORDER BY created_at")]
+            facts = []
+            reconciliation = []
+            for doc_sha256 in documents:
+                facts.extend(extract_document_facts(con, doc_sha256))
+                reconciliation.append({doc_sha256: reconcile_document_facts(con, doc_sha256)})
+            print(json.dumps({"documents": len(documents), "facts": facts,
+                              "reconciliation": reconciliation},
+                             ensure_ascii=False, indent=2))
+            return 0
+        raise ValueError(f"unsupported docs command: {args.docs_cmd}")
+    finally:
+        con.close()
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="hybond")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -2002,6 +2123,48 @@ def main(argv=None) -> int:
     pmd_show = pmd_sub.add_parser("show", help="show watchlist matches (or one issuer with --inn)")
     pmd_show.add_argument("--inn", help="restrict to one issuer's ИНН")
     pmd.set_defaults(func=cmd_moex_defaults)
+
+    pdocs = sub.add_parser("docs", help="Local document registry and cited retrieval")
+    docs_sub = pdocs.add_subparsers(dest="docs_cmd", required=True)
+    pdi = docs_sub.add_parser("ingest", help="Register and index one local document")
+    pdi.add_argument("--path", required=True)
+    pdi.add_argument("--doc-type", default="unknown")
+    pdi.add_argument("--isin")
+    pdi.add_argument("--issuer-inn")
+    pdi.add_argument("--source-url")
+    pdi.set_defaults(func=cmd_docs)
+    pdd = docs_sub.add_parser("ingest-dir", help="Incrementally ingest new local documents")
+    pdd.add_argument("--root", required=True)
+    pdd.add_argument("--pattern", default="**/msg_*.html")
+    pdd.add_argument("--doc-type", default="edisclosure_html")
+    pdd.add_argument("--source-kind", default="unknown")
+    pdd.add_argument("--authority-level", default="unknown")
+    pdd.add_argument("--limit", type=int, default=100)
+    pdd.add_argument("--since-days", type=float)
+    pdd.set_defaults(func=cmd_docs)
+    pda = docs_sub.add_parser("ask", help="Search indexed documents and show citations")
+    pda.add_argument("question")
+    pda.add_argument("--limit", type=int, default=8)
+    pda.add_argument("--company")
+    pda.add_argument("--issuer-inn")
+    pda.add_argument("--isin")
+    pda.set_defaults(func=cmd_docs)
+    pde = docs_sub.add_parser("eval", help="Evaluate retrieval against a golden JSONL set")
+    pde.add_argument("--golden", required=True)
+    pde.add_argument("--manifest", required=True)
+    pde.add_argument("--k", type=int, default=5)
+    pde.add_argument("--out")
+    pde.set_defaults(func=cmd_docs)
+    ped = docs_sub.add_parser("eval-diff", help="Fail when an eval report regresses")
+    ped.add_argument("--baseline", required=True)
+    ped.add_argument("--candidate", required=True)
+    ped.add_argument("--max-drop", type=float, default=0.02)
+    ped.set_defaults(func=cmd_docs)
+    pfx = docs_sub.add_parser("extract", help="Extract structured facts into SQLite")
+    pfx.add_argument("--doc-sha256")
+    pfx.set_defaults(func=cmd_docs)
+    pdr = docs_sub.add_parser("report", help="Show corpus coverage and observed query value")
+    pdr.set_defaults(func=cmd_docs)
 
     args = p.parse_args(argv)
     return args.func(args)

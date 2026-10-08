@@ -6,7 +6,7 @@ assembled, deployed, and running live in production (real MOEX/CBR/e-disclosure/
 orients a fresh Claude Code session to the current state of the project —
 architecture, data model, automation, and the operational rules that have come
 out of real incidents. For exact CLI flags, see `README.md`'s command table
-(27 subcommands) or `hybond <cmd> --help`.
+or `hybond <cmd> --help`.
 
 ---
 
@@ -15,7 +15,7 @@ out of real incidents. For exact CLI flags, see `README.md`'s command table
 ```
 hybond/
   src/hybond/
-    __main__.py                 CLI entry point -- 27 subcommands
+    __main__.py                 CLI entry point -- see README/--help for commands
     store/db.py                 SQLite store, ALL tables, connect() sets WAL
                                  mode + busy_timeout=5000
     pipeline.py                 Slice 1: prices/spreads/maturity wall

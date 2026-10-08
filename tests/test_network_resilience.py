@@ -105,15 +105,35 @@ class _FakeDriver:
         pass
 
 
-def test_selenium_backend_sets_page_load_timeout():
+@pytest.fixture
+def selenium_exception_stub(monkeypatch):
+    """Provide the tiny Selenium exception API used by these offline tests."""
+    import types
+
+    class TimeoutException(Exception):
+        pass
+
+    common = types.ModuleType("selenium.common")
+    exceptions = types.ModuleType("selenium.common.exceptions")
+    exceptions.TimeoutException = TimeoutException
+    common.exceptions = exceptions
+    selenium = types.ModuleType("selenium")
+    selenium.common = common
+    monkeypatch.setitem(sys.modules, "selenium", selenium)
+    monkeypatch.setitem(sys.modules, "selenium.common", common)
+    monkeypatch.setitem(sys.modules, "selenium.common.exceptions", exceptions)
+    return TimeoutException
+
+
+def test_selenium_backend_sets_page_load_timeout(selenium_exception_stub):
     driver = _FakeDriver()
     backend = ed.SeleniumBackend(wait=0, driver=driver, page_load_timeout=30)
     backend.get("http://example.invalid/x")
     assert driver.page_load_timeout_calls == [30]
 
 
-def test_selenium_backend_logs_timeout_exception(caplog):
-    from selenium.common.exceptions import TimeoutException
+def test_selenium_backend_logs_timeout_exception(caplog, selenium_exception_stub):
+    TimeoutException = selenium_exception_stub
 
     class _TimingOutDriver(_FakeDriver):
         def get(self, url):

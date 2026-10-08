@@ -239,6 +239,11 @@ def init_db(con: sqlite3.Connection) -> None:
             changed_at TEXT NOT NULL
         )
     """)
+    # Slice 5 document-intelligence registry.  Kept in a separate module so
+    # the RAG implementation remains optional at import time, while every
+    # normal HyBond connection still gets the idempotent schema migration.
+    from ..rag.registry import init_registry
+    init_registry(con)
     con.commit()
 
 

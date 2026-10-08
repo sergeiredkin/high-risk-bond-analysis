@@ -6,12 +6,14 @@
 # Lightweight: static RSS pulls only (MOEX listing feed ~2.1MB, ~15s fetch),
 # no MOEX ISS API calls, no universe refresh.
 export PATH="/home/sergei/miniconda3/bin:$PATH"
+# shellcheck disable=SC1091
 source /home/sergei/miniconda3/etc/profile.d/conda.sh
 conda activate base
 set -e
 cd "/home/sergei/Documents/high risk bond analysis"
 LOG="data/logs/hybond_filings_$(date +%Y%m%d_%H%M%S).log"
 mkdir -p data/logs
+# shellcheck disable=SC2129
 echo "=== filings run $(date) ===" >> "$LOG"
 # scrape holds the shared data/logs/pipeline_running.lock (pipeline_lock.py)
 # for its duration -- if this run overlaps into rebuild_dashboard.sh's :00/
@@ -34,6 +36,16 @@ echo "=== filings run $(date) ===" >> "$LOG"
 # runtime budget before any issuers are processed. Title+URL is sufficient
 # for dedup and classification. Bodies can be fetched on-demand in the UI.
 PYTHONPATH=src python -m hybond scrape --smartlab --no-bodies >> "$LOG" 2>&1
+# Incremental local RAG ingest: only new/recent e-disclosure bodies, hash-deduped
+# in rag_documents. The seven-day window catches delayed downloads without
+# repeatedly scanning the entire historical corpus.
+PYTHONPATH=src python -m hybond docs ingest-dir --root data/raw/edisclosure \
+  --pattern '**/msg_*.html' --doc-type edisclosure_html \
+  --source-kind edisclosure --authority-level issuer_disclosure --limit 100 \
+  --since-days 7 >> "$LOG" 2>&1
+# Other local narrative sources: CBR, rating agencies, Nalog financials,
+# and HyBond factlists. Each source is hash-deduplicated and bounded.
+bash scripts/rag_ingest_sources.sh >> "$LOG" 2>&1
 PYTHONPATH=src python -m hybond market-notes >> "$LOG" 2>&1
 # Google News RSS per tier=1 issuer (2026-08-24): one HTTP request per
 # issuer with a 2s sleep between them (see scrape/google_news.py), so this
