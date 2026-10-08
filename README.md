@@ -174,6 +174,8 @@ hybond docs eval --golden FILE --manifest FILE [--k N] [--out FILE]
                                      retrieval/citation/abstention evaluation
 hybond docs eval-diff --baseline FILE --candidate FILE [--max-drop X]
                                      fail when an eval report regresses
+hybond docs dense-index --model-path DIR --out DIR
+                                     build an optional index with a locally cached encoder
 hybond docs report                  corpus coverage and observed query value
 ```
 
