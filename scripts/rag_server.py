@@ -14,8 +14,9 @@ from hybond.rag.answer import answer_fact
 from hybond.rag.company import resolve_company
 from hybond.rag.current_risk import current_risk_summary
 from hybond.rag.report import log_feedback, log_query
+from hybond.rag.retrieval import retrieve
 from hybond.rag.router import classify_query
-from hybond.rag.search import search, snippet
+from hybond.rag.search import snippet
 from hybond.rag.verify import verify_citation
 from hybond.store import db
 
@@ -102,7 +103,7 @@ class Handler(BaseHTTPRequestHandler):
                                   "query_id": query_id, "hits": []})
                 con.close()
                 return
-            hits = search(con, question, limit=3, issuer_inn=payload.get("issuer_inn"),
+            hits = retrieve(con, question, limit=3, issuer_inn=payload.get("issuer_inn"),
                           isin=payload.get("isin"),
                           source_scope=payload.get("source_scope", "all"),
                           doc_type=payload.get("doc_type"))

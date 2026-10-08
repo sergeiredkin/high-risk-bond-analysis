@@ -1660,7 +1660,6 @@ def cmd_moex_defaults(args) -> int:
 def cmd_docs(args) -> int:
     """Run the dependency-free document registry and retrieval commands."""
     from .rag import ingest as rag_ingest
-    from .rag import search as rag_search
     from .store import db
 
     con = db.connect()
@@ -1724,7 +1723,8 @@ def cmd_docs(args) -> int:
                           abstained=fact_answer["status"] != "found")
                 print(json.dumps(fact_answer, ensure_ascii=False, indent=2))
                 return 0
-            hits = rag_search.hybrid_search(
+            from .rag.retrieval import retrieve
+            hits = retrieve(
                 con, args.question, limit=args.limit,
                 issuer_inn=args.issuer_inn, isin=args.isin,
             )

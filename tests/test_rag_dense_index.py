@@ -4,6 +4,7 @@ import pytest
 
 from hybond.rag.dense_index import DenseIndex, build_index
 from hybond.rag.ingest import ingest_file
+from hybond.rag.retrieval import retrieve
 from hybond.rag.search import hybrid_search
 from hybond.store import db
 
@@ -26,6 +27,17 @@ def test_dense_index_build_and_search(tmp_path: Path):
     assert build_index(con, out, FakeEncoder()) == 2
     index = DenseIndex.load(out, FakeEncoder())
     assert index.search("ликвидность", limit=1)[0].page_no == 1
+    assert index.search("ликвидность", issuer_inn="wrong") == []
+    assert index.search("ликвидность", source_scope="official")
+    assert index.search("ликвидность", doc_type="cbr_document") == []
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("HYBOND_RAG_DENSE_INDEX", str(out))
+    monkeypatch.setenv("HYBOND_RAG_MODEL_PATH", str(tmp_path / "fake-model"))
+    monkeypatch.setattr("hybond.rag.retrieval._dense_index", lambda *_: index)
+    hybrid = retrieve(con, "вопрос без лексического совпадения", limit=2)
+    assert any(hit.chunk_id for hit in hybrid)
+    assert retrieve(con, "вопрос", limit=2, issuer_inn="wrong") == []
+    monkeypatch.undo()
     hits = index.search("ликвидность", limit=2)
     con.execute("UPDATE rag_documents SET issuer_inn='A'")
     assert all(hit.chunk_id in {item.chunk_id for item in hybrid_search(
