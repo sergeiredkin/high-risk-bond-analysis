@@ -44,7 +44,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | Citation verification/abstention | **Partial** | retrieved citations now carry exact quotes and are checked against indexed document/page; claim-level generated-answer verification remains |
 | Versioned indexes/rollback | **Partial** | create/activate/rollback bookkeeping now exists; atomic index build/switch is still pending |
 | Tracing/access control | **Partial** | local query telemetry logs route, hit count, top-source authority, abstention, and feedback; access control remains intentionally local-only |
-| E-disclosure ingestion integration | **Partial** | incremental `docs ingest-dir` is now wired into hourly filings for recent local raw files; downloader/source coverage and historical backfill policy remain |
+| E-disclosure ingestion integration | **Partial** | incremental `docs ingest-dir` is wired into hourly filings for recent local raw files; bounded, explicit-date historical backfill is available manually (see the [README command reference](../../README.md#slice-5-local-document-intelligence--rag)); downloader/source coverage remains |
 | HyBond `spravka_vdo.md` reference corpus | **Done (bootstrap)** | indexed as `hybond_reference_spravka`; useful domain guidance, not an authoritative issuer-data source |
 | Evaluation CI and eval diff | **Partial** | `hybond docs eval-diff` compares baseline/candidate metrics and exits non-zero on regression; the GitHub Actions workflow runs lint, compile checks, and offline pytest, but does not run eval-diff |
 | FastAPI/dashboard research interface | **Partial** | local-only stdlib RAG page/API at port 8779; no generated-answer panel or production auth |
