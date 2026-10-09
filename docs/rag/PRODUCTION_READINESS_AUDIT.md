@@ -33,7 +33,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | Dense embeddings | **Partial** | optional local encoder/index is integrated into CLI/API retrieval via `HYBOND_RAG_DENSE_INDEX` + `HYBOND_RAG_MODEL_PATH`, with issuer/source/type filtering and RRF; no pinned model or quality comparison yet |
 | RRF hybrid retrieval | **Partial** | CLI/API fuse filtered local dense hits with FTS results; retrieval quality has not been compared against dense results |
 | Cross-encoder reranking | **Missing** | not implemented |
-| OCR for scanned Cyrillic PDFs | **Missing** | blank pages are marked scanned but not OCR'd; an image-only CBR raster surrogate tests detection only, not OCR quality |
+| OCR for scanned Cyrillic PDFs | **Partial (experimental)** | opt-in Tesseract hook can store page text and mean word confidence locally, but does not index OCR text or expose it as answer evidence; Tesseract/rus data are absent and no OCR-quality evaluation exists. Raster surrogate tests detection only |
 | Tables as structured data | **Partial** | HTML tables are persisted as row/cell JSON plus canonical HTML and separately indexed; PDF rows use a conservative `pdftotext -layout` spacing heuristic and preserve raw strings, not verified numeric semantics. General PDF layout, merged-cell meaning, and a representative human-reviewed table benchmark are still missing |
 | Page rendering/visual retrieval | **Missing** | no images, bbox, ColPali/ColQwen path |
 | Structured fact extraction | **Partial** | conservative rule extractor now stores INN/ISIN/explicit unpaid amounts; coupons, schedules, covenants, financials, and LLM-assisted extraction remain |

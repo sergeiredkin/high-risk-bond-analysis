@@ -98,6 +98,76 @@ def test_cbr_pdf_table_fixture_is_structured_and_page_cited(tmp_path):
         con.close()
 
 
+def test_ocr_is_disabled_unless_explicitly_enabled(monkeypatch):
+    monkeypatch.delenv("HYBOND_RAG_OCR", raising=False)
+    monkeypatch.setattr(ingest.shutil, "which", lambda _tool: pytest.fail("OCR tool lookup should not run"))
+
+    assert ingest._ocr_pdf_page(Path("scan.pdf"), 1) == ("", None)
+
+
+def test_optional_ocr_parses_local_tesseract_tsv_and_confidence(tmp_path, monkeypatch):
+    source = ROOT / "eval/corpus/fixtures_doc_fidelity_v1/cbr/forecast_260424_page1_rasterized.pdf"
+    monkeypatch.setenv("HYBOND_RAG_OCR", "1")
+    monkeypatch.setattr(ingest.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+
+    def fake_run(command, **_kwargs):
+        if command[0] == "pdftoppm":
+            Path(command[-1]).with_suffix(".png").write_bytes(b"test image")
+            return SimpleNamespace(stdout="")
+        assert command[0] == "tesseract"
+        assert command[-1] == "tsv"
+        headers = ["level", "page_num", "block_num", "par_num", "line_num", "word_num",
+                   "left", "top", "width", "height", "conf", "text"]
+        tab = chr(9)
+        tsv = chr(10).join((
+            tab.join(headers),
+            tab.join(["5", "1", "1", "1", "1", "1", "0", "0", "10", "10", "95.0", "Ставка"]),
+            tab.join(["5", "1", "1", "1", "1", "2", "10", "0", "10", "10", "85.0", "14,0–14,5"]),
+        ))
+        return SimpleNamespace(stdout=tsv)
+
+    monkeypatch.setattr(ingest.subprocess, "run", fake_run)
+    text, confidence = ingest._ocr_pdf_page(source, 1)
+
+    assert text == "Ставка 14,0–14,5"
+    assert confidence == 0.9
+
+
+def test_ocr_requested_without_local_tools_warns_and_abstains(monkeypatch):
+    monkeypatch.setenv("HYBOND_RAG_OCR", "1")
+    monkeypatch.setattr(ingest.shutil, "which", lambda _tool: None)
+
+    with pytest.warns(RuntimeWarning, match="tools are unavailable"):
+        result = ingest._ocr_pdf_page(Path("scan.pdf"), 1)
+    assert result == ("", None)
+
+
+def test_ingest_stores_ocr_text_confidence_and_scan_provenance(tmp_path, monkeypatch):
+    source = ROOT / "eval/corpus/fixtures_doc_fidelity_v1/cbr/forecast_260424_page1_rasterized.pdf"
+    monkeypatch.setenv("HYBOND_RAG_OCR", "1")
+    monkeypatch.setattr(ingest, "_read_document", lambda _path: ([""], [[]]))
+    monkeypatch.setattr(ingest, "_ocr_pdf_page", lambda _path, _page: ("Распознанная ставка 14,5", 0.9))
+    con = db.connect(tmp_path / "ocr.sqlite")
+    db.init_db(con)
+    try:
+        result = ingest_file(con, source, doc_type="cbr_document")
+        page = con.execute(
+            "SELECT is_scanned,ocr_confidence FROM rag_pages WHERE doc_sha256=? AND page_no=1",
+            (result["doc_sha256"],),
+        ).fetchone()
+        assert tuple(page) == (1, 0.9)
+        assert con.execute(
+            "SELECT text FROM rag_elements WHERE doc_sha256=? AND kind='ocr_text'",
+            (result["doc_sha256"],),
+        ).fetchone()[0] == "Распознанная ставка 14,5"
+        assert con.execute(
+            "SELECT COUNT(*) FROM rag_chunks WHERE doc_sha256=?",
+            (result["doc_sha256"],),
+        ).fetchone()[0] == 0
+    finally:
+        con.close()
+
+
 def test_rasterized_pdf_fixture_is_detected_as_scanned_without_fabricating_text(tmp_path):
     if not shutil.which("pdftotext"):
         pytest.skip("poppler pdftotext is required for PDF fixture extraction")
