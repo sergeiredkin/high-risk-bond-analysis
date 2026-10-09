@@ -13,8 +13,12 @@ def test_numeric_and_boolean_expected_values_match_russian_evidence():
     assert expected_in_hits(67800000, "numeric", [hit]) is True
     assert expected_in_hits(True, "boolean", [hit]) is True
     insufficient = SearchHit("d", "doc", 1, "", "Смотреть только на букву рейтинга недостаточно.", 1)
-    assert expected_in_hits(False, "boolean", [insufficient]) is True
-    ambiguous = SearchHit("e", "doc", 1, "", "Нет данных о невыплате.", 1)
+    assert expected_in_hits(False, "boolean", [insufficient]) is False
+    contradictory = SearchHit("e", "doc", 1, "", "Неисполнение обязанности исключено.", 1)
+    assert expected_in_hits(True, "boolean", [contradictory]) is False
+    fulfilled = SearchHit("f", "doc", 1, "", "Эмитент исполнил обязанность и выплатил купон.", 1)
+    assert expected_in_hits(False, "boolean", [fulfilled]) is True
+    ambiguous = SearchHit("g", "doc", 1, "", "Нет данных о невыплате.", 1)
     assert expected_in_hits(False, "boolean", [ambiguous]) is False
 
 

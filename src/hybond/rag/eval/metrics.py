@@ -54,12 +54,15 @@ def expected_in_hits(expected: object, answer_type: str, hits: list) -> bool | N
             except ValueError:
                 pass
         if answer_type == "boolean":
-            markers = ("не исполнил", "не исполнена", "не выплачен", "не выплачено",
-                       "неисполнение", "не соблюден") if value is True else (
-                           "недостаточно", "не достаточно", "отсутствует", "нельзя",
-                           "не следует", "no", "false"
-                       )
-            return any(marker in corpus for marker in markers)
+            patterns = (
+                r"\b(?:не\s+(?:исполнил\w*|исполнен\w*|выплатил\w*|выплачен\w*|соблюдал\w*|соблюден\w*)|неисполнен\w*|невыплат\w*|несоблюден\w*)\b",
+                r"\b(?:исполнил\w*|исполнен\w*|выплатил\w*|выплачен\w*|соблюдал\w*|соблюден\w*)\b",
+            )
+            if value is True:
+                return bool(re.search(patterns[0], corpus)) and not bool(
+                    re.search(r"\b(?:исключен\w*|опровергнут\w*|отсутств\w*)\b", corpus)
+                )
+            return bool(re.search(patterns[1], corpus))
         return any(normalise(candidate) in corpus for candidate in candidates)
     if answer_type == "list":
         values = expected if isinstance(expected, list) else expected.get("values", [])
