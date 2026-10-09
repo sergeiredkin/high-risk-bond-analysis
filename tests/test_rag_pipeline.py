@@ -1,5 +1,9 @@
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
+from hybond import pipeline_lock
+from hybond.__main__ import cmd_docs
 from hybond.rag.ingest import ingest_file
 from hybond.rag.search import hybrid_search, reciprocal_rank_fusion, search, snippet
 from hybond.store import db
@@ -8,15 +12,19 @@ from hybond.store import db
 def test_html_table_rows_and_cells_remain_distinguishable(tmp_path):
     source = tmp_path / "table.html"
     source.write_text(
-        "<html><style>hide me</style><body><table>"
+        "<html><style>hide me</style><body><p>Описание до таблицы</p><table>"
         "<tr><th>Показатель</th><th>Значение</th></tr>"
         "<tr><td>Купон</td><td>15,5%</td></tr>"
-        "</table><script>ignore me</script></body></html>",
+        "<tr><td colspan='2'>Условия выпуска</td></tr>"
+        "<tr><td rowspan='invalid'>Начало<td>Окончание</tr>"
+        "</table><p>Описание после таблицы</p>"
+        "<script>ignore me</script></body></html>",
         encoding="utf-8",
     )
     con = db.connect(Path(":memory:"))
     db.init_db(con)
     indexed = ingest_file(con, source, doc_type="table_fixture")
+    ingest_file(con, source, doc_type="table_fixture")
     page = " ".join(row[0] for row in con.execute(
         "SELECT text FROM rag_chunks WHERE doc_sha256=? ORDER BY chunk_id",
         (indexed["doc_sha256"],),
@@ -25,7 +33,70 @@ def test_html_table_rows_and_cells_remain_distinguishable(tmp_path):
     assert "Купон\t15,5%" in page
     assert "hide me" not in page
     assert "ignore me" not in page
+    table_chunks = con.execute(
+        "SELECT section,text FROM rag_chunks WHERE doc_sha256=? AND section LIKE 'table_%'",
+        (indexed["doc_sha256"],),
+    ).fetchall()
+    prose_chunks = con.execute(
+        "SELECT text FROM rag_chunks WHERE doc_sha256=? AND section NOT LIKE 'table_%'",
+        (indexed["doc_sha256"],),
+    ).fetchall()
+    assert len(table_chunks) == 1
+    assert table_chunks[0]["section"] == "table_1"
+    assert "Купон\t15,5%" in table_chunks[0]["text"]
+    assert "Описание до таблицы" in " ".join(row["text"] for row in prose_chunks)
+    assert "Купон" not in " ".join(row["text"] for row in prose_chunks)
+    elements = con.execute(
+        "SELECT kind,text,table_html FROM rag_elements WHERE doc_sha256=?",
+        (indexed["doc_sha256"],),
+    ).fetchall()
+    assert len(elements) == 1
+    assert elements[0]["kind"] == "table"
+    rows = json.loads(elements[0]["text"])
+    assert [cell["text"] for cell in rows[1]] == ["Купон", "15,5%"]
+    assert rows[2][0]["text"] == "Условия выпуска"
+    assert rows[2][0]["colspan"] == 2
+    assert [cell["text"] for cell in rows[3]] == ["Начало", "Окончание"]
+    assert rows[3][0]["rowspan"] == 1
+    assert "<td colspan=\"2\">Условия выпуска</td>" in elements[0]["table_html"]
     con.close()
+
+
+def test_ingest_dir_reprocess_is_bounded_and_refreshes_table_elements(tmp_path, monkeypatch, capsys):
+    root = tmp_path / "raw"
+    root.mkdir()
+    for name, value in (("one.html", "Первое"), ("two.html", "Второе")):
+        (root / name).write_text(
+            f"<table><tr><th>Показатель</th></tr><tr><td>{value}</td></tr></table>",
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "rag.sqlite")
+    monkeypatch.setattr(pipeline_lock, "PIPELINE_LOCK_PATH", tmp_path / "pipeline.lock")
+    con = db.connect()
+    db.init_db(con)
+    for source in root.glob("*.html"):
+        ingest_file(con, source, doc_type="table_fixture")
+    con.execute("DELETE FROM rag_elements")
+    con.commit()
+    con.close()
+
+    args = SimpleNamespace(
+        docs_cmd="ingest-dir", root=str(root), pattern="*.html", since_date=None,
+        until_date=None, since_days=None, limit=1, reprocess=False,
+        doc_type="table_fixture", source_kind="unknown", authority_level="unknown",
+    )
+    assert cmd_docs(args) == 0
+    assert json.loads(capsys.readouterr().out)["ingested"] == []
+
+    args.reprocess = True
+    assert cmd_docs(args) == 0
+    first_batch = json.loads(capsys.readouterr().out)["ingested"]
+    assert len(first_batch) == 1
+    con = db.connect()
+    assert con.execute("SELECT COUNT(*) FROM rag_elements WHERE kind='table'").fetchone()[0] == 1
+    con.close()
+
+    assert not (tmp_path / "pipeline.lock").exists()
 
 
 def test_ingest_is_idempotent_and_search_returns_page_citation(tmp_path):

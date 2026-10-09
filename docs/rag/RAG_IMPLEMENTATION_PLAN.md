@@ -13,7 +13,7 @@
 - **Golden bootstrap complete:** 10 draft Russian questions, including abstention cases, are in `eval/golden/ru_bonds_v1.jsonl`. They are explicitly marked for human review and are not yet a frozen benchmark.
 - **Evaluation runner hardened:** `docs eval` defaults to dev, requires an explicit `--split test`, hashes golden/manifest inputs, and reports manual-only answer scores as null rather than zero. `eval-diff` rejects split/corpus mismatches; no quality threshold is enabled until human verification.
 - **Golden v2 candidate added:** 30 hashed e-disclosure fixtures across 10 issuers and 72 agent-checked questions with document-disjoint 42-question dev / 30-question test splits. It is not human-reviewed or frozen; held-out FTS5 page recall@5 0.833, citation precision 0.653, and abstention accuracy 0.000. See `GOLDEN_SET_V2_CANDIDATE.md`.
-- **HTML table fidelity improved:** standard-library parsing preserves HTML table row and cell boundaries in indexed text; structured financial table extraction and PDF layout/OCR remain incomplete.
+- **HTML table fidelity improved:** standard-library parsing keeps prose and tables separate, indexes each table as its own tabular chunk, and stores structured cell JSON plus canonical table HTML in `rag_elements`; PDF table extraction, merged-cell interpretation, and OCR remain incomplete.
 - **Production audit added:** `docs/rag/PRODUCTION_READINESS_AUDIT.md` lists every planned capability, current status, and the remaining gates.
 - **Retrieval iteration complete:** issuer/ISIN-scoped search, lightweight Russian stemming, candidate reranking, and better metadata-aware evaluation improved the bootstrap page recall@5 from 0.30 to 0.70 in local evaluation reports.
 - **Golden bootstrap expanded:** 15 draft questions now cover issuer disclosures and the spravka reference material.
@@ -314,6 +314,10 @@ The first implementation should support `--path` and fixture documents before in
 6. Which numeric facts are authoritative in current HyBond tables and need reconciliation adapters?
 7. Should the first query interface be CLI-only, or should the dashboard later expose a cited research panel?
 
-## 16. Recommended next step
+## 16. Next implementation focus
 
-Implement **P0 only** after Sergei supplies the first corpus list and 30 manually verified questions. P0 should not install heavy model packages, not alter dashboard behavior, and not start a full historical re-index.
+The source note recommends changing one capability at a time and measuring it against a trustworthy benchmark. Given that the current v2 candidate is not human-verified and no suitable Russian embedding/OCR model is installed, the next implementation focus is document fidelity rather than tuning retrieval or enabling generation.
+
+**Implemented first:** HTML disclosures now keep table text out of prose chunks, index each table separately, and persist structured rows/cells (including `rowspan`/`colspan`) plus canonical table HTML in `rag_elements`; repeated ingestion replaces these elements idempotently. A smoke run over the 30 HTML fixtures found 120 tables / 540 cells, including non-financial site tables. `docs ingest-dir --reprocess` enables bounded re-parsing of known hashes after parser changes; it was not run against the production corpus.
+
+**Next:** add representative, manually reviewed table-heavy and scanned PDF fixtures before attempting financial-table extraction or OCR. Then compare an optional local layout parser/OCR path against `pdftotext` on that dev subset. Do not install heavy dependencies, claim a quality gain, change dashboard behavior, or start a broad historical re-index without measured resource/quality evidence and an independently reviewed benchmark.

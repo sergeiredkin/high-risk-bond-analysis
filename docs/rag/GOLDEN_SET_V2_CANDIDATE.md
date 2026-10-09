@@ -16,13 +16,13 @@ Evaluated by ingesting the committed fixtures into a temporary SQLite database; 
 
 | Split | Questions | Page recall@5 | Citation precision@5 | MRR | Auto answer/evidence match | Abstention accuracy |
 |---|---:|---:|---:|---:|---:|---:|
-| Dev | 48 | 0.833 | 0.604 | 0.733 | n/a (40 manual) | 0.000 |
-| Test | 24 | 0.833 | 0.653 | 0.729 | n/a (20 manual) | 0.000 |
+| Dev | 48 | 0.833 | 0.604 | 0.701 | n/a (40 manual) | 0.000 |
+| Test | 24 | 0.833 | 0.653 | 0.736 | n/a (20 manual) | 0.000 |
 
 All answerable questions are text answers, so the automatic answer/evidence metric is null rather than incorrectly reporting zero; all 60 require manual scoring. The no-answer probes still retrieve hits, producing zero abstention accuracy; do not calibrate or claim a passing abstention gate from this candidate set.
 
 ## Coverage gaps
 
-This bootstrap is **not** the planned evaluation benchmark: it has no manually reviewed financial answers, scanned PDFs, OCR pages, substantive financial tables, cross-document reasoning, or conflicting-source cases. The selected source archive is HTML-only. A local multilingual embedding model was not found in the cache, and Tesseract is not installed; therefore no valid dense-vs-FTS5 or OCR quality comparison was run. The cached English MiniLM model is deliberately not used as a Russian retrieval benchmark.
+This bootstrap is **not** the planned evaluation benchmark: it has no manually reviewed financial answers, scanned PDFs, OCR pages, representative financial-table questions, cross-document reasoning, or conflicting-source cases. The selected source archive is HTML-only. The parser smoke run produced 120 structured table elements / 540 cell records from these 30 HTML fixtures, but includes site/template tables and is not a table-quality benchmark. A local multilingual embedding model was not found in the cache, and Tesseract is not installed; therefore no valid dense-vs-FTS5 or OCR quality comparison was run. The cached English MiniLM model is deliberately not used as a Russian retrieval benchmark.
 
 Next: review every question and citation independently, replace generic questions with financial narrative/table questions, add representative table, scan, multi-document, and source-conflict fixtures, then freeze the test split. Do not tune against the test split.

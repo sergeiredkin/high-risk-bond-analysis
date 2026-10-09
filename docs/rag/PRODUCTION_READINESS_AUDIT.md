@@ -25,7 +25,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | SHA-256 manifest and deduplication | **Done** | `rag/manifest.py`, registry |
 | SQLite document/page/chunk registry | **Done** | `rag/registry.py`; migrated production DB |
 | Source registry and authority levels | **Done (bootstrap)** | source_kind/authority_level stored for CBR, ratings, Nalog, factlists, e-disclosure, and reference material |
-| Basic local ingestion | **Partial** | text/HTML and `pdftotext`; standard-library HTML parsing now preserves table row/cell boundaries, but PDF layout elements and bounding boxes are absent |
+| Basic local ingestion | **Partial** | text/HTML and `pdftotext`; HTML tables are separate tabular search chunks and structured cell JSON plus canonical HTML in `rag_elements`; PDF layout elements and bounding boxes are absent |
 | Incremental indexing | **Partial** | hourly bounded ingestion now hash-deduplicates multiple source directories; no index build/version switch |
 | Page-aware chunks and citations | **Partial** | page numbers work; no bounding boxes or reliable PDF elements |
 | FTS5/BM25 baseline | **Done** | `rag/search.py` |
@@ -34,7 +34,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | RRF hybrid retrieval | **Partial** | CLI/API fuse filtered local dense hits with FTS results; retrieval quality has not been compared against dense results |
 | Cross-encoder reranking | **Missing** | not implemented |
 | OCR for scanned Cyrillic PDFs | **Missing** | blank pages are marked scanned but not OCR'd |
-| Tables as structured data | **Partial** | HTML row/cell separators are retained as text and covered by a synthetic parser test; no structured table extraction or financial-table benchmark |
+| Tables as structured data | **Partial** | HTML tables are persisted as row/cell JSON plus canonical HTML and separately indexed; `rowspan`/`colspan` are recorded, not expanded into a semantic grid. PDF tables and a representative financial-table benchmark are still missing |
 | Page rendering/visual retrieval | **Missing** | no images, bbox, ColPali/ColQwen path |
 | Structured fact extraction | **Partial** | conservative rule extractor now stores INN/ISIN/explicit unpaid amounts; coupons, schedules, covenants, financials, and LLM-assisted extraction remain |
 | MOEX/HyBond reconciliation | **Partial** | INN/ISIN matching now marks match/mismatch; monetary facts remain unverifiable and full source-priority reconciliation is pending |
@@ -65,7 +65,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 
 1. Replace HTML/PDF flattening with layout-aware parsing.
 2. Add Cyrillic OCR fallback and confidence fields.
-3. Preserve tables as structured rows plus searchable table chunks.
+3. Extend structured-table preservation to PDFs and evaluate table structure on representative financial documents.
 4. Render pages and store element bounding boxes.
 5. Add fixtures for digital, scanned, table-heavy, and malformed documents.
 
