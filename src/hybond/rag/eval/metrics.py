@@ -57,7 +57,7 @@ def expected_in_hits(expected: object, answer_type: str, hits: list) -> bool | N
             markers = ("не исполнил", "не исполнена", "не выплачен", "не выплачено",
                        "неисполнение", "не соблюден") if value is True else (
                            "недостаточно", "не достаточно", "отсутствует", "нельзя",
-                           "не следует", "нет", "no", "false"
+                           "не следует", "no", "false"
                        )
             return any(marker in corpus for marker in markers)
         return any(normalise(candidate) in corpus for candidate in candidates)
