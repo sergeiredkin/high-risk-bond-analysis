@@ -30,6 +30,8 @@ jobs:
           python-version: '3.11'
       - name: Install test dependencies
         run: python -m pip install pytest ruff requests
+      - name: Install PDF text tooling
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - name: Lint RAG implementation
         run: ruff check src/hybond/rag scripts/rag_server.py tests/test_rag_*.py
       - name: Compile RAG implementation

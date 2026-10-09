@@ -25,7 +25,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | SHA-256 manifest and deduplication | **Done** | `rag/manifest.py`, registry |
 | SQLite document/page/chunk registry | **Done** | `rag/registry.py`; migrated production DB |
 | Source registry and authority levels | **Done (bootstrap)** | source_kind/authority_level stored for CBR, ratings, Nalog, factlists, e-disclosure, and reference material |
-| Basic local ingestion | **Partial** | text/HTML and `pdftotext`; HTML tables are separate tabular search chunks and structured cell JSON plus canonical HTML in `rag_elements`; PDF layout elements and bounding boxes are absent |
+| Basic local ingestion | **Partial** | text/HTML and `pdftotext`; HTML tables are separate structured/searchable chunks; aligned numeric PDF rows are heuristically separated into table chunks. PDF bounding boxes and general layout elements are absent |
 | Incremental indexing | **Partial** | hourly bounded ingestion now hash-deduplicates multiple source directories; no index build/version switch |
 | Page-aware chunks and citations | **Partial** | page numbers work; no bounding boxes or reliable PDF elements |
 | FTS5/BM25 baseline | **Done** | `rag/search.py` |
@@ -33,8 +33,8 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | Dense embeddings | **Partial** | optional local encoder/index is integrated into CLI/API retrieval via `HYBOND_RAG_DENSE_INDEX` + `HYBOND_RAG_MODEL_PATH`, with issuer/source/type filtering and RRF; no pinned model or quality comparison yet |
 | RRF hybrid retrieval | **Partial** | CLI/API fuse filtered local dense hits with FTS results; retrieval quality has not been compared against dense results |
 | Cross-encoder reranking | **Missing** | not implemented |
-| OCR for scanned Cyrillic PDFs | **Missing** | blank pages are marked scanned but not OCR'd |
-| Tables as structured data | **Partial** | HTML tables are persisted as row/cell JSON plus canonical HTML and separately indexed; `rowspan`/`colspan` are recorded, not expanded into a semantic grid. PDF tables and a representative financial-table benchmark are still missing |
+| OCR for scanned Cyrillic PDFs | **Missing** | blank pages are marked scanned but not OCR'd; an image-only CBR raster surrogate tests detection only, not OCR quality |
+| Tables as structured data | **Partial** | HTML tables are persisted as row/cell JSON plus canonical HTML and separately indexed; PDF rows use a conservative `pdftotext -layout` spacing heuristic and preserve raw strings, not verified numeric semantics. General PDF layout, merged-cell meaning, and a representative human-reviewed table benchmark are still missing |
 | Page rendering/visual retrieval | **Missing** | no images, bbox, ColPali/ColQwen path |
 | Structured fact extraction | **Partial** | conservative rule extractor now stores INN/ISIN/explicit unpaid amounts; coupons, schedules, covenants, financials, and LLM-assisted extraction remain |
 | MOEX/HyBond reconciliation | **Partial** | INN/ISIN matching now marks match/mismatch; monetary facts remain unverifiable and full source-priority reconciliation is pending |
