@@ -316,20 +316,27 @@ def _ocr_pdf_page(path: Path, page_no: int) -> tuple[str, float | None]:
                       RuntimeWarning, stacklevel=2)
         return "", None
 
-    words: list[str] = []
+    lines: dict[tuple[str, str, str], list[tuple[int, int, str]]] = {}
     confidences: list[float] = []
-    for row in csv.DictReader(io.StringIO(result.stdout), delimiter="\t"):
+    for order, row in enumerate(csv.DictReader(io.StringIO(result.stdout), delimiter="\t")):
         word = (row.get("text") or "").strip()
         try:
             confidence = float(row.get("conf", "-1"))
+            left = int(row.get("left", order))
         except (TypeError, ValueError):
             continue
         if word and confidence >= 0:
-            words.append(word)
+            line_id = tuple((row.get(field) or "0") for field in
+                            ("block_num", "par_num", "line_num"))
+            lines.setdefault(line_id, []).append((left, order, word))
             confidences.append(confidence)
-    if not words:
+    if not confidences:
         return "", None
-    return " ".join(words), round(sum(confidences) / len(confidences) / 100, 4)
+    text_lines = [
+        " ".join(word for _left, _order, word in sorted(words))
+        for words in lines.values()
+    ]
+    return "\n".join(text_lines), round(sum(confidences) / len(confidences) / 100, 4)
 
 
 def _read_pages(path: Path) -> list[str]:

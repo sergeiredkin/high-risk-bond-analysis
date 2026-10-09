@@ -194,14 +194,15 @@ def test_optional_ocr_parses_local_tesseract_tsv_and_confidence(tmp_path, monkey
             tab.join(headers),
             tab.join(["5", "1", "1", "1", "1", "1", "0", "0", "10", "10", "95.0", "Ставка"]),
             tab.join(["5", "1", "1", "1", "1", "2", "10", "0", "10", "10", "85.0", "14,0–14,5"]),
+            tab.join(["5", "1", "1", "1", "2", "1", "0", "20", "10", "10", "80.0", "Прогноз"]),
         ))
         return SimpleNamespace(stdout=tsv)
 
     monkeypatch.setattr(ingest.subprocess, "run", fake_run)
     text, confidence = ingest._ocr_pdf_page(source, 1)
 
-    assert text == "Ставка 14,0–14,5"
-    assert confidence == 0.9
+    assert text == "Ставка 14,0–14,5\nПрогноз"
+    assert confidence == 0.8667
 
 
 def test_ocr_requested_without_local_tools_warns_and_abstains(monkeypatch):
