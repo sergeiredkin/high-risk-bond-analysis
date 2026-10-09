@@ -1682,6 +1682,8 @@ def cmd_docs(args) -> int:
             known = {row[0] for row in con.execute("SELECT doc_sha256 FROM rag_documents")}
             selected = []
             for path in files:
+                if len(selected) >= max(0, args.limit):
+                    break
                 from .rag.manifest import sha256_file
                 if sha256_file(path) not in known:
                     selected.append(path)

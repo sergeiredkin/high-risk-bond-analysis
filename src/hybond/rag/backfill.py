@@ -5,18 +5,19 @@ import re
 from datetime import date
 from pathlib import Path
 
-_ISO_DATE = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2})(?!\d)")
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def file_date(path: Path) -> date | None:
     """Read an ISO date from a source path; do not guess from filesystem mtime."""
-    match = _ISO_DATE.search(str(path))
-    if not match:
-        return None
-    try:
-        return date.fromisoformat(match.group(1))
-    except ValueError:
-        return None
+    for component in reversed(path.parts[:-1]):
+        if not _ISO_DATE.fullmatch(component):
+            continue
+        try:
+            return date.fromisoformat(component)
+        except ValueError:
+            return None
+    return None
 
 
 def select_date_range(paths: list[Path], *, after: str | None = None,
