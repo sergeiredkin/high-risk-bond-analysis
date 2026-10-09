@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from hybond.rag import ingest
+from hybond.rag.eval.runner import run
+from hybond.rag.golden import load_golden
 from hybond.rag.ingest import _extract_pdf_tables, _read_document, ingest_file
 from hybond.rag.manifest import load_manifest, validate_local_files
 from hybond.rag.search import search
@@ -94,6 +96,48 @@ def test_cbr_pdf_table_fixture_is_structured_and_page_cited(tmp_path):
         assert "14,0–14,51" not in prose
         hits = search(con, "ключевая ставка в среднем за год", doc_type="cbr_document")
         assert any(hit.section.startswith("table_") for hit in hits)
+    finally:
+        con.close()
+
+
+def test_pdf_table_candidate_quotes_and_document_disjoint_splits(tmp_path):
+    if not shutil.which("pdftotext"):
+        pytest.skip("poppler pdftotext is required for PDF fixture extraction")
+    documents = load_manifest(MANIFEST)
+    validate_local_files(documents, ROOT)
+    golden_path = ROOT / "eval/golden/ru_pdf_tables_candidate_v1.jsonl"
+    questions = load_golden(golden_path, documents)
+    assert len(questions) == 4
+    assert all(question.category == "macro_forecast" for question in questions)
+    evidence_by_split = {
+        split: {item["doc_sha256"] for question in questions if question.split == split
+                for item in question.evidence}
+        for split in ("dev", "test")
+    }
+    assert not evidence_by_split["dev"] & evidence_by_split["test"]
+
+    con = db.connect(tmp_path / "pdf-golden.sqlite")
+    db.init_db(con)
+    try:
+        for document in documents:
+            ingest_file(
+                con, ROOT / document.local_path, doc_type=document.doc_type,
+                source_url=document.source_url, source_kind="cbr_document",
+                authority_level="central_bank",
+            )
+        for question in questions:
+            for evidence in question.evidence:
+                chunks = con.execute(
+                    "SELECT section,text FROM rag_chunks WHERE doc_sha256=? AND page_no=?",
+                    (evidence["doc_sha256"], evidence["page"]),
+                ).fetchall()
+                assert any(evidence["quote"] in row["text"] for row in chunks)
+                assert any(row["section"].startswith("table_") for row in chunks)
+        for split in ("dev", "test"):
+            report = run(con, golden_path, MANIFEST, k=5, split=split)
+            assert report["question_count"] == 2
+            assert report["metrics"]["manual_review_answers"] == 2
+            assert all(isinstance(result["page_recall"], float) for result in report["results"])
     finally:
         con.close()
 
