@@ -173,6 +173,60 @@ def _table_html(table: dict) -> str:
     return "<table>" + "".join(rows) + "</table>"
 
 
+def _extract_pdf_tables(page: str) -> tuple[str, list[dict]]:
+    """Separate aligned PDF table rows from prose using pdftotext layout spacing.
+
+    This conservative fallback recognizes rows with at least four aligned cells
+    and three numeric cells. It preserves source cell strings but does not
+    infer merged-cell semantics, units, or column meaning.
+    """
+    lines = page.splitlines()
+    candidates: list[tuple[int, list[str]]] = []
+    for line_no, line in enumerate(lines):
+        cells = [cell.strip() for cell in re.split(r"[ \t]{2,}", line.strip()) if cell.strip()]
+        numeric_cells = sum(bool(re.search(r"\d", cell)) for cell in cells[1:])
+        if len(cells) >= 4 and numeric_cells >= 3:
+            candidates.append((line_no, cells))
+
+    groups: list[list[tuple[int, list[str]]]] = []
+    for candidate in candidates:
+        if not groups or candidate[0] != groups[-1][-1][0] + 1:
+            groups.append([])
+        groups[-1].append(candidate)
+
+    tables = []
+    removed: set[int] = set()
+    for group in groups:
+        start = group[0][0]
+        cell_count = len(group[0][1])
+        header_lines = [
+            line for line in lines[max(0, start - 4):start]
+            if re.fullmatch(r"[\s0-9()A-Za-zА-Яа-я/–—-]+", line)
+            and re.search(r"\b20\d{2}\b", line)
+        ]
+        years = list(dict.fromkeys(
+            year for line in header_lines for year in re.findall(r"\b20\d{2}\b", line)
+        ))
+        if len(group) < 2 and len(years) != cell_count - 1:
+            continue
+        rows = []
+        if len(years) == cell_count - 1:
+            rows.append([
+                {"tag": "th", "text": label, "colspan": 1, "rowspan": 1}
+                for label in ("Показатель", *years)
+            ])
+        for line_no, cells in group:
+            removed.add(line_no)
+            rows.append([
+                {"tag": "td", "text": cell, "colspan": 1, "rowspan": 1}
+                for cell in cells
+            ])
+        tables.append({"rows": rows})
+
+    prose = "\n".join(line for index, line in enumerate(lines) if index not in removed)
+    return prose, tables
+
+
 def _read_document(path: Path) -> tuple[list[str], list[list[dict]]]:
     """Read page text and structured HTML tables, using pdftotext for PDFs.
 
@@ -180,7 +234,8 @@ def _read_document(path: Path) -> tuple[list[str], list[list[dict]]]:
         ValueError: If PDF text extraction is unavailable or fails.
     """
     tables: list[dict] = []
-    if path.suffix.lower() == ".pdf":
+    is_pdf = path.suffix.lower() == ".pdf"
+    if is_pdf:
         try:
             result = subprocess.run(
                 ["pdftotext", "-layout", str(path), "-"],
@@ -189,6 +244,9 @@ def _read_document(path: Path) -> tuple[list[str], list[list[dict]]]:
         except (FileNotFoundError, subprocess.CalledProcessError) as exc:
             raise ValueError(f"cannot extract PDF text from {path}") from exc
         text = result.stdout
+        # pdftotext emits one final form-feed as a page terminator. Remove only
+        # that sentinel so a genuinely blank final page is still represented.
+        text = text.removesuffix("\f")
     else:
         text = path.read_text(encoding="utf-8", errors="replace")
         if path.suffix.lower() in {".html", ".htm"}:
@@ -199,8 +257,16 @@ def _read_document(path: Path) -> tuple[list[str], list[list[dict]]]:
             text = "".join(parser.parts)
             text = re.sub(r" +", " ", text)
             text = re.sub(r" *\n *", "\n", text)
-    pages = [page.strip() for page in text.replace("\r\n", "\n").split("\f")]
-    pages = pages or [""]
+    raw_pages = text.replace("\r\n", "\n").split("\f")
+    if is_pdf:
+        pages = []
+        tables_by_page = []
+        for raw_page in raw_pages:
+            prose, page_tables = _extract_pdf_tables(raw_page)
+            pages.append(prose.strip())
+            tables_by_page.append(page_tables)
+        return pages or [""], tables_by_page or [[]]
+    pages = [page.strip() for page in raw_pages] or [""]
     tables_by_page = [tables if index == 0 else [] for index in range(len(pages))]
     return pages, tables_by_page
 
