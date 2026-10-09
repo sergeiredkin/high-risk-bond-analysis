@@ -1,10 +1,16 @@
 """Lightweight, offline-first document ingestion for the RAG baseline."""
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
+import os
 import re
+import shutil
 import subprocess
+import tempfile
+import warnings
 from html import escape
 from html.parser import HTMLParser
 from pathlib import Path
@@ -271,6 +277,61 @@ def _read_document(path: Path) -> tuple[list[str], list[list[dict]]]:
     return pages, tables_by_page
 
 
+def _ocr_pdf_page(path: Path, page_no: int) -> tuple[str, float | None]:
+    """Optionally OCR one blank PDF page with local Tesseract.
+
+    OCR is disabled unless ``HYBOND_RAG_OCR=1``. It requires local
+    ``pdftoppm``, ``tesseract``, and the configured language data. Returned
+    confidence is the mean word confidence normalized to ``[0, 1]``.
+    """
+    enabled = os.environ.get("HYBOND_RAG_OCR", "").strip().casefold() in {"1", "true", "yes"}
+    if not enabled:
+        return "", None
+    missing = [tool for tool in ("pdftoppm", "tesseract") if shutil.which(tool) is None]
+    if missing:
+        warnings.warn(
+            f"local RAG OCR requested but tools are unavailable: {', '.join(missing)}",
+            RuntimeWarning, stacklevel=2,
+        )
+        return "", None
+
+    language = os.environ.get("HYBOND_RAG_OCR_LANGUAGE", "rus+eng")
+    try:
+        with tempfile.TemporaryDirectory(prefix="hybond-rag-ocr-") as tmp:
+            image_prefix = Path(tmp) / "page"
+            subprocess.run(
+                ["pdftoppm", "-f", str(page_no), "-l", str(page_no),
+                 "-singlefile", "-r", "200", "-png", str(path), str(image_prefix)],
+                check=True, capture_output=True, text=True, timeout=120,
+            )
+            image_path = image_prefix.with_suffix(".png")
+            result = subprocess.run(
+                ["tesseract", str(image_path), "stdout", "-l", language,
+                 "--psm", "6", "tsv"],
+                check=True, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=120,
+            )
+    except (OSError, subprocess.SubprocessError) as exc:
+        warnings.warn(f"local RAG OCR failed for {path} page {page_no}: {exc}",
+                      RuntimeWarning, stacklevel=2)
+        return "", None
+
+    words: list[str] = []
+    confidences: list[float] = []
+    for row in csv.DictReader(io.StringIO(result.stdout), delimiter="\t"):
+        word = (row.get("text") or "").strip()
+        try:
+            confidence = float(row.get("conf", "-1"))
+        except (TypeError, ValueError):
+            continue
+        if word and confidence >= 0:
+            words.append(word)
+            confidences.append(confidence)
+    if not words:
+        return "", None
+    return " ".join(words), round(sum(confidences) / len(confidences) / 100, 4)
+
+
 def _read_pages(path: Path) -> list[str]:
     """Read a document as page text, retaining a compatibility helper for callers."""
     return _read_document(path)[0]
@@ -333,6 +394,16 @@ def ingest_file(con, path: Path, *, doc_type: str = "unknown", isin: str | None 
         raise FileNotFoundError(path)
     digest = sha256_file(path)
     pages, tables_by_page = _read_document(path)
+    scanned_pages = [not page.strip() for page in pages]
+    ocr_confidences: list[float | None] = [None] * len(pages)
+    ocr_texts: list[str | None] = [None] * len(pages)
+    if path.suffix.lower() == ".pdf":
+        for index, is_scanned in enumerate(scanned_pages):
+            if is_scanned:
+                ocr_text, confidence = _ocr_pdf_page(path, index + 1)
+                if ocr_text:
+                    ocr_texts[index] = ocr_text
+                    ocr_confidences[index] = confidence
     document_text = " ".join(pages)
     metadata = extract_metadata(path, text=document_text)
     source_kind, authority_level = classify_source(document_text, source_kind, authority_level)
@@ -353,11 +424,18 @@ def ingest_file(con, path: Path, *, doc_type: str = "unknown", isin: str | None 
     con.execute("DELETE FROM rag_chunks_fts WHERE chunk_id LIKE ?", (digest + ":%",))
     chunk_count = 0
     for page_no, page in enumerate(pages, 1):
-        scanned = int(not page.strip())
+        scanned = int(scanned_pages[page_no - 1])
         con.execute(
-            "INSERT INTO rag_pages(doc_sha256,page_no,is_scanned) VALUES(?,?,?)",
-            (digest, page_no, scanned),
+            """INSERT INTO rag_pages(doc_sha256,page_no,is_scanned,ocr_confidence)
+               VALUES(?,?,?,?)""",
+            (digest, page_no, scanned, ocr_confidences[page_no - 1]),
         )
+        if ocr_texts[page_no - 1]:
+            con.execute(
+                """INSERT INTO rag_elements(doc_sha256,page_no,kind,text)
+                   VALUES(?,?,'ocr_text',?)""",
+                (digest, page_no, ocr_texts[page_no - 1]),
+            )
         for table in tables_by_page[page_no - 1]:
             rows_json = json.dumps(table["rows"], ensure_ascii=False, separators=(",", ":"))
             con.execute(

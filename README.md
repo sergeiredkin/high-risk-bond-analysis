@@ -193,6 +193,8 @@ model directory, then set `HYBOND_RAG_DENSE_INDEX` to that index and
 `HYBOND_RAG_MODEL_PATH` to the same local model directory for CLI/API retrieval.
 This path makes no cloud requests; NumPy and the encoder runtime are optional. `docs eval` runs the `dev` split by default; select `--split test` only for an explicit frozen-test evaluation and `--split all` for diagnostics.
 
+PDF OCR is separately opt-in: set `HYBOND_RAG_OCR=1` to use local `pdftoppm` and Tesseract (`HYBOND_RAG_OCR_LANGUAGE` defaults to `rus+eng`). OCR text and confidence are stored locally but are **not** added to retrieval until citation-confidence propagation and quality gates are validated. No OCR engine is installed automatically, and this path makes no network calls.
+
 The 72-question `eval/golden/ru_bonds_v2.jsonl` and 30-document fixture corpus are an agent-checked candidate, not a human-reviewed benchmark. See [`docs/rag/GOLDEN_SET_V2_CANDIDATE.md`](docs/rag/GOLDEN_SET_V2_CANDIDATE.md) for measured split results and known coverage gaps.
 
 See `docs/rag/PRODUCTION_READINESS_AUDIT.md` for the current RAG readiness limits; it is local-only and not an investment-decision answerer.
