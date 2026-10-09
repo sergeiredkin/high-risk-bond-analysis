@@ -51,6 +51,12 @@ def test_reviewed_fixture_corpus_integrity_and_split_isolation(tmp_path):
                 authority_level="issuer_disclosure",
             )
 
+        tables = con.execute(
+            "SELECT text,table_html FROM rag_elements WHERE kind='table'"
+        ).fetchall()
+        assert tables
+        assert all(json.loads(row["text"]) and row["table_html"].startswith("<table>") for row in tables)
+
         for question in questions:
             for evidence in question.evidence:
                 rows = con.execute(

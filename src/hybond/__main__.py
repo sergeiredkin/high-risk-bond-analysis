@@ -1685,7 +1685,7 @@ def cmd_docs(args) -> int:
                 if len(selected) >= max(0, args.limit):
                     break
                 from .rag.manifest import sha256_file
-                if sha256_file(path) not in known:
+                if args.reprocess or sha256_file(path) not in known:
                     selected.append(path)
                 if len(selected) >= args.limit:
                     break
@@ -2161,6 +2161,8 @@ def main(argv=None) -> int:
     pdd.add_argument("--source-kind", default="unknown")
     pdd.add_argument("--authority-level", default="unknown")
     pdd.add_argument("--limit", type=int, default=100)
+    pdd.add_argument("--reprocess", action="store_true",
+                      help="Reparse known hashes too; still bounded by --limit")
     pdd.add_argument("--since-days", type=float, help="Filter by filesystem modification time")
     pdd.add_argument("--since-date", help="Inclusive source date YYYY-MM-DD; requires date in path")
     pdd.add_argument("--until-date", help="Inclusive source date YYYY-MM-DD; requires date in path")
