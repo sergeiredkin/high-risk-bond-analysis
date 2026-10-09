@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import hashlib
-import html
 import re
 import subprocess
+from html.parser import HTMLParser
 from pathlib import Path
+from typing import ClassVar
 
 from .manifest import sha256_file
 from .registry import add_chunk, upsert_document
@@ -26,6 +27,59 @@ def extract_metadata(path: Path) -> dict[str, str | None]:
             "issuer_name": issuer}
 
 
+class _LayoutHTMLParser(HTMLParser):
+    """Extract visible HTML text while retaining row and cell boundaries."""
+
+    _BLOCKS: ClassVar[frozenset[str]] = frozenset({
+        "address", "article", "blockquote", "div", "h1", "h2", "h3",
+        "h4", "li", "p", "section",
+    })
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.skip_depth = 0
+        self.table_depth = 0
+        self.row_cells = 0
+
+    def handle_starttag(self, tag: str, _attrs) -> None:
+        if tag in {"script", "style"}:
+            self.skip_depth += 1
+            return
+        if self.skip_depth:
+            return
+        if tag == "table":
+            self.table_depth += 1
+            self.parts.append("\n")
+        elif tag == "tr":
+            self.row_cells = 0
+            self.parts.append("\n")
+        elif tag in {"td", "th"} and self.table_depth:
+            if self.row_cells:
+                self.parts.append("\t")
+            self.row_cells += 1
+        elif tag == "br" or tag in self._BLOCKS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"script", "style"}:
+            self.skip_depth = max(0, self.skip_depth - 1)
+            return
+        if self.skip_depth:
+            return
+        if tag == "tr":
+            self.parts.append("\n")
+        elif tag == "table":
+            self.table_depth = max(0, self.table_depth - 1)
+            self.parts.append("\n")
+        elif tag in self._BLOCKS:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self.skip_depth:
+            self.parts.append(data)
+
+
 def _read_pages(path: Path) -> list[str]:
     """Read a text-like document or a PDF with the system pdftotext tool."""
     if path.suffix.lower() == ".pdf":
@@ -40,9 +94,12 @@ def _read_pages(path: Path) -> list[str]:
     else:
         text = path.read_text(encoding="utf-8", errors="replace")
         if path.suffix.lower() in {".html", ".htm"}:
-            text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", text)
-            text = re.sub(r"(?s)<[^>]+>", " ", html.unescape(text))
-            text = re.sub(r"[ \t]+", " ", text)
+            parser = _LayoutHTMLParser()
+            parser.feed(text)
+            parser.close()
+            text = "".join(parser.parts)
+            text = re.sub(r" +", " ", text)
+            text = re.sub(r" *\n *", "\n", text)
     pages = [page.strip() for page in text.replace("\r\n", "\n").split("\f")]
     return pages or [""]
 

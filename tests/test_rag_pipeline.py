@@ -5,6 +5,29 @@ from hybond.rag.search import hybrid_search, reciprocal_rank_fusion, search, sni
 from hybond.store import db
 
 
+def test_html_table_rows_and_cells_remain_distinguishable(tmp_path):
+    source = tmp_path / "table.html"
+    source.write_text(
+        "<html><style>hide me</style><body><table>"
+        "<tr><th>Показатель</th><th>Значение</th></tr>"
+        "<tr><td>Купон</td><td>15,5%</td></tr>"
+        "</table><script>ignore me</script></body></html>",
+        encoding="utf-8",
+    )
+    con = db.connect(Path(":memory:"))
+    db.init_db(con)
+    indexed = ingest_file(con, source, doc_type="table_fixture")
+    page = " ".join(row[0] for row in con.execute(
+        "SELECT text FROM rag_chunks WHERE doc_sha256=? ORDER BY chunk_id",
+        (indexed["doc_sha256"],),
+    ))
+    assert "Показатель\tЗначение" in page
+    assert "Купон\t15,5%" in page
+    assert "hide me" not in page
+    assert "ignore me" not in page
+    con.close()
+
+
 def test_ingest_is_idempotent_and_search_returns_page_citation(tmp_path):
     source = tmp_path / "report.md"
     source.write_text("# Ликвидность\n\nЭмитент имеет достаточный запас ликвидности.\f"

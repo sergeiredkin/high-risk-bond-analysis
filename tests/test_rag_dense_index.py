@@ -67,6 +67,26 @@ def test_dense_search_returns_best_chunk_per_page_before_limit():
     assert [hit.chunk_id for hit in hits] == ["a1", "b1"]
 
 
+def test_failed_dense_index_write_leaves_no_partial_artifact(tmp_path: Path, monkeypatch):
+    np = pytest.importorskip("numpy")
+    con = db.connect(Path(":memory:"))
+    db.init_db(con)
+    source = tmp_path / "report.md"
+    source.write_text("# Риск\n\nТекст отчета.", encoding="utf-8")
+    ingest_file(con, source)
+    out = tmp_path / "dense-failed"
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError("simulated disk-full failure")
+
+    monkeypatch.setattr(np, "savez_compressed", fail_write)
+    with pytest.raises(OSError, match="simulated disk-full"):
+        build_index(con, out, FakeEncoder())
+    assert not out.exists()
+    assert not list(tmp_path.glob("dense-failed.*.tmp"))
+    con.close()
+
+
 def test_empty_dense_index_is_searchable(tmp_path: Path):
     pytest.importorskip("numpy")
     con = db.connect(Path(":memory:"))

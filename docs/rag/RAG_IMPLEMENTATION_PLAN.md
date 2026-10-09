@@ -1,7 +1,7 @@
 # HyBond RAG / Document Intelligence — Planning Phase
 
 **Status:** phased implementation; P0 foundation started
-**Date:** 2026-10-07
+**Date:** 2026-10-09
 **Source:** [`00-source-note.md`](00-source-note.md), adapted to the existing HyBond architecture
 
 ### Progress
@@ -11,22 +11,24 @@
 - **P2 retrieval seam complete:** reciprocal-rank fusion and an optional local dense encoder/index are available; `docs eval --dense-index ... --model-path ...` reports hybrid metrics alongside the FTS5 baseline. Usage and CLI details are in the [README command reference](../../README.md#slice-5-local-document-intelligence--rag). Dense models remain opt-in and are not installed automatically.
 - **Corpus bootstrap complete:** 30 e-disclosure documents plus `spravka_vdo.md` are indexed; 23 e-disclosure documents received issuer metadata (INN/ISIN) from document content. The spravka is tagged `hybond_reference_spravka` and is guidance/reference material, not authoritative issuer data. Manifest copies are in `docs/rag/corpus_manifest_v1.jsonl` and `eval/corpus/manifest_v1.jsonl`.
 - **Golden bootstrap complete:** 10 draft Russian questions, including abstention cases, are in `eval/golden/ru_bonds_v1.jsonl`. They are explicitly marked for human review and are not yet a frozen benchmark.
-- **Evaluation runner complete:** `hybond docs eval` now reports page recall@k, MRR, evidence-match rate, abstention accuracy, citation precision, per-question citations, and manual-review counts; reports are generated locally under `data/` when requested.
+- **Evaluation runner hardened:** `docs eval` defaults to dev, requires an explicit `--split test`, hashes golden/manifest inputs, and reports manual-only answer scores as null rather than zero. `eval-diff` rejects split/corpus mismatches; no quality threshold is enabled until human verification.
+- **Golden v2 candidate added:** 30 hashed e-disclosure fixtures across 10 issuers and 72 agent-checked questions with document-disjoint 42-question dev / 30-question test splits. It is not human-reviewed or frozen; held-out FTS5 page recall@5 0.833, citation precision 0.653, and abstention accuracy 0.000. See `GOLDEN_SET_V2_CANDIDATE.md`.
+- **HTML table fidelity improved:** standard-library parsing preserves HTML table row and cell boundaries in indexed text; structured financial table extraction and PDF layout/OCR remain incomplete.
 - **Production audit added:** `docs/rag/PRODUCTION_READINESS_AUDIT.md` lists every planned capability, current status, and the remaining gates.
 - **Retrieval iteration complete:** issuer/ISIN-scoped search, lightweight Russian stemming, candidate reranking, and better metadata-aware evaluation improved the bootstrap page recall@5 from 0.30 to 0.70 in local evaluation reports.
 - **Golden bootstrap expanded:** 15 draft questions now cover issuer disclosures and the spravka reference material.
 - **Facts bootstrap complete:** `hybond docs extract` populated provenance-bearing facts; facts remain `unverifiable` until reconciled with authoritative HyBond/MOEX data.
 - **Incremental ingestion wired:** `scripts/rag_ingest.sh` and the hourly filings job now hash-deduplicate recent e-disclosure HTML, ingest up to 100 new files per run, extract facts, and reconcile identifiers.
 - **Other-source ingestion wired:** `scripts/rag_ingest_sources.sh` continuously processes CBR documents, NKR/NRA rating pages, Nalog financial JSON, and HyBond factlists with source authority levels; use `hybond docs report` for live corpus counts.
-- **Source-aware retrieval and rollback bookkeeping added:** citations now expose source authority, retrieval applies a small authority tie-break, and index versions can be created, activated, and rolled back. Full atomic index builds remain future work.
+- **Source-aware retrieval and index safety added:** citations expose source authority; dense index artifacts are built under a temporary directory and atomically renamed, while SQLite version bookkeeping supports activation/rollback. Cross-store activation still is not transactional.
 - **Value telemetry added:** `hybond docs report` shows corpus coverage, fact/chunk counts, and observed query evidence rate. Query logging starts with new CLI queries; explicit human usefulness feedback is still needed.
 - **Local interface added:** `dashboard/rag.html` plus `scripts/rag_server.py` provide a localhost-only research page/API on port 8779, with citations and source authority visible.
 - **Current-risk router added:** issuer-name scoped questions such as «какие риски у эмитента на данный момент?» now use dated HyBond SQL analytics (health, spreads, events, ratings) rather than expecting a document to contain a literal current-risk sentence.
 - **Research filters added:** the local API/UI can restrict retrieval to official/financial sources and a document type (e-disclosure, CBR, Nalog, rating, or HyBond factlist).
 - **Query router added:** the local API/UI deterministically separates numeric facts, narrative evidence, mixed questions, current-risk SQL summaries, and out-of-scope requests before retrieval; the CLI still exposes the lower-level fact-or-retrieval path.
 - **Citation verification added:** retrieved citations include the exact evidence quote and are checked against the indexed document/page; evaluation now reports citation precision separately from page recall.
-- **Evaluation regression gate added:** `hybond docs eval-diff --baseline RUN_A --candidate RUN_B` compares quality metrics and exits non-zero when a configured drop is exceeded.
-- **Remaining:** expand and manually verify the golden set, then add measured P1-vs-P2 evaluation runs and the missing answer/fact/OCR production layers.
+- **Evaluation diff safety added:** `hybond docs eval-diff --baseline RUN_A --candidate RUN_B` rejects mismatched split, question count, k, or dataset hashes before comparing quality metrics. CI executes fixture integrity, quote, split-isolation, and offline FTS5 checks; it does not enforce an unverified retrieval threshold.
+- **Remaining:** independent human verification and broader financial questions; table/scanned/cross-document/conflict fixtures; a suitable pinned local multilingual model and measured dense-vs-FTS5 comparison; calibrated abstention; structured facts and verified local answer generation.
 
 ## 1. Decision
 

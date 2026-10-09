@@ -1,6 +1,7 @@
 """Run reproducible offline retrieval evaluations."""
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import datetime, timezone
@@ -39,34 +40,41 @@ def _result(question: GoldenQuestion, hits: list, k: int) -> dict:
 def _aggregate(results: list[dict]) -> dict:
     """Aggregate retrieval metrics for one ranked result set."""
     answerable = [r for r in results if r["answer_type"] != "none"]
+    scored_answers = [r for r in answerable if r["answer_evidence_match"] is not None]
     abstention = [r for r in results if r["answer_type"] == "none"]
+    manual_review = sum(r["answer_evidence_match"] is None for r in answerable)
     return {
         "page_recall_at_k": sum(r["page_recall"] for r in results) / len(results) if results else 0.0,
         "citation_precision_at_k": sum(r["citation_precision"] for r in results) / len(results) if results else 0.0,
         "mrr": sum(r["mrr"] for r in results) / len(results) if results else 0.0,
         "answerable_evidence_match_rate": (
-            sum(r["answer_evidence_match"] is True for r in answerable) / len(answerable)
-            if answerable else 0.0
+            sum(r["answer_evidence_match"] is True for r in scored_answers) / len(scored_answers)
+            if scored_answers else None
         ),
         "abstention_accuracy": (
             sum(r["abstention_correct"] is True for r in abstention) / len(abstention)
             if abstention else 0.0
         ),
-        "manual_review_text_answers": sum(
-            r["answer_evidence_match"] is None for r in answerable
-        ),
+        "manual_review_answers": manual_review,
+        "manual_review_text_answers": manual_review,
     }
 
 
 def run(con, golden_path: Path, manifest_path: Path, *, k: int = 5,
-        run_id: str | None = None, dense_index=None) -> dict:
+        split: str = "dev", run_id: str | None = None, dense_index=None) -> dict:
     """Evaluate retrieval against a validated golden set and return JSON data.
 
     The runner deliberately evaluates retrieval and evidence grounding, not
     subjective narrative quality. Text answers remain marked for manual review.
     """
+    if split not in {"dev", "test", "all"}:
+        raise ValueError("split must be 'dev', 'test', or 'all'")
     documents = load_manifest(manifest_path)
     questions = load_golden(golden_path, documents)
+    if split != "all":
+        questions = [question for question in questions if question.split == split]
+    if not questions:
+        raise ValueError(f"golden set has no questions for split {split!r}")
     results = []
     baseline_results = []
     for question in questions:
@@ -89,7 +97,12 @@ def run(con, golden_path: Path, manifest_path: Path, *, k: int = 5,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "golden_path": str(golden_path),
         "manifest_path": str(manifest_path),
+        "dataset_sha256": {
+            "golden": hashlib.sha256(golden_path.read_bytes()).hexdigest(),
+            "manifest": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        },
         "k": k,
+        "split": split,
         "question_count": len(results),
         "retrieval_mode": "hybrid_rrf" if dense_index is not None else "fts5",
         "metrics": _aggregate(results),
