@@ -16,7 +16,20 @@ def load_report(path: Path) -> dict:
 
 
 def compare(baseline: dict, candidate: dict, *, max_drop: float = 0.02) -> dict:
-    """Compare quality metrics and mark regressions beyond the allowed drop."""
+    """Compare compatible eval reports; reject split or corpus mismatches."""
+    compatibility_errors = []
+    for field in ("split", "k", "question_count", "dataset_sha256"):
+        before, after = baseline.get(field), candidate.get(field)
+        if before != after and (before is not None or after is not None):
+            compatibility_errors.append(field)
+    if compatibility_errors:
+        return {
+            "passed": False,
+            "max_drop": max_drop,
+            "regressions": [],
+            "compatibility_errors": compatibility_errors,
+            "metrics": {},
+        }
     base = baseline.get("metrics", {})
     current = candidate.get("metrics", {})
     metrics = {}
@@ -32,5 +45,5 @@ def compare(baseline: dict, candidate: dict, *, max_drop: float = 0.02) -> dict:
         metrics[name] = item
         if item["regression"]:
             regressions.append(name)
-    return {"passed": not regressions, "max_drop": max_drop,
-            "regressions": regressions, "metrics": metrics}
+    return {"passed": bool(metrics) and not regressions, "max_drop": max_drop,
+            "regressions": regressions, "compatibility_errors": [], "metrics": metrics}

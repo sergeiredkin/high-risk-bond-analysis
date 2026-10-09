@@ -1,11 +1,11 @@
 # HyBond RAG Production-Readiness Audit
 
-**Audit date:** 2026-10-08
+**Audit date:** 2026-10-09
 **Scope:** original `docs/rag/RAG_IMPLEMENTATION_PLAN.md` and current implementation
 
 ## Executive result
 
-**Not production-ready.** The current system is a useful P0/P1 retrieval prototype with an evaluation runner, but it is not yet a complete cited answering system. The evaluation is intentionally a baseline; its draft golden set and retrieval/abstention behavior are not sufficient to trust answers. A local research UI/API exists, but it does not generate answers.
+**Not production-ready.** The system remains a P0/P1 retrieval prototype, not a complete cited answering system. A 72-question, 10-issuer agent-checked fixture candidate is now available with document-disjoint dev/test splits, but it is not human-verified, has no table/scan/cross-document coverage, and reports weak held-out retrieval and zero abstention accuracy. A local research UI/API exists, but it does not generate answers. See [`GOLDEN_SET_V2_CANDIDATE.md`](GOLDEN_SET_V2_CANDIDATE.md).
 
 Baseline command:
 
@@ -25,16 +25,16 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | SHA-256 manifest and deduplication | **Done** | `rag/manifest.py`, registry |
 | SQLite document/page/chunk registry | **Done** | `rag/registry.py`; migrated production DB |
 | Source registry and authority levels | **Done (bootstrap)** | source_kind/authority_level stored for CBR, ratings, Nalog, factlists, e-disclosure, and reference material |
-| Basic local ingestion | **Partial** | text/HTML and `pdftotext`; no layout parser |
+| Basic local ingestion | **Partial** | text/HTML and `pdftotext`; standard-library HTML parsing now preserves table row/cell boundaries, but PDF layout elements and bounding boxes are absent |
 | Incremental indexing | **Partial** | hourly bounded ingestion now hash-deduplicates multiple source directories; no index build/version switch |
 | Page-aware chunks and citations | **Partial** | page numbers work; no bounding boxes or reliable PDF elements |
 | FTS5/BM25 baseline | **Done** | `rag/search.py` |
-| Evaluation runner | **Partial** | retrieval/evidence metrics include citation precision; `docs eval --dense-index ... --model-path ...` reports hybrid metrics alongside the FTS5 baseline; no answer-generation evaluation |
+| Evaluation runner | **Partial** | dev is the default split; frozen test is opt-in; reports hash the golden/manifest and eval-diff rejects split/corpus mismatches. The v2 candidate is agent-checked, not human-reviewed; narrative answer scoring remains manual |
 | Dense embeddings | **Partial** | optional local encoder/index is integrated into CLI/API retrieval via `HYBOND_RAG_DENSE_INDEX` + `HYBOND_RAG_MODEL_PATH`, with issuer/source/type filtering and RRF; no pinned model or quality comparison yet |
 | RRF hybrid retrieval | **Partial** | CLI/API fuse filtered local dense hits with FTS results; retrieval quality has not been compared against dense results |
 | Cross-encoder reranking | **Missing** | not implemented |
 | OCR for scanned Cyrillic PDFs | **Missing** | blank pages are marked scanned but not OCR'd |
-| Tables as structured data | **Missing** | HTML is flattened to text |
+| Tables as structured data | **Partial** | HTML row/cell separators are retained as text and covered by a synthetic parser test; no structured table extraction or financial-table benchmark |
 | Page rendering/visual retrieval | **Missing** | no images, bbox, ColPali/ColQwen path |
 | Structured fact extraction | **Partial** | conservative rule extractor now stores INN/ISIN/explicit unpaid amounts; coupons, schedules, covenants, financials, and LLM-assisted extraction remain |
 | MOEX/HyBond reconciliation | **Partial** | INN/ISIN matching now marks match/mismatch; monetary facts remain unverifiable and full source-priority reconciliation is pending |
@@ -42,23 +42,22 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | Query routing | **Partial** | The local API/UI applies deterministic numeric/narrative/mixed/current-risk/out-of-scope routing; the CLI still exposes a lower-level fact-or-retrieval path and local answer generation remains missing |
 | Local answer generation | **Missing** | CLI returns retrieved evidence only |
 | Citation verification/abstention | **Partial** | retrieved citations now carry exact quotes and are checked against indexed document/page; claim-level generated-answer verification remains |
-| Versioned indexes/rollback | **Partial** | create/activate/rollback bookkeeping now exists; atomic index build/switch is still pending |
+| Versioned indexes/rollback | **Partial** | dense artifact builds use a temporary directory and atomic rename; rollback bookkeeping exists, but artifact activation is not transactionally coupled to SQLite version state |
 | Tracing/access control | **Partial** | local query telemetry logs route, hit count, top-source authority, abstention, and feedback; access control remains intentionally local-only |
 | E-disclosure ingestion integration | **Partial** | incremental `docs ingest-dir` is wired into hourly filings for recent local raw files; bounded, explicit-date historical backfill is available manually (see the [README command reference](../../README.md#slice-5-local-document-intelligence--rag)); downloader/source coverage remains |
 | HyBond `spravka_vdo.md` reference corpus | **Done (bootstrap)** | indexed as `hybond_reference_spravka`; useful domain guidance, not an authoritative issuer-data source |
-| Evaluation CI and eval diff | **Partial** | `hybond docs eval-diff` compares baseline/candidate metrics and exits non-zero on regression; the GitHub Actions workflow runs lint, compile checks, and offline pytest, but does not run eval-diff |
+| Evaluation CI and eval diff | **Partial** | CI now runs the committed v2 corpus integrity/split-isolation evaluation test; eval-diff checks comparable splits and dataset hashes, but no quality threshold is enabled because the candidate is not human-verified |
 | FastAPI/dashboard research interface | **Partial** | local-only stdlib RAG page/API at port 8779; no generated-answer panel or production auth |
 
 ## Required order to become production-ready
 
 ### RAG-1 — Retrieval correctness gate
 
-1. Expand the golden set to 60–100 questions across at least 10 issuers.
-2. Manually verify every expected value and evidence page.
-3. Continue improving Russian stemming/synonym handling and query intent routing; issuer/ISIN scope and basic stemming are now implemented.
-4. Select and document a pinned locally cached multilingual model.
-5. Compare FTS5 vs hybrid retrieval on the frozen dev set.
-6. Set acceptance thresholds only after the corpus and questions are manually verified.
+1. A 72-question, 10-issuer agent-checked candidate and document-disjoint dev/test split now exist; the benchmark is still not manually verified or frozen.
+2. The held-out candidate result is page recall@5 0.833, citation precision 0.653, and abstention accuracy 0.000; all 20 answerable items still require manual scoring, and these results do not pass an acceptance gate.
+3. No suitable cached multilingual embedding model was found; the cached English MiniLM model is not used for Russian quality claims.
+4. Compare FTS5 vs hybrid retrieval only after a suitable local model and human-reviewed benchmark are available.
+5. Set thresholds only after the corpus/questions have been independently verified.
 
 **Gate:** page recall@5 and citation precision targets met on dev; frozen test remains untouched.
 

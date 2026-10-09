@@ -85,12 +85,12 @@ def expected_in_hits(expected: object, answer_type: str, hits: list) -> bool | N
 
 
 def page_recall(hits: list, evidence: tuple[dict, ...]) -> float:
-    """Return 1 when at least one expected document/page was retrieved."""
+    """Return the fraction of required document/pages retrieved at k."""
     if not evidence:
         return 0.0
     expected = {(item["doc_sha256"], item["page"]) for item in evidence}
     actual = {(hit.doc_sha256, hit.page_no) for hit in hits}
-    return float(bool(expected & actual))
+    return len(expected & actual) / len(expected)
 
 
 def citation_precision(hits: list, evidence: tuple[dict, ...]) -> float:

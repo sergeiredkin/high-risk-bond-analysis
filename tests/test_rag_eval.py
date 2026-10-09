@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from hybond.rag.eval.metrics import citation_precision, expected_in_hits
+from hybond.rag.eval.metrics import citation_precision, expected_in_hits, page_recall
 from hybond.rag.eval.runner import run
 from hybond.rag.ingest import ingest_file
 from hybond.store import db
@@ -26,6 +26,16 @@ def test_numeric_and_boolean_expected_values_match_russian_evidence():
     assert expected_in_hits(False, "boolean", [fulfilled]) is None
     ambiguous = SearchHit("g", "doc", 1, "", "Нет данных о невыплате.", 1)
     assert expected_in_hits(False, "boolean", [ambiguous]) is None
+
+
+def test_page_recall_requires_all_pages_for_cross_document_evidence():
+    from hybond.rag.search import SearchHit
+    evidence = ({"doc_sha256": "doc-a", "page": 1},
+                {"doc_sha256": "doc-b", "page": 1})
+    one = SearchHit("a", "doc-a", 1, "", "a", 1)
+    two = SearchHit("b", "doc-b", 1, "", "b", 1)
+    assert page_recall([one], evidence) == 0.5
+    assert page_recall([one, two], evidence) == 1.0
 
 
 def test_citation_precision_counts_only_relevant_retrieved_pages():
@@ -56,10 +66,19 @@ def test_eval_reports_page_recall_and_abstention(tmp_path):
         {"qid": "Q2", "split": "dev", "question": "несуществующий ковенант",
          "category": "covenant", "answer_type": "none", "expected": None,
          "evidence": [], "requires": []},
+        {"qid": "Q3", "split": "test", "question": "замороженный тестовый вопрос",
+         "category": "covenant", "answer_type": "none", "expected": None,
+         "evidence": [], "requires": []},
     ]) + "\n", encoding="utf-8")
 
     report = run(con, golden, manifest, k=3)
     assert report["question_count"] == 2
+    assert report["split"] == "dev"
+    test_report = run(con, golden, manifest, k=3, split="test")
+    assert test_report["question_count"] == 1
+    assert test_report["split"] == "test"
+    all_report = run(con, golden, manifest, k=3, split="all")
+    assert all_report["question_count"] == 3
     assert report["retrieval_mode"] == "fts5"
     assert report["metrics"]["page_recall_at_k"] == 0.5
     assert report["metrics"]["abstention_accuracy"] == 1.0

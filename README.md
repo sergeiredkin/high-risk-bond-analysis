@@ -175,7 +175,7 @@ hybond docs ask "ВОПРОС" [--company NAME] [--issuer-inn INN] [--isin ISIN]
                                      search indexed documents or SQL facts and show citations
 hybond docs extract [--doc-sha256 SHA]
                                      extract conservative structured facts into SQLite
-hybond docs eval --golden FILE --manifest FILE [--k N] [--out FILE]
+hybond docs eval --golden FILE --manifest FILE [--split dev|test|all] [--k N] [--out FILE]
                                      retrieval/citation/abstention evaluation
 hybond docs eval --golden FILE --manifest FILE --dense-index DIR --model-path DIR
                                      compare hybrid metrics with the FTS5 baseline
@@ -189,7 +189,9 @@ hybond docs report                  corpus coverage and observed query value
 Dense retrieval is disabled by default. To opt in, build an index from a local
 model directory, then set `HYBOND_RAG_DENSE_INDEX` to that index and
 `HYBOND_RAG_MODEL_PATH` to the same local model directory for CLI/API retrieval.
-This path makes no cloud requests; NumPy and the encoder runtime are optional.
+This path makes no cloud requests; NumPy and the encoder runtime are optional. `docs eval` runs the `dev` split by default; select `--split test` only for an explicit frozen-test evaluation and `--split all` for diagnostics.
+
+The 72-question `eval/golden/ru_bonds_v2.jsonl` and 30-document fixture corpus are an agent-checked candidate, not a human-reviewed benchmark. See [`docs/rag/GOLDEN_SET_V2_CANDIDATE.md`](docs/rag/GOLDEN_SET_V2_CANDIDATE.md) for measured split results and known coverage gaps.
 
 See `docs/rag/PRODUCTION_READINESS_AUDIT.md` for the current RAG readiness limits; it is local-only and not an investment-decision answerer.
 
