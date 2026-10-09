@@ -9,6 +9,7 @@ on:
       - 'src/hybond/__main__.py'
       - 'src/hybond/store/db.py'
       - 'scripts/rag_server.py'
+      - 'scripts/make_rag_synthetic_scan.py'
       - 'scripts/rag_ingest.sh'
       - 'scripts/rag_ingest_sources.sh'
       - 'scripts/hourly_filings.sh'
@@ -33,8 +34,8 @@ jobs:
       - name: Install PDF text tooling
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - name: Lint RAG implementation
-        run: ruff check src/hybond/rag scripts/rag_server.py tests/test_rag_*.py
+        run: ruff check src/hybond/rag scripts/rag_server.py scripts/make_rag_synthetic_scan.py tests/test_rag_*.py
       - name: Compile RAG implementation
-        run: python -m compileall -q src/hybond/rag scripts/rag_server.py
+        run: python -m compileall -q src/hybond/rag scripts/rag_server.py scripts/make_rag_synthetic_scan.py
       - name: Run test suite
         run: PYTHONPATH=src python -m pytest -q

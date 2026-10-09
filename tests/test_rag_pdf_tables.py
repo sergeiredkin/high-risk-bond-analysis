@@ -100,6 +100,33 @@ def test_cbr_pdf_table_fixture_is_structured_and_page_cited(tmp_path):
         con.close()
 
 
+def test_synthetic_scan_surrogate_is_detected_but_not_indexed(tmp_path, monkeypatch):
+    if not shutil.which("pdftotext"):
+        pytest.skip("poppler pdftotext is required for PDF fixture extraction")
+    monkeypatch.delenv("HYBOND_RAG_OCR", raising=False)
+    source = ROOT / "eval/corpus/fixtures_doc_fidelity_v1/cbr/comment_page2_synthetic_scan.pdf"
+    pages, tables = _read_document(source)
+    assert pages == [""]
+    assert tables == [[]]
+
+    con = db.connect(tmp_path / "synthetic-scan.sqlite")
+    db.init_db(con)
+    try:
+        result = ingest_file(con, source, doc_type="synthetic_scan_test")
+        assert result["pages"] == 1
+        page = con.execute(
+            "SELECT is_scanned,ocr_confidence FROM rag_pages WHERE doc_sha256=?",
+            (result["doc_sha256"],),
+        ).fetchone()
+        assert tuple(page) == (1, None)
+        assert con.execute(
+            "SELECT COUNT(*) FROM rag_chunks WHERE doc_sha256=?",
+            (result["doc_sha256"],),
+        ).fetchone()[0] == 0
+    finally:
+        con.close()
+
+
 def test_pdf_table_candidate_quotes_and_document_disjoint_splits(tmp_path):
     if not shutil.which("pdftotext"):
         pytest.skip("poppler pdftotext is required for PDF fixture extraction")
