@@ -1,10 +1,31 @@
 import json
 from pathlib import Path
 
-from hybond.rag.eval.metrics import citation_precision
+from hybond.rag.eval.metrics import citation_precision, expected_in_hits
 from hybond.rag.eval.runner import run
 from hybond.rag.ingest import ingest_file
 from hybond.store import db
+
+
+def test_numeric_and_boolean_expected_values_match_russian_evidence():
+    from hybond.rag.search import SearchHit
+    hit = SearchHit("c", "doc", 1, "", "Сумма 67 800 000,00 руб. Эмитент не исполнил обязанность.", 1)
+    assert expected_in_hits({"value": 67800000, "unit": "RUB"}, "numeric", [hit]) is True
+    assert expected_in_hits(67800000, "numeric", [hit]) is False
+    percent = SearchHit("p", "doc", 1, "", "Коэффициент 100%.", 1)
+    rubles = SearchHit("r", "doc", 1, "", "Сумма 100 руб.", 1)
+    assert expected_in_hits(100, "numeric", [percent]) is False
+    assert expected_in_hits({"value": 100, "unit": "percent"}, "numeric", [percent]) is True
+    assert expected_in_hits({"value": 100, "unit": "RUB"}, "numeric", [rubles]) is True
+    assert expected_in_hits(True, "boolean", [hit]) is None
+    insufficient = SearchHit("d", "doc", 1, "", "Смотреть только на букву рейтинга недостаточно.", 1)
+    assert expected_in_hits(False, "boolean", [insufficient]) is None
+    contradictory = SearchHit("e", "doc", 1, "", "Неисполнение обязанности исключено.", 1)
+    assert expected_in_hits(True, "boolean", [contradictory]) is None
+    fulfilled = SearchHit("f", "doc", 1, "", "Эмитент исполнил обязанность и выплатил купон.", 1)
+    assert expected_in_hits(False, "boolean", [fulfilled]) is None
+    ambiguous = SearchHit("g", "doc", 1, "", "Нет данных о невыплате.", 1)
+    assert expected_in_hits(False, "boolean", [ambiguous]) is None
 
 
 def test_citation_precision_counts_only_relevant_retrieved_pages():
@@ -39,6 +60,20 @@ def test_eval_reports_page_recall_and_abstention(tmp_path):
 
     report = run(con, golden, manifest, k=3)
     assert report["question_count"] == 2
+    assert report["retrieval_mode"] == "fts5"
     assert report["metrics"]["page_recall_at_k"] == 0.5
     assert report["metrics"]["abstention_accuracy"] == 1.0
+
+    class DenseFixture:
+        def search(self, _question, limit=5, **_filters):
+            from hybond.rag.search import SearchHit
+            row = con.execute(
+                "SELECT chunk_id,doc_sha256,page_no,section,text FROM rag_chunks LIMIT 1"
+            ).fetchone()
+            return [SearchHit(row[0], row[1], row[2], row[3] or "", row[4], 1.0)][:limit]
+
+    hybrid_report = run(con, golden, manifest, k=3, dense_index=DenseFixture())
+    assert hybrid_report["retrieval_mode"] == "hybrid_rrf"
+    assert hybrid_report["baseline_metrics"] == report["metrics"]
+    assert "citation_precision_at_k" in hybrid_report["metrics"]
     con.close()

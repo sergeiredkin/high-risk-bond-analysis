@@ -1660,7 +1660,6 @@ def cmd_moex_defaults(args) -> int:
 def cmd_docs(args) -> int:
     """Run the dependency-free document registry and retrieval commands."""
     from .rag import ingest as rag_ingest
-    from .rag import search as rag_search
     from .store import db
 
     con = db.connect()
@@ -1671,14 +1670,20 @@ def cmd_docs(args) -> int:
             from .rag.facts import extract_document_facts
             from .rag.reconcile import reconcile_document_facts
             root = Path(args.root)
-            files = sorted((path for path in root.glob(args.pattern) if path.is_file()),
-                           key=lambda path: path.stat().st_mtime)
+            files = [path for path in root.glob(args.pattern) if path.is_file()]
+            if args.since_date or args.until_date:
+                from .rag.backfill import select_date_range
+                files = select_date_range(files, after=args.since_date, before=args.until_date)
+            else:
+                files.sort(key=lambda path: path.stat().st_mtime)
             if args.since_days is not None:
                 cutoff = time.time() - args.since_days * 86400
                 files = [path for path in files if path.stat().st_mtime >= cutoff]
             known = {row[0] for row in con.execute("SELECT doc_sha256 FROM rag_documents")}
             selected = []
             for path in files:
+                if len(selected) >= max(0, args.limit):
+                    break
                 from .rag.manifest import sha256_file
                 if sha256_file(path) not in known:
                     selected.append(path)
@@ -1724,7 +1729,8 @@ def cmd_docs(args) -> int:
                           abstained=fact_answer["status"] != "found")
                 print(json.dumps(fact_answer, ensure_ascii=False, indent=2))
                 return 0
-            hits = rag_search.hybrid_search(
+            from .rag.retrieval import retrieve
+            hits = retrieve(
                 con, args.question, limit=args.limit,
                 issuer_inn=args.issuer_inn, isin=args.isin,
             )
@@ -1741,10 +1747,25 @@ def cmd_docs(args) -> int:
             return 0
         if args.docs_cmd == "eval":
             from .rag.eval.runner import run, write_report
-            report = run(con, Path(args.golden), Path(args.manifest), k=args.k)
+            dense_index = None
+            if args.dense_index or args.model_path:
+                if not args.dense_index or not args.model_path:
+                    raise ValueError("--dense-index and --model-path must be used together")
+                from .rag.dense import LocalDenseEncoder
+                from .rag.dense_index import DenseIndex
+                dense_index = DenseIndex.load(Path(args.dense_index),
+                                              LocalDenseEncoder(Path(args.model_path)))
+            report = run(con, Path(args.golden), Path(args.manifest), k=args.k,
+                         dense_index=dense_index)
             if args.out:
                 write_report(report, Path(args.out))
             print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 0
+        if args.docs_cmd == "dense-index":
+            from .rag.dense import LocalDenseEncoder
+            from .rag.dense_index import build_index
+            count = build_index(con, Path(args.out), LocalDenseEncoder(Path(args.model_path)))
+            print(json.dumps({"indexed_chunks": count, "path": args.out}, ensure_ascii=False))
             return 0
         if args.docs_cmd == "eval-diff":
             from .rag.eval.diff import compare, load_report
@@ -2140,7 +2161,9 @@ def main(argv=None) -> int:
     pdd.add_argument("--source-kind", default="unknown")
     pdd.add_argument("--authority-level", default="unknown")
     pdd.add_argument("--limit", type=int, default=100)
-    pdd.add_argument("--since-days", type=float)
+    pdd.add_argument("--since-days", type=float, help="Filter by filesystem modification time")
+    pdd.add_argument("--since-date", help="Inclusive source date YYYY-MM-DD; requires date in path")
+    pdd.add_argument("--until-date", help="Inclusive source date YYYY-MM-DD; requires date in path")
     pdd.set_defaults(func=cmd_docs)
     pda = docs_sub.add_parser("ask", help="Search indexed documents and show citations")
     pda.add_argument("question")
@@ -2154,7 +2177,13 @@ def main(argv=None) -> int:
     pde.add_argument("--manifest", required=True)
     pde.add_argument("--k", type=int, default=5)
     pde.add_argument("--out")
+    pde.add_argument("--dense-index", help="Optional local dense index for a BM25-vs-hybrid comparison")
+    pde.add_argument("--model-path", help="Local encoder model path; required with --dense-index")
     pde.set_defaults(func=cmd_docs)
+    pdi = docs_sub.add_parser("dense-index", help="Build an optional local dense chunk index")
+    pdi.add_argument("--model-path", required=True)
+    pdi.add_argument("--out", required=True)
+    pdi.set_defaults(func=cmd_docs)
     ped = docs_sub.add_parser("eval-diff", help="Fail when an eval report regresses")
     ped.add_argument("--baseline", required=True)
     ped.add_argument("--candidate", required=True)

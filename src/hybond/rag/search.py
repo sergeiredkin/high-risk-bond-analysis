@@ -150,13 +150,40 @@ def reciprocal_rank_fusion(*ranked_lists: list[SearchHit], limit: int = 8, k: in
 def hybrid_search(con: sqlite3.Connection, question: str, limit: int = 8,
                   dense_hits: list[SearchHit] | None = None,
                   *, issuer_inn: str | None = None, isin: str | None = None,
-                  source_scope: str = "all", doc_type: str | None = None) -> list[SearchHit]:
+                  source_scope: str = "all", doc_type: str | None = None,
+                  sparse_limit: int | None = None) -> list[SearchHit]:
     """Fuse sparse results with optional dense results using reciprocal rank fusion.
 
     The dense provider is deliberately injected. This keeps the default install
     offline and dependency-free while allowing BGE-M3 or another local model to
     be added in P2 without changing the answer layer.
     """
-    sparse_hits = search(con, question, limit, issuer_inn=issuer_inn, isin=isin,
+    sparse_hits = search(con, question, sparse_limit or limit, issuer_inn=issuer_inn, isin=isin,
                          source_scope=source_scope, doc_type=doc_type)
-    return reciprocal_rank_fusion(sparse_hits, dense_hits or [], limit=limit) if dense_hits else sparse_hits
+    if not dense_hits:
+        return sparse_hits
+    filters = []
+    params: list = []
+    if issuer_inn and issuer_inn != "unknown":
+        filters.append("d.issuer_inn = ?")
+        params.append(issuer_inn)
+    if isin and isin != "unknown":
+        filters.append("d.isin = ?")
+        params.append(isin)
+    if doc_type and doc_type != "all":
+        filters.append("d.doc_type = ?")
+        params.append(doc_type)
+    if source_scope == "official":
+        filters.append("d.authority_level IN (?, ?, ?, ?)")
+        params.extend(("official", "issuer_disclosure", "financial_source", "rating_source"))
+    elif source_scope not in {"all", "official"}:
+        raise ValueError("source_scope must be 'all' or 'official'")
+    ids = [hit.chunk_id for hit in dense_hits]
+    placeholders = ",".join("?" for _ in ids)
+    clauses = [f"c.chunk_id IN ({placeholders})", *filters]
+    allowed = {row[0] for row in con.execute(
+        f"SELECT c.chunk_id FROM rag_chunks c JOIN rag_documents d "
+        f"ON d.doc_sha256=c.doc_sha256 WHERE {' AND '.join(clauses)}", [*ids, *params]
+    )}
+    filtered_dense = [hit for hit in dense_hits if hit.chunk_id in allowed]
+    return reciprocal_rank_fusion(sparse_hits, filtered_dense, limit=limit)

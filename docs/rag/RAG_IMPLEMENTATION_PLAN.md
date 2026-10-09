@@ -8,7 +8,7 @@
 
 - **P0 foundation complete:** source note copied, manifest/golden validators added, SQLite registry migrations added, and offline tests added.
 - **P1 baseline complete:** local text/Markdown/PDF-text ingestion, page-aware chunks, FTS5 retrieval, citations, and `hybond docs ingest/ask` CLI commands.
-- **P2 retrieval seam complete:** reciprocal-rank fusion and an optional local dense encoder are available; dense models remain opt-in and are not installed automatically.
+- **P2 retrieval seam complete:** reciprocal-rank fusion and an optional local dense encoder/index are available; `docs eval --dense-index ... --model-path ...` reports hybrid metrics alongside the FTS5 baseline. Usage and CLI details are in the [README command reference](../../README.md#slice-5-local-document-intelligence--rag). Dense models remain opt-in and are not installed automatically.
 - **Corpus bootstrap complete:** 30 e-disclosure documents plus `spravka_vdo.md` are indexed; 23 e-disclosure documents received issuer metadata (INN/ISIN) from document content. The spravka is tagged `hybond_reference_spravka` and is guidance/reference material, not authoritative issuer data. Manifest copies are in `docs/rag/corpus_manifest_v1.jsonl` and `eval/corpus/manifest_v1.jsonl`.
 - **Golden bootstrap complete:** 10 draft Russian questions, including abstention cases, are in `eval/golden/ru_bonds_v1.jsonl`. They are explicitly marked for human review and are not yet a frozen benchmark.
 - **Evaluation runner complete:** `hybond docs eval` now reports page recall@k, MRR, evidence-match rate, abstention accuracy, citation precision, per-question citations, and manual-review counts; reports are generated locally under `data/` when requested.
@@ -97,7 +97,7 @@ existing HyBond DB / e-disclosure metadata
 
 **Phase 1:** keep SQLite for registry, metadata, facts, FTS5, evaluation results, and document-to-issuer relationships. Store PDFs/page images outside SQLite under `data/rag/` using content-addressed paths.
 
-**Phase 2:** add a local vector store only after the baseline is measured. Qdrant local mode is suitable if dense or multivector search is actually needed. Do not make Qdrant, PyTorch, OCR, or visual models mandatory for the normal HyBond install.
+**Phase 2:** a local NumPy dense index is now available as an opt-in retrieval provider; use the existing SearchHit/RRF seam. Do not make dense-model dependencies, Qdrant, PyTorch, OCR, or visual models mandatory for the normal HyBond install.
 
 This controls database growth: the SQLite database keeps searchable metadata and facts, while large binary files and replaceable indexes remain outside the primary database.
 

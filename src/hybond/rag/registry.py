@@ -120,6 +120,11 @@ def init_registry(con: sqlite3.Connection) -> None:
         con.execute("CREATE VIRTUAL TABLE rag_chunks_fts USING fts5(chunk_id UNINDEXED, text, section)")
         for chunk in con.execute("SELECT chunk_id, text, section FROM rag_chunks"):
             con.execute("INSERT INTO rag_chunks_fts(chunk_id,text,section) VALUES(?,?,?)", tuple(chunk))
+    con.execute(
+        """UPDATE rag_documents SET source_kind='hybond_factlist',
+           authority_level='derived_analysis' WHERE doc_type='hybond_factlist'
+           AND (source_kind != 'hybond_factlist' OR authority_level != 'derived_analysis')"""
+    )
 
 
 def upsert_document(con: sqlite3.Connection, document: dict) -> None:

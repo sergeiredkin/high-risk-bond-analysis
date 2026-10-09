@@ -29,9 +29,9 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | Incremental indexing | **Partial** | hourly bounded ingestion now hash-deduplicates multiple source directories; no index build/version switch |
 | Page-aware chunks and citations | **Partial** | page numbers work; no bounding boxes or reliable PDF elements |
 | FTS5/BM25 baseline | **Done** | `rag/search.py` |
-| Evaluation runner | **Partial** | retrieval/evidence metrics now include citation precision; no answer-generation evaluation |
-| Dense embeddings | **Scaffold only** | optional adapter; no local model/index currently built |
-| RRF hybrid retrieval | **Done** | injection seam exists; not validated against dense results |
+| Evaluation runner | **Partial** | retrieval/evidence metrics include citation precision; `docs eval --dense-index ... --model-path ...` reports hybrid metrics alongside the FTS5 baseline; no answer-generation evaluation |
+| Dense embeddings | **Partial** | optional local encoder/index is integrated into CLI/API retrieval via `HYBOND_RAG_DENSE_INDEX` + `HYBOND_RAG_MODEL_PATH`, with issuer/source/type filtering and RRF; no pinned model or quality comparison yet |
+| RRF hybrid retrieval | **Partial** | CLI/API fuse filtered local dense hits with FTS results; retrieval quality has not been compared against dense results |
 | Cross-encoder reranking | **Missing** | not implemented |
 | OCR for scanned Cyrillic PDFs | **Missing** | blank pages are marked scanned but not OCR'd |
 | Tables as structured data | **Missing** | HTML is flattened to text |
@@ -44,7 +44,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | Citation verification/abstention | **Partial** | retrieved citations now carry exact quotes and are checked against indexed document/page; claim-level generated-answer verification remains |
 | Versioned indexes/rollback | **Partial** | create/activate/rollback bookkeeping now exists; atomic index build/switch is still pending |
 | Tracing/access control | **Partial** | local query telemetry logs route, hit count, top-source authority, abstention, and feedback; access control remains intentionally local-only |
-| E-disclosure ingestion integration | **Partial** | incremental `docs ingest-dir` is now wired into hourly filings for recent local raw files; downloader/source coverage and historical backfill policy remain |
+| E-disclosure ingestion integration | **Partial** | incremental `docs ingest-dir` is wired into hourly filings for recent local raw files; bounded, explicit-date historical backfill is available manually (see the [README command reference](../../README.md#slice-5-local-document-intelligence--rag)); downloader/source coverage remains |
 | HyBond `spravka_vdo.md` reference corpus | **Done (bootstrap)** | indexed as `hybond_reference_spravka`; useful domain guidance, not an authoritative issuer-data source |
 | Evaluation CI and eval diff | **Partial** | `hybond docs eval-diff` compares baseline/candidate metrics and exits non-zero on regression; the GitHub Actions workflow runs lint, compile checks, and offline pytest, but does not run eval-diff |
 | FastAPI/dashboard research interface | **Partial** | local-only stdlib RAG page/API at port 8779; no generated-answer panel or production auth |
@@ -56,7 +56,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 1. Expand the golden set to 60–100 questions across at least 10 issuers.
 2. Manually verify every expected value and evidence page.
 3. Continue improving Russian stemming/synonym handling and query intent routing; issuer/ISIN scope and basic stemming are now implemented.
-4. Implement dense index construction with a pinned locally cached multilingual model.
+4. Select and document a pinned locally cached multilingual model.
 5. Compare FTS5 vs hybrid retrieval on the frozen dev set.
 6. Set acceptance thresholds only after the corpus and questions are manually verified.
 

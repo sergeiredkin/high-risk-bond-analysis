@@ -68,7 +68,9 @@ def _chunks(page: str, max_chars: int = 1800) -> list[tuple[str, str]]:
 
 
 def classify_source(text: str, requested_kind: str, requested_authority: str) -> tuple[str, str]:
-    """Correct mislabeled secondary articles stored under raw feed directories."""
+    """Detect secondary articles in e-disclosure feeds, not unrelated corpora."""
+    if requested_kind != "edisclosure":
+        return requested_kind, requested_authority
     lowered = text.casefold()
     secondary_markers = ("smart-lab", "владислав кофанов", "сделки прошлой недели",
                          "облигации самолета принесли", "max.ru/channel_")
