@@ -12,13 +12,25 @@ def normalise(text: str) -> str:
 
 
 def _numeric_value(value: str) -> Decimal | None:
-    """Parse a localized number with grouped spaces and decimal comma."""
+    """Parse a localized numeric token without discarding its unit."""
     cleaned = value.replace("\u00a0", "").replace("\u202f", "").replace(" ", "")
-    cleaned = cleaned.removesuffix("%").replace(",", ".")
+    cleaned = cleaned.replace(",", ".")
     try:
         return Decimal(cleaned)
     except InvalidOperation:
         return None
+
+
+def _unit(value: str | None) -> str | None:
+    """Normalize a small explicit set of evaluation units."""
+    if value is None or not value.strip():
+        return None
+    cleaned = value.strip().casefold().rstrip(".")
+    if cleaned in {"руб", "рубль", "рубля", "рублей", "р"}:
+        return "RUB"
+    if cleaned in {"%", "процент", "процента", "процентов"}:
+        return "PERCENT"
+    return cleaned.upper()
 
 
 def expected_in_hits(expected: object, answer_type: str, hits: list) -> bool | None:
@@ -30,18 +42,30 @@ def expected_in_hits(expected: object, answer_type: str, hits: list) -> bool | N
         return None
     corpus = normalise("\n".join(hit.text for hit in hits))
     if answer_type in {"numeric", "boolean", "date"}:
-        value = expected.get("value") if isinstance(expected, dict) else expected
+        value = (expected.get("value") if isinstance(expected, dict)
+                 and answer_type != "numeric" else expected)
         if value is None:
             return False
         if answer_type == "numeric":
-            target = _numeric_value(str(value))
+            unit = value.get("unit") if isinstance(value, dict) else None
+            numeric_value = value.get("value") if isinstance(value, dict) else value
+            target = _numeric_value(str(numeric_value))
             if target is None:
                 return False
-            numbers = re.findall(
-                r"(?<!\w)[+-]?\d(?:[\d\u00a0\u202f ]*\d)?(?:[,.]\d+)?%?",
+            target_unit = _unit(unit)
+            tokens = re.finditer(
+                r"(?<!\w)(?P<number>[+-]?\d(?:[\d\u00a0\u202f ]*\d)?(?:[,.]\d+)?)(?P<unit>\s*(?:%|руб(?:ль|ля|лей)?\.?|р\.?))?",
                 corpus,
             )
-            return any(_numeric_value(number) == target for number in numbers)
+            return any(
+                _numeric_value(match.group("number")) == target
+                and _unit(match.group("unit")) == target_unit
+                for match in tokens
+            )
+        if answer_type == "boolean":
+            # The matcher has no access to the question's proposition. A
+            # negation substring cannot safely establish truth polarity.
+            return None
         candidates = {normalise(str(value))}
         if answer_type == "date":
             try:
@@ -53,16 +77,6 @@ def expected_in_hits(expected: object, answer_type: str, hits: list) -> bool | N
                 })
             except ValueError:
                 pass
-        if answer_type == "boolean":
-            patterns = (
-                r"\b(?:не\s+(?:исполнил\w*|исполнен\w*|выплатил\w*|выплачен\w*|соблюдал\w*|соблюден\w*)|неисполнен\w*|невыплат\w*|несоблюден\w*)\b",
-                r"\b(?:исполнил\w*|исполнен\w*|выплатил\w*|выплачен\w*|соблюдал\w*|соблюден\w*)\b",
-            )
-            if value is True:
-                return bool(re.search(patterns[0], corpus)) and not bool(
-                    re.search(r"\b(?:исключен\w*|опровергнут\w*|отсутств\w*)\b", corpus)
-                )
-            return bool(re.search(patterns[1], corpus))
         return any(normalise(candidate) in corpus for candidate in candidates)
     if answer_type == "list":
         values = expected if isinstance(expected, list) else expected.get("values", [])

@@ -10,16 +10,22 @@ from hybond.store import db
 def test_numeric_and_boolean_expected_values_match_russian_evidence():
     from hybond.rag.search import SearchHit
     hit = SearchHit("c", "doc", 1, "", "Сумма 67 800 000,00 руб. Эмитент не исполнил обязанность.", 1)
-    assert expected_in_hits(67800000, "numeric", [hit]) is True
-    assert expected_in_hits(True, "boolean", [hit]) is True
+    assert expected_in_hits({"value": 67800000, "unit": "RUB"}, "numeric", [hit]) is True
+    assert expected_in_hits(67800000, "numeric", [hit]) is False
+    percent = SearchHit("p", "doc", 1, "", "Коэффициент 100%.", 1)
+    rubles = SearchHit("r", "doc", 1, "", "Сумма 100 руб.", 1)
+    assert expected_in_hits(100, "numeric", [percent]) is False
+    assert expected_in_hits({"value": 100, "unit": "percent"}, "numeric", [percent]) is True
+    assert expected_in_hits({"value": 100, "unit": "RUB"}, "numeric", [rubles]) is True
+    assert expected_in_hits(True, "boolean", [hit]) is None
     insufficient = SearchHit("d", "doc", 1, "", "Смотреть только на букву рейтинга недостаточно.", 1)
-    assert expected_in_hits(False, "boolean", [insufficient]) is False
+    assert expected_in_hits(False, "boolean", [insufficient]) is None
     contradictory = SearchHit("e", "doc", 1, "", "Неисполнение обязанности исключено.", 1)
-    assert expected_in_hits(True, "boolean", [contradictory]) is False
+    assert expected_in_hits(True, "boolean", [contradictory]) is None
     fulfilled = SearchHit("f", "doc", 1, "", "Эмитент исполнил обязанность и выплатил купон.", 1)
-    assert expected_in_hits(False, "boolean", [fulfilled]) is True
+    assert expected_in_hits(False, "boolean", [fulfilled]) is None
     ambiguous = SearchHit("g", "doc", 1, "", "Нет данных о невыплате.", 1)
-    assert expected_in_hits(False, "boolean", [ambiguous]) is False
+    assert expected_in_hits(False, "boolean", [ambiguous]) is None
 
 
 def test_citation_precision_counts_only_relevant_retrieved_pages():

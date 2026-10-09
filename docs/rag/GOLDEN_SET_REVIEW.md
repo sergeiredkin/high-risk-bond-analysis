@@ -33,12 +33,12 @@ Command: `hybond docs eval --golden eval/golden/ru_bonds_v1.jsonl --manifest eva
 | Page recall@5 | 0.733 |
 | Citation precision@5 | 0.582 |
 | MRR | 0.733 |
-| Answer/evidence match | 0.364 |
+| Answer/evidence match (automatic supported checks only) | 0.182 |
 | Abstention accuracy | 0.250 |
 
-This reported snapshot does not establish cited-corpus evidence quality; 7 narrative answers still need human scoring, and three unanswerable prompts are reported to retrieve irrelevant pages. The set also covers only three issuers, is small, and has no scanned/table-heavy fixtures. Do not freeze it as the final benchmark or use it to claim answer quality.
+This reported snapshot does not establish cited-corpus evidence quality; 9 answerable questions require human scoring (including narrative and Boolean answers), and three unanswerable prompts retrieve irrelevant pages. The set also covers only three issuers, is small, and has no scanned/table-heavy fixtures. Do not freeze it as the final benchmark or use it to claim answer quality.
 
-The numeric matcher handles Russian grouped amounts (`67 800 000,00`), and Boolean matching recognizes explicit Russian formulations. The cited-corpus audit and retrieval abstention behavior still require manual verification on a larger reviewed set.
+The numeric matcher handles Russian grouped amounts (`67 800 000,00 руб.`) and compares units when specified. Boolean auto-scoring is disabled because the metric does not receive the question proposition; these answers remain for manual review. The cited-corpus audit and retrieval abstention behavior still require a larger reviewed set.
 
 ## Next evaluation work
 
