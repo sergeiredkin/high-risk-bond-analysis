@@ -6,7 +6,7 @@ from pathlib import Path
 
 _METRICS = (
     "page_recall_at_k", "mrr", "citation_precision_at_k",
-    "answerable_evidence_match_rate", "abstention_accuracy",
+    "answerable_evidence_match_rate",
 )
 
 

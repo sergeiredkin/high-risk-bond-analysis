@@ -5,7 +5,7 @@
 
 ## Executive result
 
-**Not production-ready.** The system remains a P0/P1 retrieval prototype, not a complete cited answering system. A 72-question, 10-issuer agent-checked fixture candidate is now available with document-disjoint dev/test splits, but it is not human-verified, has no table/scan/cross-document coverage, and reports weak held-out retrieval and zero abstention accuracy. A local research UI/API exists, but it does not generate answers. See [`GOLDEN_SET_V2_CANDIDATE.md`](GOLDEN_SET_V2_CANDIDATE.md).
+**Not production-ready.** The system remains a P0/P1 retrieval prototype, not a complete cited answering system. A 72-question, 10-issuer agent-checked fixture candidate is available with document-disjoint dev/test splits, but it is not human-verified, has no table/scan/cross-document coverage, and reports weak held-out retrieval. The retrieval-only evaluator has no answer-abstention score; its no-answer empty-retrieval diagnostic is not answer safety. A local research UI/API exists, but it does not generate answers. See [`GOLDEN_SET_V2_CANDIDATE.md`](GOLDEN_SET_V2_CANDIDATE.md).
 
 Baseline command:
 
@@ -54,7 +54,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 ### RAG-1 — Retrieval correctness gate
 
 1. A 72-question, 10-issuer agent-checked candidate and document-disjoint dev/test split now exist; the benchmark is still not manually verified or frozen.
-2. The held-out candidate result is page recall@5 0.833, citation precision 0.653, and abstention accuracy 0.000; all 20 answerable items still require manual scoring, and these results do not pass an acceptance gate.
+2. The held-out candidate result is page recall@5 0.833 and citation precision 0.653; all 20 answerable items still require manual scoring. The reported 0.000 no-answer retrieval-empty rate is a retrieval diagnostic, not answer-abstention accuracy; these results do not pass an acceptance gate.
 3. No suitable cached multilingual embedding model was found; the cached English MiniLM model is not used for Russian quality claims.
 4. Compare FTS5 vs hybrid retrieval only after a suitable local model and human-reviewed benchmark are available.
 5. Set thresholds only after the corpus/questions have been independently verified.

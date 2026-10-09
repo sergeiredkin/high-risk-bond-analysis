@@ -1,6 +1,10 @@
+import html
 import json
+import re
 from collections import defaultdict
+from datetime import date
 from pathlib import Path
+from urllib.parse import urlparse
 
 from hybond.rag.eval.runner import run
 from hybond.rag.golden import load_golden
@@ -13,7 +17,44 @@ MANIFEST = ROOT / "eval/corpus/manifest_v2.jsonl"
 GOLDEN = ROOT / "eval/golden/ru_bonds_v2.jsonl"
 
 
-def test_reviewed_fixture_corpus_integrity_and_split_isolation(tmp_path):
+def test_manifest_has_message_level_provenance_matching_archived_html():
+    records = [json.loads(line) for line in MANIFEST.read_text(encoding="utf-8").splitlines()]
+    documents = {doc.doc_sha256: doc for doc in load_manifest(MANIFEST)}
+    disclosure_ids = set()
+    for record in records:
+        source = (ROOT / record["local_path"]).read_text(encoding="utf-8", errors="replace")
+        backurls = set(re.findall(
+            r'value="/messages/(\d+)/\?MESS_ID=(\d+)"', source, flags=re.IGNORECASE,
+        ))
+        assert len(backurls) == 1
+        message_id, query_id = next(iter(backurls))
+        assert message_id == query_id == record["disclosure_id"]
+        document = documents[record["doc_sha256"]]
+        assert document.disclosure_id == message_id
+        assert document.published_at == record["published_at"]
+        assert document.retrieved_at == record["retrieved_at"]
+        assert document.source_url_basis == record["source_url_basis"]
+        assert message_id not in disclosure_ids
+        disclosure_ids.add(message_id)
+
+        parsed_url = urlparse(record["source_url"])
+        assert parsed_url.netloc == "e-disclosure.azipi.ru"
+        assert parsed_url.path == f"/messages/{message_id}/"
+        assert record["source_url_basis"] == "reconstructed_from_archived_backurl"
+
+        visible_text = re.sub(r"<[^>]+>", " ", html.unescape(source))
+        published = re.search(r"Дата\s+раскрытия\s*:\s*(\d{2}\.\d{2}\.\d{4})", visible_text)
+        assert published
+        day, month, year = map(int, published.group(1).split("."))
+        assert record["published_at"] == date(year, month, day).isoformat()
+        date.fromisoformat(record["retrieved_at"])
+        assert record["retrieved_at"] == record["fetched_at"]
+
+    assert len(records) == 30
+    assert len(disclosure_ids) == 30
+
+
+def test_candidate_fixture_corpus_integrity_and_split_isolation(tmp_path):
     documents = load_manifest(MANIFEST)
     validate_local_files(documents, ROOT)
     questions = load_golden(GOLDEN, documents)
@@ -73,6 +114,8 @@ def test_reviewed_fixture_corpus_integrity_and_split_isolation(tmp_path):
         assert dev["split"] == "dev"
         assert test["split"] == "test"
         assert dev["metrics"]["answerable_evidence_match_rate"] is None
+        assert dev["metrics"]["answer_abstention_accuracy"] is None
+        assert dev["metrics"]["unanswerable_question_count"] == 8
         assert dev["metrics"]["manual_review_answers"] == 40
         assert len(dev["dataset_sha256"]["golden"]) == 64
         assert dev["dataset_sha256"] == test["dataset_sha256"]

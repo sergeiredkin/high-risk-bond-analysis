@@ -12,7 +12,7 @@
 - **Corpus bootstrap complete:** 30 e-disclosure documents plus `spravka_vdo.md` are indexed; 23 e-disclosure documents received issuer metadata (INN/ISIN) from document content. The spravka is tagged `hybond_reference_spravka` and is guidance/reference material, not authoritative issuer data. Manifest copies are in `docs/rag/corpus_manifest_v1.jsonl` and `eval/corpus/manifest_v1.jsonl`.
 - **Golden bootstrap complete:** 10 draft Russian questions, including abstention cases, are in `eval/golden/ru_bonds_v1.jsonl`. They are explicitly marked for human review and are not yet a frozen benchmark.
 - **Evaluation runner hardened:** `docs eval` defaults to dev, requires an explicit `--split test`, hashes golden/manifest inputs, and reports manual-only answer scores as null rather than zero. `eval-diff` rejects split/corpus mismatches; no quality threshold is enabled until human verification.
-- **Golden v2 candidate added:** 30 hashed e-disclosure fixtures across 10 issuers and 72 agent-checked questions with document-disjoint 42-question dev / 30-question test splits. It is not human-reviewed or frozen; held-out FTS5 page recall@5 0.833, citation precision 0.653, and abstention accuracy 0.000. See `GOLDEN_SET_V2_CANDIDATE.md`.
+- **Golden v2 candidate added:** 30 hashed e-disclosure fixtures across 10 issuers and 72 agent-checked questions with document-disjoint dev/test splits. It is not human-reviewed or frozen; held-out FTS5 page recall@5 0.833 and citation precision 0.653. The retrieval-only runner reports a no-answer retrieval-empty diagnostic; it does not measure answer abstention. See `GOLDEN_SET_V2_CANDIDATE.md`.
 - **Table fidelity advanced:** HTML tables are separate structured/searchable elements; a conservative `pdftotext -layout` heuristic preserves aligned numeric PDF rows as table chunks, with page-separator handling tested against an official CBR PDF fixture. It remains a layout heuristic, not a numeric fact parser; bounding boxes and semantic merged-cell handling remain incomplete. See `DOCUMENT_FIDELITY_FIXTURES.md`.
 - **PDF/OCR progress:** an optional local Tesseract hook stores page text/confidence behind `HYBOND_RAG_OCR=1`; TSV line breaks are preserved, but OCR is not indexed. A clean raster and degraded synthetic CBR scan surrogate have one-page smoke diagnostics (PSM-dependent WER 4.63–22.15%); neither substitutes for a genuine scan or a representative OCR benchmark.
 - **Production audit added:** `docs/rag/PRODUCTION_READINESS_AUDIT.md` lists every planned capability, current status, and the remaining gates.
@@ -29,7 +29,7 @@
 - **Query router added:** the local API/UI deterministically separates numeric facts, narrative evidence, mixed questions, current-risk SQL summaries, and out-of-scope requests before retrieval; the CLI still exposes the lower-level fact-or-retrieval path.
 - **Citation verification added:** retrieved citations include the exact evidence quote and are checked against the indexed document/page; evaluation now reports citation precision separately from page recall.
 - **Evaluation diff safety added:** `hybond docs eval-diff --baseline RUN_A --candidate RUN_B` rejects mismatched split, question count, k, or dataset hashes before comparing quality metrics. CI executes fixture integrity, quote, split-isolation, and offline FTS5 checks; it does not enforce an unverified retrieval threshold.
-- **Remaining:** independent human verification and broader financial questions; table/scanned/cross-document/conflict fixtures; a suitable pinned local multilingual model and measured dense-vs-FTS5 comparison; calibrated abstention; structured facts and verified local answer generation.
+- **Remaining:** independent human verification and broader financial questions; table/scanned/cross-document/conflict fixtures; a suitable pinned local multilingual model and measured dense-vs-FTS5 comparison; evaluated answer-level abstention; structured facts and verified local answer generation.
 
 ## 1. Decision
 
@@ -272,7 +272,7 @@ Freeze the test split. Tune only on dev. Every later retrieval or model change m
 | Phase | Deliverable | Acceptance gate |
 |---|---|---|
 | P0 | schemas, migrations, manifest validator, fixtures, golden-set format | fixtures validate; no existing tests regress |
-| P1 | ingestion, page/elements model, chunker, FTS5 baseline, `docs eval` | baseline records recall/citation/abstention metrics |
+| P1 | ingestion, page/elements model, chunker, FTS5 baseline, `docs eval` | baseline records retrieval/citation metrics and no-answer retrieval diagnostics; answer-level abstention requires an answerer |
 | P2 | hybrid sparse+dense retrieval and optional reranker | dev page recall@5 improves over P1 without citation regression |
 | P3 | visual page retrieval | scan/table/figure subset improves; no broad regression |
 | P4 | fact extraction, reconciliation, SQL router | >=95% numeric exact match on answerable dev questions |
