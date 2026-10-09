@@ -48,20 +48,6 @@ def test_eval_reports_page_recall_and_abstention(tmp_path):
 
     report = run(con, golden, manifest, k=3)
     assert report["question_count"] == 2
-    assert report["retrieval_mode"] == "fts5"
     assert report["metrics"]["page_recall_at_k"] == 0.5
     assert report["metrics"]["abstention_accuracy"] == 1.0
-
-    class DenseFixture:
-        def search(self, _question, limit=5, **_filters):
-            from hybond.rag.search import SearchHit
-            row = con.execute(
-                "SELECT chunk_id,doc_sha256,page_no,section,text FROM rag_chunks LIMIT 1"
-            ).fetchone()
-            return [SearchHit(row[0], row[1], row[2], row[3] or "", row[4], 1.0)][:limit]
-
-    hybrid_report = run(con, golden, manifest, k=3, dense_index=DenseFixture())
-    assert hybrid_report["retrieval_mode"] == "hybrid_rrf"
-    assert hybrid_report["baseline_metrics"] == report["metrics"]
-    assert "citation_precision_at_k" in hybrid_report["metrics"]
     con.close()

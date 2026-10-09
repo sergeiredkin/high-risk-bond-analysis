@@ -166,30 +166,16 @@ hybond docs ingest --path FILE [--doc-type TYPE] [--isin ISIN] [--issuer-inn INN
                                      register and index one local document
 hybond docs ingest-dir --root DIR [--pattern GLOB] [--limit N] [--since-days D]
                                      hash-deduplicated bounded ingestion of local files
-hybond docs ingest-dir --root data/raw/edisclosure --pattern '2026-07-*/msg_*.html' \
-  --since-date 2026-07-01 --until-date 2026-07-31 --limit 100 \
-  --doc-type edisclosure_html --source-kind edisclosure \
-  --authority-level issuer_disclosure
-                                     controlled historical backfill; repeat to continue
 hybond docs ask "ВОПРОС" [--company NAME] [--issuer-inn INN] [--isin ISIN]
                                      search indexed documents or SQL facts and show citations
 hybond docs extract [--doc-sha256 SHA]
                                      extract conservative structured facts into SQLite
 hybond docs eval --golden FILE --manifest FILE [--k N] [--out FILE]
                                      retrieval/citation/abstention evaluation
-hybond docs eval --golden FILE --manifest FILE --dense-index DIR --model-path DIR
-                                     compare hybrid metrics with the FTS5 baseline
 hybond docs eval-diff --baseline FILE --candidate FILE [--max-drop X]
                                      fail when an eval report regresses
-hybond docs dense-index --model-path DIR --out DIR
-                                     build an optional index with a locally cached encoder
 hybond docs report                  corpus coverage and observed query value
 ```
-
-Dense retrieval is disabled by default. To opt in, build an index from a local
-model directory, then set `HYBOND_RAG_DENSE_INDEX` to that index and
-`HYBOND_RAG_MODEL_PATH` to the same local model directory for CLI/API retrieval.
-This path makes no cloud requests; NumPy and the encoder runtime are optional.
 
 See `docs/rag/PRODUCTION_READINESS_AUDIT.md` for the current RAG readiness limits; it is local-only and not an investment-decision answerer.
 
