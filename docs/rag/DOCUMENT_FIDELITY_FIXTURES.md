@@ -15,7 +15,7 @@ These local fixtures exercise PDF table extraction and scanned-page detection. T
 - The digital forecast produces two page-cited structured tables on page 1; the commentary PDF has 14 pages and its forecast tables are attributed to page 2.
 - Both image-only surrogates are one page, have no text layer, and are marked scanned without indexing OCR output when OCR is disabled. The degraded surrogate's checked-in SHA-256 pins the tested pixels/PDF.
 - The PDF extractor removes `pdftotext`'s trailing page-separator form-feed so it does not report a phantom extra page.
-- `eval/golden/ru_pdf_tables_candidate_v1.jsonl` is a four-question agent-checked smoke set with document-disjoint dev/test sources. It is not human-reviewed or frozen. FTS5 diagnostics: dev recall@5 1.00 / citation precision@5 0.20 / MRR 0.625; test recall@5 0.50 / citation precision@5 0.10 / MRR 0.25. One held-out query misses its target page; answer correctness remains manual.
+- `eval/golden/ru_pdf_tables_candidate_v1.jsonl` is the original four-question agent-checked smoke set; `ru_pdf_tables_candidate_v2.jsonl` clarifies forecast dates and adds the 2026 column/unit context to PDFT-002 evidence. Both preserve `agent-source-check`, are not human-reviewed or frozen, and have document-disjoint dev/test sources. Temporary-DB FTS5 diagnostics: v1 dev recall@5 1.00 / citation precision@5 0.20 / MRR 0.625, test 0.50 / 0.10 / 0.25; v2 dev 1.00 / 0.20 / 1.00, test 1.00 / 0.20 / 0.667. The two-question test is far too small for a quality claim; text-answer correctness remains manual.
 
 ## Limits and financial-safety warning
 

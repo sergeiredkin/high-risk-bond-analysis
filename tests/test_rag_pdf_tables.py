@@ -127,12 +127,16 @@ def test_synthetic_scan_surrogate_is_detected_but_not_indexed(tmp_path, monkeypa
         con.close()
 
 
-def test_pdf_table_candidate_quotes_and_document_disjoint_splits(tmp_path):
+@pytest.mark.parametrize(
+    "golden_filename",
+    ("ru_pdf_tables_candidate_v1.jsonl", "ru_pdf_tables_candidate_v2.jsonl"),
+)
+def test_pdf_table_candidate_quotes_and_document_disjoint_splits(tmp_path, golden_filename):
     if not shutil.which("pdftotext"):
         pytest.skip("poppler pdftotext is required for PDF fixture extraction")
     documents = load_manifest(MANIFEST)
     validate_local_files(documents, ROOT)
-    golden_path = ROOT / "eval/golden/ru_pdf_tables_candidate_v1.jsonl"
+    golden_path = ROOT / "eval/golden" / golden_filename
     questions = load_golden(golden_path, documents)
     assert len(questions) == 4
     assert all(question.category == "macro_forecast" for question in questions)
