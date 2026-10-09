@@ -195,7 +195,7 @@ This path makes no cloud requests; NumPy and the encoder runtime are optional. `
 
 PDF OCR is separately opt-in: set `HYBOND_RAG_OCR=1` to use local `pdftoppm` and Tesseract (`HYBOND_RAG_OCR_LANGUAGE` defaults to `rus+eng`). OCR text and confidence are stored locally but are **not** added to retrieval until citation-confidence propagation and quality gates are validated. No OCR engine is installed automatically, and this path makes no network calls.
 
-The 72-question `eval/golden/ru_bonds_v2.jsonl` and 30-document fixture corpus are an agent-checked candidate, not a human-reviewed benchmark. A separate four-question CBR PDF table candidate is at `eval/golden/ru_pdf_tables_candidate_v1.jsonl`; it also requires independent human review. See [`docs/rag/GOLDEN_SET_V2_CANDIDATE.md`](docs/rag/GOLDEN_SET_V2_CANDIDATE.md) and [`docs/rag/DOCUMENT_FIDELITY_FIXTURES.md`](docs/rag/DOCUMENT_FIDELITY_FIXTURES.md) for limitations and measured diagnostics.
+The 72-question `eval/golden/ru_bonds_v2.jsonl` and 30-document fixture corpus are an agent-checked candidate, not a human-reviewed benchmark. CBR PDF table candidates v1/v2 are in `eval/golden/ru_pdf_tables_candidate_v1.jsonl` and `ru_pdf_tables_candidate_v2.jsonl`; v2 clarifies source versions and the table-unit evidence. These remain candidates pending later review. See [`docs/rag/GOLDEN_SET_V2_CANDIDATE.md`](docs/rag/GOLDEN_SET_V2_CANDIDATE.md) and [`docs/rag/DOCUMENT_FIDELITY_FIXTURES.md`](docs/rag/DOCUMENT_FIDELITY_FIXTURES.md) for limitations and measured diagnostics.
 
 See `docs/rag/PRODUCTION_READINESS_AUDIT.md` for the current RAG readiness limits; it is local-only and not an investment-decision answerer.
 
