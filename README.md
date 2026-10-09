@@ -166,6 +166,11 @@ hybond docs ingest --path FILE [--doc-type TYPE] [--isin ISIN] [--issuer-inn INN
                                      register and index one local document
 hybond docs ingest-dir --root DIR [--pattern GLOB] [--limit N] [--since-days D]
                                      hash-deduplicated bounded ingestion of local files
+hybond docs ingest-dir --root data/raw/edisclosure --pattern '2026-07-*/msg_*.html' \
+  --since-date 2026-07-01 --until-date 2026-07-31 --limit 100 \
+  --doc-type edisclosure_html --source-kind edisclosure \
+  --authority-level issuer_disclosure
+                                     controlled historical backfill; repeat to continue
 hybond docs ask "ВОПРОС" [--company NAME] [--issuer-inn INN] [--isin ISIN]
                                      search indexed documents or SQL facts and show citations
 hybond docs extract [--doc-sha256 SHA]

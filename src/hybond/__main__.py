@@ -1670,8 +1670,12 @@ def cmd_docs(args) -> int:
             from .rag.facts import extract_document_facts
             from .rag.reconcile import reconcile_document_facts
             root = Path(args.root)
-            files = sorted((path for path in root.glob(args.pattern) if path.is_file()),
-                           key=lambda path: path.stat().st_mtime)
+            files = [path for path in root.glob(args.pattern) if path.is_file()]
+            if args.since_date or args.until_date:
+                from .rag.backfill import select_date_range
+                files = select_date_range(files, after=args.since_date, before=args.until_date)
+            else:
+                files.sort(key=lambda path: path.stat().st_mtime)
             if args.since_days is not None:
                 cutoff = time.time() - args.since_days * 86400
                 files = [path for path in files if path.stat().st_mtime >= cutoff]
@@ -2155,7 +2159,9 @@ def main(argv=None) -> int:
     pdd.add_argument("--source-kind", default="unknown")
     pdd.add_argument("--authority-level", default="unknown")
     pdd.add_argument("--limit", type=int, default=100)
-    pdd.add_argument("--since-days", type=float)
+    pdd.add_argument("--since-days", type=float, help="Filter by filesystem modification time")
+    pdd.add_argument("--since-date", help="Inclusive source date YYYY-MM-DD; requires date in path")
+    pdd.add_argument("--until-date", help="Inclusive source date YYYY-MM-DD; requires date in path")
     pdd.set_defaults(func=cmd_docs)
     pda = docs_sub.add_parser("ask", help="Search indexed documents and show citations")
     pda.add_argument("question")
