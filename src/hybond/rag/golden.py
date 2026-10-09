@@ -1,4 +1,4 @@
-"""Validation for the human-verified RAG evaluation question set."""
+"""Validation for versioned RAG evaluation question sets."""
 from __future__ import annotations
 
 import json
@@ -12,7 +12,7 @@ _CATEGORIES = {
     "coupon", "coupon_schedule", "maturity", "put_offer", "call_option",
     "amortization", "guarantor", "covenant", "use_of_proceeds", "issue_volume",
     "financials_numeric", "rating_action", "risk_factor", "management_commentary",
-    "issuer_disclosure_event", "cross_doc", "unanswerable",
+    "issuer_disclosure_event", "macro_forecast", "cross_doc", "unanswerable",
 }
 _ANSWER_TYPES = {"numeric", "date", "text", "list", "boolean", "none"}
 _REQUIREMENTS = {"table", "scan", "figure", "cross_doc", "multi_page"}
