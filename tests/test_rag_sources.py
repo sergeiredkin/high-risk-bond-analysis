@@ -1,6 +1,7 @@
+import sqlite3
+
 from hybond.rag.ingest import classify_source
 from hybond.rag.registry import init_registry, upsert_document
-import sqlite3
 
 
 def test_secondary_commentary_is_not_called_issuer_disclosure():
