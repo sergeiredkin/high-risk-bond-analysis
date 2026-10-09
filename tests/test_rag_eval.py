@@ -1,10 +1,19 @@
 import json
 from pathlib import Path
 
-from hybond.rag.eval.metrics import citation_precision
+from hybond.rag.eval.metrics import citation_precision, expected_in_hits
 from hybond.rag.eval.runner import run
 from hybond.rag.ingest import ingest_file
 from hybond.store import db
+
+
+def test_numeric_and_boolean_expected_values_match_russian_evidence():
+    from hybond.rag.search import SearchHit
+    hit = SearchHit("c", "doc", 1, "", "Сумма 67 800 000,00 руб. Эмитент не исполнил обязанность.", 1)
+    assert expected_in_hits(67800000, "numeric", [hit]) is True
+    assert expected_in_hits(True, "boolean", [hit]) is True
+    insufficient = SearchHit("d", "doc", 1, "", "Смотреть только на букву рейтинга недостаточно.", 1)
+    assert expected_in_hits(False, "boolean", [insufficient]) is True
 
 
 def test_citation_precision_counts_only_relevant_retrieved_pages():

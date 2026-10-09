@@ -3,11 +3,22 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
 
 def normalise(text: str) -> str:
     """Normalize case and whitespace for conservative exact-match checks."""
     return re.sub(r"\s+", " ", text.casefold().strip())
+
+
+def _numeric_value(value: str) -> Decimal | None:
+    """Parse a localized number with grouped spaces and decimal comma."""
+    cleaned = value.replace("\u00a0", "").replace("\u202f", "").replace(" ", "")
+    cleaned = cleaned.removesuffix("%").replace(",", ".")
+    try:
+        return Decimal(cleaned)
+    except InvalidOperation:
+        return None
 
 
 def expected_in_hits(expected: object, answer_type: str, hits: list) -> bool | None:
@@ -22,6 +33,15 @@ def expected_in_hits(expected: object, answer_type: str, hits: list) -> bool | N
         value = expected.get("value") if isinstance(expected, dict) else expected
         if value is None:
             return False
+        if answer_type == "numeric":
+            target = _numeric_value(str(value))
+            if target is None:
+                return False
+            numbers = re.findall(
+                r"(?<!\w)[+-]?\d(?:[\d\u00a0\u202f ]*\d)?(?:[,.]\d+)?%?",
+                corpus,
+            )
+            return any(_numeric_value(number) == target for number in numbers)
         candidates = {normalise(str(value))}
         if answer_type == "date":
             try:
@@ -34,7 +54,12 @@ def expected_in_hits(expected: object, answer_type: str, hits: list) -> bool | N
             except ValueError:
                 pass
         if answer_type == "boolean":
-            candidates.update({"да", "yes"} if value is True else {"нет", "no"})
+            markers = ("не исполнил", "не исполнена", "не выплачен", "не выплачено",
+                       "неисполнение", "не соблюден") if value is True else (
+                           "недостаточно", "не достаточно", "отсутствует", "нельзя",
+                           "не следует", "нет", "no", "false"
+                       )
+            return any(marker in corpus for marker in markers)
         return any(normalise(candidate) in corpus for candidate in candidates)
     if answer_type == "list":
         values = expected if isinstance(expected, list) else expected.get("values", [])
