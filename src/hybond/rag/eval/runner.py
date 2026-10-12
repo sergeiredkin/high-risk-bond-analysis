@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ..golden import GoldenQuestion, load_golden
@@ -96,7 +96,7 @@ def run(con, golden_path: Path, manifest_path: Path, *, k: int = 5,
         results.append(_result(question, hits, k))
     return {
         "run_id": run_id or f"eval-{uuid.uuid4().hex[:12]}",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "golden_path": str(golden_path),
         "manifest_path": str(manifest_path),
         "dataset_sha256": {

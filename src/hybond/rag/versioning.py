@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def config_hash(config: dict) -> str:
@@ -16,7 +16,7 @@ def create_version(con, config: dict) -> int:
     """Create an inactive index version; callers activate after validation."""
     row = con.execute(
         "INSERT INTO rag_index_versions(created_at,config_hash,is_active) VALUES(?,?,0) RETURNING version",
-        (datetime.now(timezone.utc).isoformat(), config_hash(config)),
+        (datetime.now(UTC).isoformat(), config_hash(config)),
     ).fetchone()
     con.commit()
     return int(row[0])

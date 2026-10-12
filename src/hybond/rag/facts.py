@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 _FACT_PATTERNS = {
     "isin": re.compile(r"\b(RU[0-9A-Z]{10})\b"),
@@ -40,7 +40,7 @@ def extract_document_facts(con, doc_sha256: str, *, model: str = "rules") -> lis
     if not rows:
         return []
     extracted: list[dict] = []
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     con.execute("DELETE FROM rag_facts WHERE doc_sha256=? AND model=?", (doc_sha256, model))
     for row in rows:
         text = row[1]

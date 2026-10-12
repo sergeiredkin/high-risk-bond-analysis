@@ -30,6 +30,10 @@ def _unit(value: str | None) -> str | None:
         return "RUB"
     if cleaned in {"%", "процент", "процента", "процентов"}:
         return "PERCENT"
+    if cleaned in {"юань", "юаня", "юаней", "юани", "cny", "¥"}:
+        return "CNY"
+    if cleaned in {"шт", "шт.", "штука", "штуки", "штук", "ед", "ед."}:
+        return "COUNT"
     return cleaned.upper()
 
 
@@ -54,7 +58,7 @@ def expected_in_hits(expected: object, answer_type: str, hits: list) -> bool | N
                 return False
             target_unit = _unit(unit)
             tokens = re.finditer(
-                r"(?<!\w)(?P<number>[+-]?\d(?:[\d\u00a0\u202f ]*\d)?(?:[,.]\d+)?)(?P<unit>\s*(?:%|руб(?:ль|ля|лей)?\.?|р\.?))?",
+                r"(?<!\w)(?P<number>[+-]?\d(?:[\d\u00a0\u202f ]*\d)?(?:[,.]\d+)?)(?:\s*\([^)]{1,100}\))?(?P<unit>\s*(?:%|руб(?:ль|ля|лей)?\.?|р\.?|юан(?:ь|я|ей|и)|cny|¥|шт\.?|штука|штуки|штук|ед\.?))?",
                 corpus,
             )
             return any(
