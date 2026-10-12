@@ -84,7 +84,7 @@ hybond/rag/
   config.py            # pydantic settings: model names, paths, k values, thresholds
   types.py             # typed dataclasses: Document, Page, Element, Chunk, Hit, Answer, Citation, Fact
   corpus/
-    manifest.py        # corpus manifest load/validate (doc_sha256, isin, inn, doc_type, source_url, fetched_at)
+    manifest.py        # corpus manifest load/validate (hash, issuer/bond, source URL, fetch date, optional disclosure ID and publication/retrieval provenance)
     registry.py        # SQLite tables: rag_documents, rag_pages, rag_elements; sha256 dedup
   ingest/
     parse.py           # layout-aware parse -> pages + elements (text|table|figure) with bbox
@@ -115,7 +115,7 @@ hybond/rag/
                        #   failure -> abstain ("в документах не найдено")
   eval/
     golden.py          # golden-set load + JSON Schema validation
-    metrics.py         # recall@k (page), MRR, numeric EM w/ tolerance, citation precision, abstention acc.
+    metrics.py         # page recall@k, MRR, numeric evidence match, citation precision; answer abstention is scored only with an answerer.
     runner.py          # runs a config against a golden split; writes eval_runs + per-question results
     report.py          # diff two runs: which questions improved or regressed
   cli.py               # registers `hybond docs ...` subcommands
@@ -189,7 +189,7 @@ none	Correct only if the system abstains
 
 Composition targets for v1 (60–100 questions): at least 15% unanswerable, at least 20% table, at least 10% scan, at least 10% cross-doc, spread across at least 10 issuers. Freeze the test split; tune only on dev. A JSON Schema validator in eval/golden.py enforces this, and CI fails on an invalid golden file.
 
-Corpus manifest (eval/corpus/*.jsonl): doc_sha256, isin, issuer_inn, doc_type, source_url, fetched_at, local_path. The golden set may only reference documents listed in the manifest.
+Corpus manifest (eval/corpus/*.jsonl): required doc_sha256, isin, issuer_inn, doc_type, source_url, fetched_at, local_path; optional disclosure_id, published_at, retrieved_at, and source_url_basis. The golden set may only reference documents listed in the manifest.
 
 Phases and acceptance criteria
 Phase	Deliverable	Done when

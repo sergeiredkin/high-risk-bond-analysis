@@ -6,6 +6,7 @@ import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -23,6 +24,10 @@ class CorpusDocument:
     source_url: str
     fetched_at: str
     local_path: str
+    disclosure_id: str | None = None
+    published_at: str | None = None
+    retrieved_at: str | None = None
+    source_url_basis: str | None = None
 
 
 def _parse_record(raw: object, line_no: int) -> CorpusDocument:
@@ -39,10 +44,21 @@ def _parse_record(raw: object, line_no: int) -> CorpusDocument:
     values = {key: raw[key] for key in _REQUIRED}
     if any(not isinstance(value, str) or not value.strip() for value in values.values()):
         raise ValueError(f"manifest line {line_no}: required fields must be non-empty strings")
+    optional_names = ("disclosure_id", "published_at", "retrieved_at", "source_url_basis")
+    optional = {key: raw.get(key) for key in optional_names}
+    if any(value is not None and (not isinstance(value, str) or not value.strip())
+           for value in optional.values()):
+        raise ValueError(f"manifest line {line_no}: optional provenance fields must be non-empty strings")
+    for key in ("published_at", "retrieved_at"):
+        if optional[key] is not None:
+            try:
+                date.fromisoformat(optional[key])
+            except ValueError as exc:
+                raise ValueError(f"manifest line {line_no}: {key} must be an ISO date") from exc
     digest = values["doc_sha256"].lower()
     if not _SHA256.fullmatch(digest):
         raise ValueError(f"manifest line {line_no}: doc_sha256 must be 64 lowercase hex characters")
-    return CorpusDocument(**{**values, "doc_sha256": digest})
+    return CorpusDocument(**{**values, **optional, "doc_sha256": digest})
 
 
 def load_manifest(path: Path) -> list[CorpusDocument]:

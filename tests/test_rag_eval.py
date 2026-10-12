@@ -45,7 +45,7 @@ def test_citation_precision_counts_only_relevant_retrieved_pages():
     assert citation_precision(hits, ({"doc_sha256": "doc-a", "page": 1},)) == 0.5
 
 
-def test_eval_reports_page_recall_and_abstention(tmp_path):
+def test_eval_reports_retrieval_empty_rate_without_claiming_answer_abstention(tmp_path):
     source = tmp_path / "doc.md"
     source.write_text("# Купон\n\nДата выплаты 15.03.2027.", encoding="utf-8")
     con = db.connect(Path(":memory:"))
@@ -81,7 +81,12 @@ def test_eval_reports_page_recall_and_abstention(tmp_path):
     assert all_report["question_count"] == 3
     assert report["retrieval_mode"] == "fts5"
     assert report["metrics"]["page_recall_at_k"] == 0.5
-    assert report["metrics"]["abstention_accuracy"] == 1.0
+    assert report["metrics"]["unanswerable_question_count"] == 1
+    assert report["metrics"]["unanswerable_retrieval_empty_rate"] == 1.0
+    assert report["metrics"]["answer_abstention_accuracy"] is None
+    unanswerable = next(row for row in report["results"] if row["answer_type"] == "none")
+    assert unanswerable["retrieval_empty"] is True
+    assert unanswerable["answer_abstention_correct"] is None
 
     class DenseFixture:
         def search(self, _question, limit=5, **_filters):
