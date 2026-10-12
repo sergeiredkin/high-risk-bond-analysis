@@ -52,6 +52,25 @@ def _query_terms(question: str) -> str:
     return " OR ".join(f'"{term.replace(chr(34), "")}"*' for term in _terms(question))
 
 
+def _page_context(con: sqlite3.Connection, hit: SearchHit, *, max_chunks: int = 16,
+                  max_chars: int = 12_000) -> SearchHit:
+    """Bundle bounded page chunks around the best match for page-level citations."""
+    rows = con.execute(
+        "SELECT text FROM rag_chunks WHERE doc_sha256=? AND page_no=? ORDER BY rowid LIMIT ?",
+        (hit.doc_sha256, hit.page_no, max_chunks),
+    ).fetchall()
+    parts = [hit.text]
+    for row in rows:
+        if len(parts) >= max_chunks:
+            break
+        text = row[0].strip()
+        if text and text not in parts:
+            parts.append(text)
+    context = "\n\n".join(parts)[:max_chars]
+    return SearchHit(hit.chunk_id, hit.doc_sha256, hit.page_no, hit.section, context,
+                     hit.score, hit.source_kind, hit.authority_level)
+
+
 def search(con: sqlite3.Connection, question: str, limit: int = 8,
            *, issuer_inn: str | None = None, isin: str | None = None,
            source_scope: str = "all", doc_type: str | None = None) -> list[SearchHit]:
@@ -107,8 +126,8 @@ def search(con: sqlite3.Connection, question: str, limit: int = 8,
         ranked.append(SearchHit(row[0], row[1], row[2], row[3] or "", row[4], score,
                                 row[6] or "unknown", row[7] or "unknown"))
     ranked.sort(key=lambda hit: hit.score, reverse=True)
-    # Several adjacent chunks often come from the same page. Return one best
-    # evidence window per document/page to avoid flooding the researcher.
+    # Several adjacent chunks often come from the same page. Return one bounded
+    # page-context bundle per document/page rather than only its top chunk.
     unique: list[SearchHit] = []
     seen_pages: set[tuple[str, int]] = set()
     for hit in ranked:
@@ -118,7 +137,7 @@ def search(con: sqlite3.Connection, question: str, limit: int = 8,
             unique.append(hit)
         if len(unique) >= limit:
             break
-    return unique
+    return [_page_context(con, hit) for hit in unique]
 
 
 def snippet(text: str, question: str, max_chars: int = 900) -> str:
@@ -186,4 +205,14 @@ def hybrid_search(con: sqlite3.Connection, question: str, limit: int = 8,
         f"ON d.doc_sha256=c.doc_sha256 WHERE {' AND '.join(clauses)}", [*ids, *params]
     )}
     filtered_dense = [hit for hit in dense_hits if hit.chunk_id in allowed]
-    return reciprocal_rank_fusion(sparse_hits, filtered_dense, limit=limit)
+    fused = reciprocal_rank_fusion(sparse_hits, filtered_dense, limit=max(limit * 8, limit))
+    unique: list[SearchHit] = []
+    seen_pages: set[tuple[str, int]] = set()
+    for hit in fused:
+        key = (hit.doc_sha256, hit.page_no)
+        if key not in seen_pages:
+            seen_pages.add(key)
+            unique.append(hit)
+        if len(unique) >= limit:
+            break
+    return [_page_context(con, hit) for hit in unique]

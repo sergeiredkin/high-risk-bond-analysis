@@ -54,7 +54,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 ### RAG-1 — Retrieval correctness gate
 
 1. The v2 candidate has 72 questions and document-disjoint splits; v3 adds 34 substantive positive questions with an unseen-issuer test. Neither candidate is manually verified or frozen.
-2. V2 held-out page recall@5 is 0.833 and citation precision 0.653. V3 test page recall@5 is 1.000 but retrieved answer-evidence match is 0.500 over only 14 questions; this does not establish answer correctness. V2's 0.000 no-answer retrieval-empty rate is a retrieval diagnostic, not answer-abstention accuracy. No candidate passes an acceptance gate.
+2. V2 held-out page recall@5 is 0.833 and citation precision 0.653. V3's initial test diagnostic was page recall@5 1.000 and answer-evidence match 0.500 over 14 questions. A later bounded page-context experiment raised dev answer-evidence availability from 0.700 to 1.000 without changing other dev metrics; because fixtures are one-page, this is context expansion, not a ranking improvement. Its post-change test score was not reviewed or used to tune. Neither result establishes answer correctness. V2's 0.000 no-answer retrieval-empty rate is a retrieval diagnostic, not answer-abstention accuracy. No candidate passes an acceptance gate.
 3. No suitable cached multilingual embedding model was found; the cached English MiniLM model is not used for Russian quality claims.
 4. Compare FTS5 vs hybrid retrieval only after a suitable local model and human-reviewed benchmark are available.
 5. Set thresholds only after the corpus/questions have been independently verified.
