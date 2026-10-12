@@ -44,6 +44,20 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
     text TEXT NOT NULL,
     chunk_hash TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS rag_financial_reports (
+    doc_sha256 TEXT NOT NULL REFERENCES rag_documents(doc_sha256),
+    report_id TEXT NOT NULL,
+    period TEXT NOT NULL,
+    actual_bfo_date TEXT,
+    published_date TEXT,
+    correction_number INTEGER,
+    correction_date TEXT,
+    form_code TEXT,
+    source_url TEXT,
+    PRIMARY KEY (doc_sha256, report_id)
+);
+CREATE INDEX IF NOT EXISTS idx_rag_financial_reports_period
+    ON rag_financial_reports(period, form_code);
 CREATE TABLE IF NOT EXISTS rag_facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     isin TEXT,

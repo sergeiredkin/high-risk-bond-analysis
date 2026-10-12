@@ -1,6 +1,6 @@
 # HyBond RAG Production-Readiness Audit
 
-**Audit date:** 2026-10-09
+**Audit date:** 2026-10-09; follow-up diagnostics: 2026-10-12
 **Scope:** original `docs/rag/RAG_IMPLEMENTATION_PLAN.md` and current implementation
 
 ## Executive result
@@ -36,12 +36,12 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | OCR for scanned Cyrillic PDFs | **Partial (experimental)** | opt-in Tesseract hook stores page text/mean confidence and preserves TSV line breaks, but does not index OCR text or expose it as answer evidence; this host has Tesseract 5.3.4/rus, but other deployments are not assumed to. No representative OCR evaluation; clean/degraded synthetic raster surrogates have smoke results only |
 | Tables as structured data | **Partial** | HTML tables are persisted as row/cell JSON plus canonical HTML and separately indexed; PDF rows use a conservative `pdftotext -layout` spacing heuristic and preserve raw strings, not verified numeric semantics. General PDF layout, merged-cell meaning, and a representative human-reviewed table benchmark are still missing |
 | Page rendering/visual retrieval | **Missing** | no images, bbox, ColPali/ColQwen path |
-| Structured fact extraction | **Partial** | conservative rule extractor now stores INN/ISIN/explicit unpaid amounts; coupons, schedules, covenants, financials, and LLM-assisted extraction remain |
+| Structured fact extraction | **Partial** | conservative rule extractor stores INN/ISIN/explicit unpaid amounts; exact-ISIN queries can expose selected current `universe_snapshot` fields, but coupon rate may be null and next-coupon dates are not inferred; schedules, covenants, and financial extraction remain |
 | MOEX/HyBond reconciliation | **Partial** | INN/ISIN matching now marks match/mismatch; monetary facts remain unverifiable and full source-priority reconciliation is pending |
-| Numeric SQL answer path | **Partial** | `answer_fact()` routes matched/reconciled facts; current-risk questions now combine dated SQL risk signals with document retrieval, but full numeric schemas and reconciliation remain |
-| Query routing | **Partial** | The local API/UI applies deterministic numeric/narrative/mixed/current-risk/out-of-scope routing; the CLI still exposes a lower-level fact-or-retrieval path and local answer generation remains missing |
+| Numeric SQL answer path | **Partial** | `answer_fact()` routes matched/reconciled facts; exact-ISIN snapshot answers show requested current fields without inventing missing values. `issuer_brief_summary()` and `bond_brief_summary()` provide broader dated SQL profiles using universe, bond, rating resolver, financial pillar, event, and filing tables. These are source-attributed DB values, not document quotes; financial-statement line-item Q&A and full reconciliation remain |
+| Query routing | **Partial** | The local API/UI applies deterministic numeric/narrative/mixed/current-risk/issuer-brief/bond-brief/out-of-scope routing; current-risk and profile ratings use `ratings.resolve()`. The CLI still exposes a lower-level fact-or-retrieval path and local answer generation remains missing |
 | Local answer generation | **Missing** | CLI returns retrieved evidence only |
-| Citation verification/abstention | **Partial** | retrieved citations now carry exact quotes and are checked against indexed document/page; claim-level generated-answer verification remains |
+| Citation verification/abstention | **Partial** | retrieved citations carry exact quotes and are checked against indexed document/page. This verifies quote presence, not relevance; claim-level generated-answer verification remains |
 | Versioned indexes/rollback | **Partial** | dense artifact builds use a temporary directory and atomic rename; rollback bookkeeping exists, but artifact activation is not transactionally coupled to SQLite version state |
 | Tracing/access control | **Partial** | local query telemetry logs route, hit count, top-source authority, abstention, and feedback; access control remains intentionally local-only |
 | E-disclosure ingestion integration | **Partial** | incremental `docs ingest-dir` is wired into hourly filings for recent local raw files; bounded, explicit-date historical backfill is available manually (see the [README command reference](../../README.md#slice-5-local-document-intelligence--rag)); downloader/source coverage remains |
@@ -102,6 +102,20 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 6. The local-only research API/dashboard exists; add generated answers only after the answer verifier passes.
 
 **Gate:** restart/rebuild/rollback tests pass and production cron cannot be blocked by indexing.
+
+## 2026-10-12 local query diagnostics
+
+A temporary copy of the local corpus was used for a follow-up pass; no production DB was written. The review UI continues to return evidence, not generated answers. Changes include issuer-aware snippet windows, bounded chunks for long Nalog JSON records, an exact-ISIN SQL snapshot panel that labels absent fields instead of inventing them, and CB/CBR/ЦБ alias handling. Forecast queries scoped to CBR now prefer dated direct `forecast.pdf` sources over material indexes, with publication date used only to break ties.
+
+Observed outcomes are diagnostic, not benchmark results: the CBR query without a company now returns the 2026-07-24 forecast PDF and its quoted rate range; exact-ISIN coupon queries show the stored 91-day period but leave coupon rate and next payment date unavailable when the snapshot has no value. Q2 default/non-payment wording still has no matching evidence. The two official Segezha «Выплаченные доходы» bodies were fetched into the temporary corpus and parsed: both report full coupon payment on 2026-10-02 for series 003P-10R (ISIN RU000A10E747) and 003P-06R (ISIN RU000A10CB66); each displayed field is backed by a page-verified quote. This confirms two issues on the same date/period, not payment messages across different dates, and it is the issuer's disclosure rather than independent settlement confirmation. An all-source offer query found secondary commentary, not an official disclosure. Nalog report metadata now identifies 2025–2021 periods, publication dates, corrections, and official report URLs for the two reviewed issuers; each returned metadata field is checked against the indexed JSON. The statement contents still need review, and existing indexed Nalog documents need bounded reingestion before this metadata is available for them. The current-risk and issuer/bond profile routes now use canonical rating resolution (MOEX CCI before legacy manual rows); the Segezha sample resolves to MOEX `ruB`. Rating/event provenance and legacy edge cases still need independent scrutiny.
+
+### Existing DB coverage and structured profiles (read-only inspection, 2026-10-12)
+
+The production DB contains 82 issuer records, 379 bonds, 67,199 universe snapshots, 6,055 events, 2,708 market notes, and 6,050 filing metadata rows. Its 2,369 indexed documents comprise 2,210 derived HyBond factlists, 72 issuer e-disclosures, 48 Nalog financial JSON documents, 24 CBR documents, 12 secondary-commentary documents, and three reference/rating documents. The large SQL history is enough for useful dated issuer/bond profiles; it is not equivalent to broad primary-document coverage. Filing rows are metadata, not disclosure bodies.
+
+The new issuer and exact-ISIN profile routes were exercised against a temporary SQLite backup, not the live DB. For Segezha, the profile returned the 2026-10-12 market snapshot (9 bonds), canonical MOEX-resolved `ruB`, 2025 RСБУ ratios, recent events/rating changes, and clearly separated secondary news leads and filing metadata. The sample RСБУ statement is audited but non-consolidated; ratios are raw calculated metrics, not a generated credit opinion. The exact-ISIN profile returned current available market fields and explicitly left absent coupon dates uncalculated. No production DB writes were made.
+
+These targeted examples do not repair the candidate golden set, prove query relevance broadly, or justify a quality gate. V3 remains agent-checked; no independent review, OCR readiness, generated answers, or production-readiness claim is established.
 
 ## Important conclusion
 

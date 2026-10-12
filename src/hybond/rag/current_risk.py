@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from hybond.ratings import resolve as resolve_rating
+
 
 def is_current_risk_question(question: str) -> bool:
     """Detect questions that require current HyBond analytics, not only RAG text."""
@@ -40,13 +42,13 @@ def current_risk_summary(con, issuer_id: str) -> dict:
            WHERE issuer_id=? AND occurred>=? ORDER BY occurred DESC LIMIT 10""",
         (issuer_id, cutoff),
     ).fetchall()]
-    has_rating = con.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rating'"
-    ).fetchone() is not None
-    ratings = [dict(row) for row in con.execute(
-        """SELECT agency,rating,outlook,action,rated_on,source FROM rating
-           WHERE issuer_id=? AND is_current=1 ORDER BY agency""", (issuer_id,)
-    ).fetchall()] if has_rating else []
+    rating_resolution = resolve_rating(con, inn=issuer_id)
+    ratings = [{
+        "agency": row["agency"], "rating": row["grade"],
+        "outlook": None, "action": None, "rated_on": row["rated_on"],
+        "source": row["source"], "scale": row["scale"],
+        "status": row["status"], "used": row["used"],
+    } for row in rating_resolution["agencies"]]
     signals = []
     if issuer[2] and issuer[2].lower() != "green":
         signals.append(f"health_status={issuer[2]}: {issuer[3] or 'причина не указана'}")
@@ -59,6 +61,6 @@ def current_risk_summary(con, issuer_id: str) -> dict:
         "status": "found", "route": "current_risk", "issuer_id": issuer_id,
         "issuer_name": issuer[1], "as_of": latest, "health_status": issuer[2],
         "signals": signals, "bonds": bonds, "recent_events": events,
-        "ratings": ratings,
+        "ratings": ratings, "rating_resolution": rating_resolution,
         "disclaimer": "Сводка построена из данных HyBond; подтверждайте выводы первичными документами.",
     }

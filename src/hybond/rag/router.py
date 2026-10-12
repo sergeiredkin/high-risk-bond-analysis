@@ -1,7 +1,9 @@
 """Deterministic query routing for safe RAG/SQL answer paths."""
 from __future__ import annotations
 
+from .bond_brief import is_bond_brief_question
 from .current_risk import is_current_risk_question
+from .issuer_brief import is_issuer_brief_question
 
 _NUMERIC = (
     "купон", "доходност", "ytm", "ставк", "погаш", "оферт", "амортиз",
@@ -19,6 +21,10 @@ def classify_query(question: str) -> str:
         return "out_of_scope"
     if is_current_risk_question(question):
         return "current_risk"
+    if is_bond_brief_question(question):
+        return "bond_brief"
+    if is_issuer_brief_question(question):
+        return "issuer_brief"
     has_numeric = any(term in value for term in _NUMERIC)
     has_mixed = any(term in value for term in _MIXED)
     if has_numeric and has_mixed:
