@@ -1,7 +1,7 @@
 """Structured current-risk context from HyBond's live analytical tables."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 
 def is_current_risk_question(question: str) -> bool:
@@ -34,7 +34,7 @@ def current_risk_summary(con, issuer_id: str) -> dict:
                FROM universe_snapshot WHERE emitent_inn=? AND snap_date=?
                ORDER BY g_spread_bp DESC LIMIT 5""", (issuer_id, latest)
         ).fetchall()]
-    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=30)).isoformat()
+    cutoff = (datetime.now(UTC).date() - timedelta(days=30)).isoformat()
     events = [dict(row) for row in con.execute(
         """SELECT occurred,category,severity,summary,source_url FROM event
            WHERE issuer_id=? AND occurred>=? ORDER BY occurred DESC LIMIT 10""",

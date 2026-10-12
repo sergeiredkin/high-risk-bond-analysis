@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS rag_documents (
@@ -129,7 +129,7 @@ def init_registry(con: sqlite3.Connection) -> None:
 
 def upsert_document(con: sqlite3.Connection, document: dict) -> None:
     """Register a document without replacing an existing parsed record."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     con.execute(
         """INSERT INTO rag_documents
            (doc_sha256, isin, issuer_inn, doc_type, source_url, fetched_at,
