@@ -11,12 +11,22 @@ def test_numeric_and_boolean_expected_values_match_russian_evidence():
     from hybond.rag.search import SearchHit
     hit = SearchHit("c", "doc", 1, "", "Сумма 67 800 000,00 руб. Эмитент не исполнил обязанность.", 1)
     assert expected_in_hits({"value": 67800000, "unit": "RUB"}, "numeric", [hit]) is True
+    spelled_amount = SearchHit(
+        "spelled", "doc", 1, "",
+        "Сумма 14 606 000 (четырнадцать миллионов шестьсот шесть тысяч) рублей.", 1,
+    )
+    assert expected_in_hits({"value": 14606000, "unit": "RUB"}, "numeric", [spelled_amount]) is True
     assert expected_in_hits(67800000, "numeric", [hit]) is False
     percent = SearchHit("p", "doc", 1, "", "Коэффициент 100%.", 1)
     rubles = SearchHit("r", "doc", 1, "", "Сумма 100 руб.", 1)
     assert expected_in_hits(100, "numeric", [percent]) is False
     assert expected_in_hits({"value": 100, "unit": "percent"}, "numeric", [percent]) is True
     assert expected_in_hits({"value": 100, "unit": "RUB"}, "numeric", [rubles]) is True
+    yuan = SearchHit("y", "doc", 1, "", "Выплата составила 0,98 юаней на облигацию.", 1)
+    count = SearchHit("n", "doc", 1, "", "Погашено 3 314 597 штук облигаций.", 1)
+    assert expected_in_hits({"value": 0.98, "unit": "CNY"}, "numeric", [yuan]) is True
+    assert expected_in_hits({"value": 3314597, "unit": "COUNT"}, "numeric", [count]) is True
+    assert expected_in_hits({"value": 0.98, "unit": "RUB"}, "numeric", [yuan]) is False
     assert expected_in_hits(True, "boolean", [hit]) is None
     insufficient = SearchHit("d", "doc", 1, "", "Смотреть только на букву рейтинга недостаточно.", 1)
     assert expected_in_hits(False, "boolean", [insufficient]) is None

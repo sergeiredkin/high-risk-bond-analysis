@@ -6,15 +6,18 @@ from datetime import date
 from pathlib import Path
 from urllib.parse import urlparse
 
+from hybond.rag.eval.metrics import expected_in_hits
 from hybond.rag.eval.runner import run
 from hybond.rag.golden import load_golden
 from hybond.rag.ingest import ingest_file
 from hybond.rag.manifest import load_manifest, validate_local_files
+from hybond.rag.search import SearchHit
 from hybond.store import db
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "eval/corpus/manifest_v2.jsonl"
 GOLDEN = ROOT / "eval/golden/ru_bonds_v2.jsonl"
+GOLDEN_V3 = ROOT / "eval/golden/ru_bonds_v3_candidate.jsonl"
 
 
 def test_manifest_has_message_level_provenance_matching_archived_html():
@@ -52,6 +55,73 @@ def test_manifest_has_message_level_provenance_matching_archived_html():
 
     assert len(records) == 30
     assert len(disclosure_ids) == 30
+
+
+def test_v3_candidate_uses_substantive_questions_and_issuer_group_holdout(tmp_path):
+    documents = load_manifest(MANIFEST)
+    questions = load_golden(GOLDEN_V3, documents)
+    raw_questions = [
+        json.loads(line) for line in GOLDEN_V3.read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(questions) == 34
+    assert all(question.answer_type in {"numeric", "date"} for question in questions)
+    assert all(question.evidence for question in questions)
+    assert all(record["verified_by"] == "agent-source-check" for record in raw_questions)
+    assert len({question.question for question in questions}) == len(questions)
+    assert len({question.category for question in questions}) == 6
+
+    issuers_by_split = {
+        split: {question.issuer_inn for question in questions if question.split == split}
+        for split in ("dev", "test")
+    }
+    assert len(issuers_by_split["dev"]) == 6
+    assert len(issuers_by_split["test"]) == 4
+    assert not issuers_by_split["dev"] & issuers_by_split["test"]
+    assert not {
+        (question.question, json.dumps(question.expected, ensure_ascii=False))
+        for question in questions if question.split == "dev"
+    } & {
+        (question.question, json.dumps(question.expected, ensure_ascii=False))
+        for question in questions if question.split == "test"
+    }
+
+    con = db.connect(tmp_path / "v3-candidate.sqlite")
+    db.init_db(con)
+    try:
+        for document in documents:
+            ingest_file(
+                con,
+                ROOT / document.local_path,
+                doc_type=document.doc_type,
+                isin=None if document.isin == "unknown" else document.isin,
+                issuer_inn=document.issuer_inn,
+                source_url=document.source_url,
+                source_kind="edisclosure",
+                authority_level="issuer_disclosure",
+            )
+        for question in questions:
+            evidence = question.evidence[0]
+            chunks = con.execute(
+                "SELECT text FROM rag_chunks WHERE doc_sha256=? AND page_no=?",
+                (evidence["doc_sha256"], evidence["page"]),
+            ).fetchall()
+            assert any(evidence["quote"] in row[0] for row in chunks), question.qid
+            quote_hit = SearchHit(
+                question.qid, evidence["doc_sha256"], evidence["page"], "",
+                evidence["quote"], 1.0,
+            )
+            assert expected_in_hits(question.expected, question.answer_type, [quote_hit]) is True, question.qid
+
+        reports = {
+            split: run(con, GOLDEN_V3, MANIFEST, k=5, split=split)
+            for split in ("dev", "test")
+        }
+        assert reports["dev"]["question_count"] == 20
+        assert reports["test"]["question_count"] == 14
+        assert reports["dev"]["dataset_sha256"] == reports["test"]["dataset_sha256"]
+        assert all(report["metrics"]["answer_abstention_accuracy"] is None for report in reports.values())
+    finally:
+        con.close()
 
 
 def test_candidate_fixture_corpus_integrity_and_split_isolation(tmp_path):

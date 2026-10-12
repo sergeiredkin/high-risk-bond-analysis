@@ -5,7 +5,7 @@
 
 ## Executive result
 
-**Not production-ready.** The system remains a P0/P1 retrieval prototype, not a complete cited answering system. A 72-question, 10-issuer agent-checked fixture candidate is available with document-disjoint dev/test splits, but it is not human-verified, has no table/scan/cross-document coverage, and reports weak held-out retrieval. The retrieval-only evaluator has no answer-abstention score; its no-answer empty-retrieval diagnostic is not answer safety. A local research UI/API exists, but it does not generate answers. See [`GOLDEN_SET_V2_CANDIDATE.md`](GOLDEN_SET_V2_CANDIDATE.md).
+**Not production-ready.** The system remains a P0/P1 retrieval prototype, not a complete cited answering system. The 72-question v2 bootstrap and 34-question v3 substantive candidate are both agent-checked, not human-verified. V3 uses an unseen-issuer test split but remains a small positive-only set; retrieved answer-evidence match is weak, and it has no table/scan/cross-document coverage. The retrieval-only evaluator has no answer-abstention score; its no-answer empty-retrieval diagnostic is not answer safety. A local research UI/API exists, but it does not generate answers. See the candidate-specific evaluations in [`GOLDEN_SET_V2_CANDIDATE.md`](GOLDEN_SET_V2_CANDIDATE.md) and [`GOLDEN_SET_V3_CANDIDATE.md`](GOLDEN_SET_V3_CANDIDATE.md).
 
 Baseline command:
 
@@ -53,8 +53,8 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 
 ### RAG-1 — Retrieval correctness gate
 
-1. A 72-question, 10-issuer agent-checked candidate and document-disjoint dev/test split now exist; the benchmark is still not manually verified or frozen.
-2. The held-out candidate result is page recall@5 0.833 and citation precision 0.653; all 20 answerable items still require manual scoring. The reported 0.000 no-answer retrieval-empty rate is a retrieval diagnostic, not answer-abstention accuracy; these results do not pass an acceptance gate.
+1. The v2 candidate has 72 questions and document-disjoint splits; v3 adds 34 substantive positive questions with an unseen-issuer test. Neither candidate is manually verified or frozen.
+2. V2 held-out page recall@5 is 0.833 and citation precision 0.653. V3 test page recall@5 is 1.000 but retrieved answer-evidence match is 0.500 over only 14 questions; this does not establish answer correctness. V2's 0.000 no-answer retrieval-empty rate is a retrieval diagnostic, not answer-abstention accuracy. No candidate passes an acceptance gate.
 3. No suitable cached multilingual embedding model was found; the cached English MiniLM model is not used for Russian quality claims.
 4. Compare FTS5 vs hybrid retrieval only after a suitable local model and human-reviewed benchmark are available.
 5. Set thresholds only after the corpus/questions have been independently verified.
