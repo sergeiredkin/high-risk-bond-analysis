@@ -122,6 +122,35 @@ def test_ingest_is_idempotent_and_search_returns_page_citation(tmp_path):
     con.close()
 
 
+def test_search_bundles_bounded_page_context_for_page_citations(tmp_path):
+    source = tmp_path / "page.md"
+    source.write_text(
+        "# Уведомление\n\nРазмер выплаты по купону составляет 12 400 рублей.\n\n"
+        + "Справочная часть " + "x" * 1900 + " конец второго блока.\n\n"
+        + "Дополнительное условие: дата окончания 2031 года.",
+        encoding="utf-8",
+    )
+    con = db.connect(Path(":memory:"))
+    db.init_db(con)
+    ingest_file(con, source, doc_type="issuer_notice")
+
+    hits = search(con, "размер выплаты купону", limit=3)
+    assert len(hits) == 1
+    assert "12 400 рублей" in hits[0].text
+    assert "дата окончания 2031 года" in hits[0].text
+    assert len(hits[0].text) <= 12_000
+
+    from hybond.rag.search import SearchHit
+    rows = con.execute(
+        "SELECT chunk_id,doc_sha256,page_no,section,text FROM rag_chunks"
+    ).fetchall()
+    dense_hits = [SearchHit(row[0], row[1], row[2], row[3] or "", row[4], 1.0) for row in rows]
+    hybrid_hits = hybrid_search(con, "размер выплаты купону", limit=3, dense_hits=dense_hits)
+    assert len(hybrid_hits) == 1
+    assert "дата окончания 2031 года" in hybrid_hits[0].text
+    con.close()
+
+
 def test_fts_empty_query_and_rrf_deduplicate(tmp_path):
     con = db.connect(Path(":memory:"))
     db.init_db(con)
