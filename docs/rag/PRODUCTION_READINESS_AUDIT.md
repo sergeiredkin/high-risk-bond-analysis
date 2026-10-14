@@ -5,7 +5,7 @@
 
 ## Executive result
 
-**Not production-ready.** The system remains a P0/P1 retrieval prototype, not a complete cited answering system. The 72-question v2 bootstrap and 34-question v3 substantive candidate are both agent-checked, not human-verified. V3 uses an unseen-issuer test split but remains a small positive-only set; retrieved answer-evidence match is weak, and it has no table/scan/cross-document coverage. The retrieval-only evaluator has no answer-abstention score; its no-answer empty-retrieval diagnostic is not answer safety. A local research UI/API exists, but it does not generate answers. See the candidate-specific evaluations in [`GOLDEN_SET_V2_CANDIDATE.md`](GOLDEN_SET_V2_CANDIDATE.md) and [`GOLDEN_SET_V3_CANDIDATE.md`](GOLDEN_SET_V3_CANDIDATE.md).
+**Not production-ready.** The system remains a P0/P1 retrieval prototype, not a complete cited answering system. The 72-question v2 bootstrap and 34-question v3 substantive candidate are both agent-checked, not human-verified. V3 uses an unseen-issuer test split but remains a small positive-only set; retrieved answer-evidence match is weak, and it has no table/scan/cross-document coverage. The retrieval-only evaluator has no answer-abstention score; its no-answer empty-retrieval diagnostic is not answer safety. A local research UI/API exists, including deterministic SQL profiles and an exact-bond snapshot trend comparison, but it does not generate answers. See the candidate-specific evaluations in [`GOLDEN_SET_V2_CANDIDATE.md`](GOLDEN_SET_V2_CANDIDATE.md) and [`GOLDEN_SET_V3_CANDIDATE.md`](GOLDEN_SET_V3_CANDIDATE.md).
 
 Baseline command:
 
@@ -38,8 +38,8 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | Page rendering/visual retrieval | **Missing** | no images, bbox, ColPali/ColQwen path |
 | Structured fact extraction | **Partial** | conservative rule extractor stores INN/ISIN/explicit unpaid amounts; exact-ISIN queries can expose selected current `universe_snapshot` fields, but coupon rate may be null and next-coupon dates are not inferred; schedules, covenants, and financial extraction remain |
 | MOEX/HyBond reconciliation | **Partial** | INN/ISIN matching now marks match/mismatch; monetary facts remain unverifiable and full source-priority reconciliation is pending |
-| Numeric SQL answer path | **Partial** | `answer_fact()` routes matched/reconciled facts; exact-ISIN snapshot answers show requested current fields without inventing missing values. `issuer_brief_summary()` and `bond_brief_summary()` provide broader dated SQL profiles using universe, bond, rating resolver, financial pillar, event, and filing tables. These are source-attributed DB values, not document quotes; financial-statement line-item Q&A and full reconciliation remain |
-| Query routing | **Partial** | The local API/UI applies deterministic numeric/narrative/mixed/current-risk/issuer-brief/bond-brief/out-of-scope routing; current-risk and profile ratings use `ratings.resolve()`. The CLI still exposes a lower-level fact-or-retrieval path and local answer generation remains missing |
+| Numeric SQL answer path | **Partial** | `answer_fact()` routes matched/reconciled facts; exact-ISIN snapshot answers show requested current fields without inventing missing values. `issuer_brief_summary()` and `bond_brief_summary()` provide dated SQL profiles; `bond_history_summary()` compares exact-ISIN YTM, G-spread, and clean-price snapshots over a bounded window and withholds yield/spread deltas if calculation source changes. These are source-attributed DB values, not document quotes; issuer-wide trends, financial-statement line-item Q&A, full-corpus history coverage, and full reconciliation remain |
+| Query routing | **Partial** | The local API/UI applies deterministic numeric/narrative/mixed/current-risk/issuer-brief/bond-brief/bond-trend/out-of-scope routing; current-risk and profile ratings use `ratings.resolve()`. The CLI still exposes a lower-level fact-or-retrieval path and local answer generation remains missing |
 | Local answer generation | **Missing** | CLI returns retrieved evidence only |
 | Citation verification/abstention | **Partial** | retrieved citations carry exact quotes and are checked against indexed document/page. This verifies quote presence, not relevance; claim-level generated-answer verification remains |
 | Versioned indexes/rollback | **Partial** | dense artifact builds use a temporary directory and atomic rename; rollback bookkeeping exists, but artifact activation is not transactionally coupled to SQLite version state |
@@ -76,7 +76,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 1. Implement fact schemas and extraction for coupon, schedule, maturity, put/call, amortization, guarantor, covenant, proceeds, volume, and financial metrics.
 2. Reconcile facts against existing HyBond/MOEX data.
 3. Store mismatches, never overwrite silently.
-4. Implement parameterized SQL answers for numeric questions.
+4. Extend parameterized SQL answers to financial-statement line items and issuer-wide time trends; exact-bond market snapshot trends are implemented but need full-corpus coverage review.
 5. Add tolerance-aware numeric/date evaluation.
 
 **Gate:** >=95% exact-match on answerable numeric dev questions and all mismatches visible.

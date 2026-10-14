@@ -27,7 +27,8 @@ const examples=[
  'Покажи финансовые показатели эмитента за последний доступный период.',
  'Какие текущие сигналы риска есть у эмитента?',
  'Расскажи об эмитенте и его облигациях.',
- 'Сделай профиль облигации RU000A108991.'
+ 'Сделай профиль облигации RU000A108991.',
+ 'Как изменились доходность, G-спред и цена за 90 дней по облигации RU000A108991?'
 ];
 const q=document.querySelector('#question'), out=document.querySelector('#results'), status=document.querySelector('#status');
 for(const text of examples){const b=document.createElement('button');b.className='example';b.textContent=text;b.onclick=()=>{q.value=text;q.focus()};document.querySelector('#examples').appendChild(b)}
@@ -110,6 +111,20 @@ function renderBondBrief(answer,queryId){
  out.innerHTML=`<div class="card"><h2>${escapeHtml(b.short_name||b.isin||b.secid)} · профиль выпуска</h2><p>${escapeHtml(answer.issuer_context?.issuer_name||'Эмитент не распознан')} · рейтинг ${escapeHtml(r.grade||'н/д')} (${escapeHtml(r.source||'источник н/д')})</p><div style="overflow-x:auto"><table><tbody>${rows}</tbody></table></div><p class="status">${escapeHtml(answer.missing_coupon_schedule||'')}${escapeHtml(answer.disclaimer||'')}</p></div>${feedbackMarkup(queryId)}`;
  bindFeedback(queryId);
 }
+function renderBondTrend(answer,queryId){
+ const fmt=(value,digits=2)=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('ru-RU',{maximumFractionDigits:digits});
+ if(answer.status!=='found'){
+  out.innerHTML=`<div class="card empty">${escapeHtml(answer.message||'Нет пригодной истории snapshot для сравнения.')}</div>${feedbackMarkup(queryId)}`;
+  bindFeedback(queryId);return;
+ }
+ const render=(key,label,fields,unit)=>{
+  const m=answer.metrics?.[key];if(!m)return `<li><b>${escapeHtml(label)}:</b> нет данных в выбранном окне</li>`;
+  const start=fmt(m[fields[0]]),end=fmt(m[fields[1]]),change=m[fields[2]]===null?'не рассчитано':`${fmt(m[fields[2]])} ${unit}`;
+  return `<li><b>${escapeHtml(label)}:</b> ${start} → ${end}; изменение ${escapeHtml(change)} (${escapeHtml(m.start_date||'н/д')}—${escapeHtml(m.end_date||'н/д')}, ${fmt(m.observations,0)} наблюдений)${m.comparability_note?` · ${escapeHtml(m.comparability_note)}`:''}</li>`;
+ };
+ out.innerHTML=`<div class="card"><h2>${escapeHtml(answer.bond?.short_name||answer.bond?.isin||'Облигация')} · динамика snapshot</h2><p>Окно ${fmt(answer.window_days,0)} дней · ${escapeHtml(answer.cutoff||'н/д')}—${escapeHtml(answer.as_of||'н/д')} · ${fmt(answer.observation_dates,0)} дат</p><ul>${render('ytm','YTM, %',['start_pct','end_pct','change_pp'],'п.п.')}${render('g_spread','G-спред, б.п.',['start_bp','end_bp','change_bp'],'б.п.')}${render('clean_price','Чистая цена, % номинала',['start_pct','end_pct','change_points'],'п.п.')}</ul><p>Источники расчёта доходности: ${escapeHtml((answer.yield_sources||[]).join(', ')||'не указаны')}</p><p class="status">${escapeHtml(answer.disclaimer||'')}</p></div>${feedbackMarkup(queryId)}`;
+ bindFeedback(queryId);
+}
 function renderCurrentRisk(answer,queryId){
  const pct=value=>value!==null&&value!==undefined&&Number.isFinite(Number(value))?`${(Number(value)*100).toFixed(2)}%`:'—';
  const bonds=(answer.bonds||[]).map(b=>`<tr><td>${escapeHtml(b.short_name||b.secid)}</td><td>${escapeHtml(b.secid)}</td><td>${pct(b.ytm)}</td><td>${Number.isFinite(Number(b.g_spread_bp))?Number(b.g_spread_bp).toFixed(0)+' б.п.':'—'}</td><td>${escapeHtml(b.mat_date||'—')}</td><td>${escapeHtml(b.offer_date||'—')}</td></tr>`).join('');
@@ -144,6 +159,10 @@ document.querySelector('#ask').onclick=async()=>{
   if(data.route==='issuer_brief'&&data.answer){
    status.textContent='Профиль собран из датированных таблиц HyBond; событие/новость не равны независимо подтверждённому факту.';
    renderIssuerBrief(data.answer,data.query_id);return;
+  }
+  if(data.route==='bond_trend'&&data.answer){
+   status.textContent='Детерминированное сравнение сохранённых snapshots; причина изменения не выводится.';
+   renderBondTrend(data.answer,data.query_id);return;
   }
   if(data.route==='bond_brief'&&data.answer){
    status.textContent='Профиль точного выпуска из bond master и market snapshot HyBond.';

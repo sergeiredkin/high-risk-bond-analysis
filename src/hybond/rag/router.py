@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .bond_brief import is_bond_brief_question
+from .bond_history import is_bond_trend_question
 from .current_risk import is_current_risk_question
 from .issuer_brief import is_issuer_brief_question
 
@@ -21,6 +22,8 @@ def classify_query(question: str) -> str:
         return "out_of_scope"
     if is_current_risk_question(question):
         return "current_risk"
+    if is_bond_trend_question(question):
+        return "bond_trend"
     if is_bond_brief_question(question):
         return "bond_brief"
     if is_issuer_brief_question(question):

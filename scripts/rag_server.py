@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from hybond.rag.answer import answer_fact
 from hybond.rag.bond_brief import bond_brief_summary
+from hybond.rag.bond_history import bond_history_summary, is_bond_trend_question
 from hybond.rag.bond_snapshot import answer_bond_snapshot
 from hybond.rag.company import resolve_company
 from hybond.rag.current_risk import current_risk_summary
@@ -115,6 +116,8 @@ class Handler(BaseHTTPRequestHandler):
             if not question or len(question) > 2000:
                 raise ValueError("question must contain 1–2000 characters")
             query_route = classify_query(question)
+            if payload.get("isin") and is_bond_trend_question(question, require_isin=False):
+                query_route = "bond_trend"
             if query_route == "out_of_scope":
                 con.close()
                 self._send(200, {"route": "out_of_scope", "answer": None, "hits": [],
@@ -145,6 +148,20 @@ class Handler(BaseHTTPRequestHandler):
                                      abstained=answer.get("status") != "found")
                 con.close()
                 self._send(200, {"route": "issuer_brief", "answer": answer,
+                                 "query_id": query_id, "hits": []})
+                return
+            if query_route == "bond_trend":
+                instrument = payload.get("isin") or next(iter(_ISIN_RE.findall(question)), None)
+                if not instrument:
+                    con.close()
+                    self._send(200, {"route": "scope_required", "answer": None,
+                                     "hits": [], "message": "Укажите точный ISIN облигации."})
+                    return
+                answer = bond_history_summary(con, instrument, question)
+                query_id = log_query(con, question=question, route=query_route, hits=[],
+                                     abstained=answer.get("status") != "found")
+                con.close()
+                self._send(200, {"route": "bond_trend", "answer": answer,
                                  "query_id": query_id, "hits": []})
                 return
             if query_route == "bond_brief":

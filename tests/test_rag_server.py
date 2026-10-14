@@ -43,6 +43,18 @@ def test_api_routes_issuer_and_bond_profile_requests_to_sql(tmp_path, monkeypatc
            VALUES(?,?,?,?,?,?)""",
         ("RU000A000001", "2026-10-12", "1234567890", "Example 1", 0.2, 500.0),
     )
+    for day, ytm, spread, price in (
+        ("2026-09-12", 0.20, 500.0, 98.0),
+        ("2026-10-12", 0.25, 650.0, 96.0),
+    ):
+        con.execute(
+            "INSERT INTO spread_snapshot(secid,snap_date,ytm,g_spread_bp,yield_source) VALUES(?,?,?,?,?)",
+            ("RU000A000001", day, ytm, spread, "computed"),
+        )
+        con.execute(
+            "INSERT INTO price_snapshot(secid,snap_date,last_pct) VALUES(?,?,?)",
+            ("RU000A000001", day, price),
+        )
     con.commit()
     con.close()
 
@@ -54,6 +66,10 @@ def test_api_routes_issuer_and_bond_profile_requests_to_sql(tmp_path, monkeypatc
         bond = _ask(base_url, {
             "question": "Сделай профиль облигации RU000A000001.", "company": None,
         })
+        trend = _ask(base_url, {
+            "question": "Как изменилась доходность и G-спред за 30 дней?",
+            "isin": "RU000A000001",
+        })
     finally:
         server.shutdown()
         server.server_close()
@@ -64,6 +80,9 @@ def test_api_routes_issuer_and_bond_profile_requests_to_sql(tmp_path, monkeypatc
     assert bond["route"] == "bond_brief"
     assert bond["answer"]["bond"]["isin"] == "RU000A000001"
     assert bond["answer"]["market"]["ytm_pct"] == 20.0
+    assert trend["route"] == "bond_trend"
+    assert trend["answer"]["metrics"]["ytm"]["change_pp"] == 5.0
+    assert trend["answer"]["metrics"]["g_spread"]["change_bp"] == 150.0
 
 
 def test_unreconciled_numeric_fact_falls_back_to_cited_document_search(tmp_path, monkeypatch):
