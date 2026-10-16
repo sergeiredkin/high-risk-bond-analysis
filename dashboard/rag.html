@@ -5,30 +5,197 @@
 <title>HyBond — RAG Research</title>
 <style>
 :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#101214;color:#e8ecef}
-body{max-width:1100px;margin:0 auto;padding:32px 20px;background:#101214}h1{font-size:28px;margin:0 0 8px}p{color:#9da7ae}.card{background:#191d21;border:1px solid #30373d;border-radius:12px;padding:18px;margin:18px 0}textarea,input{width:100%;box-sizing:border-box;background:#0f1214;color:#f4f6f7;border:1px solid #46515a;border-radius:8px;padding:12px;font:inherit}textarea{min-height:90px;resize:vertical}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}button{margin-top:14px;background:#d7a84b;color:#161616;border:0;border-radius:8px;padding:11px 18px;font-weight:700;cursor:pointer}.examples{display:flex;flex-wrap:wrap;gap:8px}.example{background:#242b30;border:1px solid #3b464d;color:#cdd5da;border-radius:16px;padding:7px 11px;cursor:pointer}.hit{border-top:1px solid #343c42;padding:16px 0}.hit:first-child{border-top:0}.meta{font-size:12px;color:#c5a45e;margin-bottom:8px}.text{white-space:pre-wrap;line-height:1.5}.status{color:#9da7ae}.error{color:#ff8b8b}.fact{font-family:monospace;white-space:pre-wrap;color:#c8e6c9}.empty{color:#e5b7b7}
+body{max-width:1100px;margin:0 auto;padding:32px 20px;background:#101214}h1{font-size:28px;margin:0 0 8px}p{color:#9da7ae}.card{background:#191d21;border:1px solid #30373d;border-radius:12px;padding:18px;margin:18px 0}textarea,input{width:100%;box-sizing:border-box;background:#0f1214;color:#f4f6f7;border:1px solid #46515a;border-radius:8px;padding:12px;font:inherit}textarea{min-height:90px;resize:vertical}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}button{margin-top:14px;background:#d7a84b;color:#161616;border:0;border-radius:8px;padding:11px 18px;font-weight:700;cursor:pointer}.examples{display:flex;flex-wrap:wrap;gap:8px}.example{background:#242b30;border:1px solid #3b464d;color:#cdd5da;border-radius:16px;padding:7px 11px;cursor:pointer}.hit{border-top:1px solid #343c42;padding:16px 0}.hit:first-child{border-top:0}.meta{font-size:12px;color:#c5a45e;margin-bottom:8px}.text{white-space:pre-wrap;line-height:1.5}.status{color:#9da7ae}.error{color:#ff8b8b}.fact{font-family:monospace;white-space:pre-wrap;color:#c8e6c9}.empty{color:#e5b7b7}.feedback{border-top:1px solid #343c42;padding-top:12px}.source-path{display:block;color:#82909a;font-size:12px;margin-top:4px}.source-link{color:#d7a84b}
 @media(max-width:650px){.row{grid-template-columns:1fr}}
 </style></head>
 <body>
 <h1>HyBond · Документальный поиск</h1>
-<p>Локальный RAG по документам HyBond. Для вопросов об эмитенте укажите ИНН или ISIN — иначе поиск может объединить несколько источников. Ответы показывают исходные фрагменты и источники; это не инвестиционная рекомендация.</p>
+<p>Локальный поиск по документам и структурированным данным HyBond. Для сводки эмитента укажите компанию/ИНН; для профиля выпуска — точный ISIN. Числа берутся из датированных SQL-срезов, документы показываются как выдержки с источниками; это исследовательская сводка, не инвестиционная рекомендация.</p>
 <div class="card">
   <label for="question">Вопрос</label>
   <textarea id="question" placeholder="Например: Какова причина неисполнения обязательства?"></textarea>
-  <div class="row"><label>Компания<br><input id="company" placeholder="например, Самолёт"></label><label>ИНН<br><input id="inn" placeholder="необязательно"></label></div><div style="margin-top:12px"><label>ISIN<br><input id="isin" placeholder="необязательно"></label></div><div style="margin-top:12px"><label>Источники<br><select id="source_scope"><option value="all">Все источники</option><option value="official">Только официальные и финансовые</option></select></label><label style="margin-left:16px">Тип документа<br><select id="doc_type"><option value="all">Все типы</option><option value="edisclosure_html">Раскрытие эмитента</option><option value="cbr_document">ЦБ РФ</option><option value="nalog_financials">Финансовые данные</option><option value="rating_agency_nkr">НКР</option><option value="rating_agency_nra">НРА</option><option value="hybond_factlist">Факт-листы HyBond</option></select></label></div>
+  <div class="row"><label>Компания (только для эмитента)<br><input id="company" placeholder="например, Сегежа Групп; ЦБ/CBR — источник"></label><label>ИНН<br><input id="inn" placeholder="необязательно"></label></div><div style="margin-top:12px"><label>ISIN<br><input id="isin" placeholder="необязательно"></label></div><div style="margin-top:12px"><label>Источники<br><select id="source_scope"><option value="all">Все источники</option><option value="official">Только официальные и финансовые</option></select></label><label style="margin-left:16px">Тип документа<br><select id="doc_type"><option value="all">Все типы</option><option value="edisclosure_html">Раскрытие эмитента</option><option value="cbr_document">ЦБ РФ</option><option value="nalog_financials">Финансовые данные</option><option value="rating_agency_nkr">НКР</option><option value="rating_agency_nra">НРА</option><option value="hybond_factlist">Факт-листы HyBond</option></select></label></div>
   <button id="ask">Найти доказательства</button>
 </div>
-<div class="card"><strong>5 стартовых вопросов</strong><div class="examples" id="examples"></div></div>
+<div class="card"><strong>Примеры вопросов</strong><div class="examples" id="examples"></div></div>
 <div id="status" class="status"></div><div id="results"></div>
 <script>
 const examples=[
- 'Какова причина неисполнения обязательства?',
- 'Что произошло с выплатой купона?',
- 'Что такое G-спред и как он связан с риском дефолта?',
- 'Как рассчитывается YTM и чем он отличается от текущей доходности?',
- 'Какие документы подтверждают финансовый риск эмитента?'
+ 'По облигации RU000A108991 найди раскрытие с купонной ставкой и датой выплаты.',
+ 'Какие последствия неисполнения обязательств указаны в раскрытии эмитента?',
+ 'Найди прогноз средней ключевой ставки Банка России по годам.',
+ 'Покажи финансовые показатели эмитента за последний доступный период.',
+ 'Какие текущие сигналы риска есть у эмитента?',
+ 'Расскажи об эмитенте и его облигациях.',
+ 'Сделай профиль облигации RU000A108991.',
+ 'Как изменились доходность, G-спред и цена за 90 дней по облигации RU000A108991?'
 ];
 const q=document.querySelector('#question'), out=document.querySelector('#results'), status=document.querySelector('#status');
 for(const text of examples){const b=document.createElement('button');b.className='example';b.textContent=text;b.onclick=()=>{q.value=text;q.focus()};document.querySelector('#examples').appendChild(b)}
-document.querySelector('#ask').onclick=async()=>{const question=q.value.trim();if(!question)return;status.textContent='Ищу по локальному индексу…';out.innerHTML='';try{const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,company:document.querySelector('#company').value.trim()||null,issuer_inn:document.querySelector('#inn').value.trim()||null,isin:document.querySelector('#isin').value.trim()||null,source_scope:document.querySelector('#source_scope').value,doc_type:document.querySelector('#doc_type').value})});const data=await r.json();if(!r.ok)throw Error(data.error||'Ошибка');if(data.route==='company_resolution'){status.textContent='Уточните компанию: найдено несколько совпадений';out.innerHTML='<div class="card">'+data.company_matches.map(x=>escapeHtml(x.name)+' ('+escapeHtml(x.issuer_id)+')').join('<br>')+'</div>';return}if(data.route==='scope_required'||data.route==='out_of_scope'){status.textContent='';out.innerHTML='<div class="card empty">'+escapeHtml(data.message)+'</div>';return}status.textContent=data.route==='current_risk'?'Текущая сводка HyBond по эмитенту':'Найдено до 3 наиболее релевантных фрагментов (ответ требует проверки)';if(data.route==='current_risk'&&data.answer){const a=data.answer;out.innerHTML='<div class="card"><h2>'+escapeHtml(a.issuer_name)+' · на '+escapeHtml(a.as_of||'н/д')+'</h2><p><b>Статус:</b> '+escapeHtml(a.health_status||'н/д')+'</p><h3>Сигналы</h3><ul>'+a.signals.map(x=>'<li>'+escapeHtml(x)+'</li>').join('')+'</ul><h3>Последние события высокой важности</h3><ul>'+a.recent_events.filter(x=>['high','critical'].includes(x.severity)).slice(0,5).map(x=>'<li>'+escapeHtml(x.occurred+' · '+x.summary)+'</li>').join('')+'</ul><p class="status">'+escapeHtml(a.disclaimer)+'</p></div>';return}if(data.answer){out.innerHTML='<div class="card fact">'+escapeHtml(JSON.stringify(data.answer,null,2))+'</div>';return}if(!data.hits.length){out.innerHTML='<div class="card empty">В документах не найдено. Уточните вопрос и, если это вопрос об эмитенте, укажите его название.</div>';return}out.innerHTML=data.hits.map((h,i)=>`<div class="card hit"><div class="meta">#${i+1} · ${escapeHtml(h.citation.source_kind)} · ${escapeHtml(h.citation.authority_level)} · страница ${h.citation.page} · citation ${h.citation.verified?'verified':'failed'}</div><div class="text">${escapeHtml(h.text)}</div></div>`).join('')+'<div class="feedback">Результат полезен? <button data-feedback="useful">Да</button><button data-feedback="irrelevant">Нерелевантен</button><button data-feedback="incorrect">Неверен</button><button data-feedback="missing_evidence">Не хватает доказательств</button></div>';document.querySelectorAll('[data-feedback]').forEach(b=>b.onclick=async()=>{await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query_id:data.query_id,label:b.dataset.feedback})});b.parentElement.textContent='Спасибо, отзыв сохранён.'});}catch(e){status.textContent='';out.innerHTML='<div class="card error">'+escapeHtml(e.message)+'</div>'}}
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function feedbackMarkup(queryId){
+ if(!queryId)return '';
+ return `<div class="card feedback" data-query-id="${Number(queryId)}"><b>Оцените результат:</b> <button data-feedback="useful">Полезно</button><button data-feedback="irrelevant">Нерелевантно</button><button data-feedback="incorrect">Неверно</button><button data-feedback="missing_evidence">Нет доказательств</button></div>`;
+}
+function renderBondSnapshot(snapshot){
+ const labels={coupon_rate_pct:'Ставка купона',coupon_period_days:'Период купона',ytm_pct:'YTM',maturity_date:'Погашение',offer_date:'Оферта',g_spread_bp:'G-спред'};
+ const format=(key,value)=>key.endsWith('_pct')?`${value}%`:key==='coupon_period_days'?`${value} дней`:key==='g_spread_bp'?`${value} б.п.`:String(value);
+ const values=Object.entries(snapshot.values||{}).map(([key,value])=>`<li><b>${escapeHtml(labels[key]||key)}:</b> ${escapeHtml(format(key,value))}</li>`).join('');
+ const missing=(snapshot.missing_fields||[]).map(value=>`<li>${escapeHtml(value)} — нет значения в snapshot</li>`).join('');
+ return `<div class="card"><h3>${escapeHtml(snapshot.short_name||snapshot.isin||snapshot.secid)} · структурированные метрики</h3><p>На ${escapeHtml(snapshot.as_of||'н/д')} · ${escapeHtml(snapshot.source||'HyBond')} · yield source: ${escapeHtml(snapshot.yield_source||'н/д')}</p><ul>${values||'<li>Запрошенные значения не найдены</li>'}${missing}</ul><p class="status">Это данные HyBond, не цитата из документа; следующая дата купона здесь не рассчитывается.</p></div>`;
+}
+function renderFinancialReports(reports){
+ const rows=reports.map(report=>{
+  const url=(report.source_url||'').startsWith('https://bo.nalog.gov.ru/')?`<a class="source-link" href="${escapeHtml(report.source_url)}" target="_blank" rel="noopener">Открыть отчёт ФНС</a>`:'ссылка на отчёт недоступна';
+  const correction=report.correction_number===null?'—':String(report.correction_number);
+  const citation=report.citation||{};
+  const form=report.form_code==='0710099'?'КНД 0710099 · бухгалтерская отчётность':`КНД ${report.form_code||'н/д'}`;
+  return `<li><b>${escapeHtml(report.period)} год</b> · опубликован ${escapeHtml(report.published_date||'дата неизвестна')} · исправление №${escapeHtml(correction)} · ${escapeHtml(form)} · метаданные ${citation.verified?'проверены':'не проверены'} по ${escapeHtml(citation.source_title||'индексированному JSON')} · ${url}</li>`;
+ }).join('');
+ return `<div class="card"><h3>Финансовая отчётность: доступные периоды из Налоговой</h3><p>Это метаданные документов, не финансовые показатели.</p><ul>${rows||'<li>Нет зарегистрированных периодов</li>'}</ul></div>`;
+}
+function renderPaymentNotices(notices){
+ return notices.map(notice=>{
+  const link=(notice.source_url||'').startsWith('https://')?`<a class="source-link" href="${escapeHtml(notice.source_url)}" target="_blank" rel="noopener">Официальное раскрытие</a>`:'';
+  const fields=(notice.fields||[]).map(field=>`<li><b>${escapeHtml(field.label)}:</b> ${escapeHtml(field.value)} <details><summary>Проверенная цитата</summary><blockquote>${escapeHtml(field.quote)}</blockquote></details></li>`).join('');
+  return `<div class="card"><h3>Данные из сообщения о выплаченных доходах · ${escapeHtml(notice.source_title||'')}</h3><p>${link} · страница ${escapeHtml(notice.page)}</p><ul>${fields}</ul><p class="status">${escapeHtml(notice.disclaimer||'Цитаты проверены по индексу.')}</p></div>`;
+ }).join('');
+}
+function renderFilingCatalog(items){
+ const rows=items.map(item=>`<li>${escapeHtml(item.published||'дата неизвестна')} · ${escapeHtml(item.title)} · <a class="source-link" href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener">Открыть официальное сообщение</a></li>`).join('');
+ return `<div class="card"><h3>Каталог официальных раскрытий</h3><ul>${rows}</ul><p class="status">Показаны только дата, заголовок и ссылка из реестра HyBond. Текст сообщения не проверен; заголовок сам по себе не доказывает выплату купона.</p></div>`;
+}
+function renderSearchScope(scope){
+ if(!scope)return '';
+ const f=scope.filters||{};
+ const filters=[f.issuer_name?`эмитент: ${f.issuer_name}`:'',f.isin?`ISIN: ${f.isin}`:'',f.doc_type?`тип: ${f.doc_type}`:'',`источники: ${f.source_scope==='official'?'официальные':'все уровни'}`].filter(Boolean).join(' · ');
+ const counts=(scope.by_source||[]).map(x=>`<li>${escapeHtml(x.doc_type)} · ${escapeHtml(x.source_kind)} · ${escapeHtml(x.authority_level)}: ${Number(x.count)}</li>`).join('');
+ const n=Number(scope.indexed_documents_in_scope)||0;
+ const explanation=n?`В выбранном охвате ${n} индексированных документов, но релевантный фрагмент не найден.`:'В индексе нет документов с этими фильтрами; это не подтверждает отсутствие документа вне выбранного охвата.';
+ return `<div class="card"><h3>Охват поиска в индексе</h3><p>${escapeHtml(filters)}</p><p>${escapeHtml(explanation)}</p>${counts?`<details><summary>Распределение по источникам</summary><ul>${counts}</ul></details>`:''}</div>`;
+}
+function bindFeedback(queryId){
+ const box=document.querySelector(`[data-query-id="${Number(queryId)}"]`);
+ if(!box)return;
+ box.querySelectorAll('[data-feedback]').forEach(button=>button.onclick=async()=>{
+  const response=await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query_id:Number(queryId),label:button.dataset.feedback})});
+  if(!response.ok){box.textContent='Не удалось сохранить оценку.';return}
+  box.textContent='Оценка сохранена.';
+ });
+}
+function renderIssuerBrief(answer,queryId){
+ const issuer=answer.issuer||{}, market=answer.market||{}, fin=answer.financials||{};
+ const fmt=(value,digits=2)=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('ru-RU',{maximumFractionDigits:digits});
+ const bonds=(market.bonds_ordered_by_g_spread_desc||[]).map(b=>`<tr><td>${escapeHtml(b.short_name||b.secid)}</td><td>${escapeHtml(b.isin||b.secid)}</td><td>${fmt(b.coupon_pct)}%</td><td>${fmt(b.ytm_pct)}%</td><td>${fmt(b.g_spread_bp,0)} б.п.</td><td>${escapeHtml(b.mat_date||'—')}</td><td>${escapeHtml(b.rating||'—')}</td></tr>`).join('');
+ const rating=answer.rating||{};
+ const agencies=(rating.agencies||[]).map(r=>`<li>${escapeHtml(r.agency)}: <b>${escapeHtml(r.grade||'нет текущей оценки')}</b> · ${escapeHtml(r.scale||'шкала н/д')} · ${escapeHtml(r.rated_on||'дата неизвестна')} · источник ${escapeHtml(r.source||'н/д')}${r.status==='withdrawn'?' · отозван':r.status==='suspended'?' · приостановлен':''}</li>`).join('');
+ const ratios={debt_to_ebit:'Долг / EBIT (x)',interest_coverage:'Покрытие процентов (x)',debt_to_assets:'Долг / активы',current_ratio:'Текущая ликвидность (x)',cash_to_short_term_debt:'Деньги / краткосрочный долг (x)',short_term_debt_share:'Доля краткосрочного долга',net_margin:'Чистая маржа',ocf_to_debt:'Операционный денежный поток / долг'};
+ const pctKeys=new Set(['debt_to_assets','short_term_debt_share','net_margin','ocf_to_debt']);
+ const ratioRows=Object.entries(fin.ratios||{}).map(([key,value])=>`<li><b>${escapeHtml(ratios[key]||key)}:</b> ${value===null?'нет данных':`${fmt(pctKeys.has(key)?Number(value)*100:value)}${pctKeys.has(key)?'%':''}`}</li>`).join('');
+ const events=(answer.recent_events||[]).map(e=>{const link=/^https:\/\//i.test(e.source_url||'')?` · <a class="source-link" href="${escapeHtml(e.source_url)}" target="_blank" rel="noopener">источник</a>`:'';const confidence=e.confidence===null||e.confidence===undefined?'':` · confidence ${fmt(e.confidence,2)}`;return `<li>${escapeHtml(e.occurred)} · ${escapeHtml(e.severity)} · ${escapeHtml(e.summary)}${e.needs_review?' · требует проверки':''}${confidence}${link}</li>`}).join('');
+ const changes=(answer.rating_changes||[]).map(r=>`<li>${escapeHtml(r.detected_on)} · ${escapeHtml(r.agency)} · ${escapeHtml(r.kind)}: ${escapeHtml(r.old_grade||'—')} → ${escapeHtml(r.new_grade||'—')} · ${escapeHtml(r.source||'источник н/д')}</li>`).join('');
+ const leads=(answer.secondary_news_leads||[]).map(n=>{const link=/^https:\/\//i.test(n.url||'')?` · <a class="source-link" href="${escapeHtml(n.url)}" target="_blank" rel="noopener">ссылка</a>`:'';const confidence=n.confidence===null||n.confidence===undefined?'':` · confidence ${fmt(n.confidence,2)}`;return `<li>${escapeHtml(n.occurred)} · ${escapeHtml(n.source)} · ${escapeHtml(n.severity)} · ${escapeHtml(n.headline)}${confidence}${link}</li>`}).join('');
+ const filings=(answer.official_filing_metadata||[]).map(f=>`<li>${escapeHtml(f.published)} · ${escapeHtml(f.title)} · <a class="source-link" href="${escapeHtml(f.url)}" target="_blank" rel="noopener">официальная запись</a> (метаданные)</li>`).join('');
+ const finDoc=fin.source_document||{};
+ const finDocLink=(finDoc.source_url||'').startsWith('https://bo.nalog.gov.ru/')?`<a class="source-link" href="${escapeHtml(finDoc.source_url)}" target="_blank" rel="noopener">Официальный отчёт ФНС</a>`:'';
+ const finDocMarkup=finDoc.source_title?`<p>Исходный файл: ${escapeHtml(finDoc.source_title)} ${finDocLink}<span class="source-path">${escapeHtml(finDoc.source_path||'')}</span></p>`:'';
+ const finSummary=fin.period?`<p>РСБУ-период ${escapeHtml(fin.period)} · фактическая дата ${escapeHtml(fin.actual_date||'н/д')} · получено ${escapeHtml(fin.fetched_on||'н/д')} · аудит: ${fin.has_audit?'да':'нет'} · консолидировано: ${fin.has_consolidated?'да':'нет'}</p>${finDocMarkup}<ul>${ratioRows||'<li>Показатели не сохранены</li>'}</ul>`:'<p>Финансовый snapshot отсутствует.</p>';
+ out.innerHTML=`<div class="card"><h2>${escapeHtml(issuer.name)} · профиль эмитента</h2><p>ИНН ${escapeHtml(issuer.issuer_id)} · сектор ${escapeHtml(issuer.sector||'н/д')} · watchlist tier ${escapeHtml(issuer.watchlist_tier??'н/д')} · health ${escapeHtml(issuer.health_status||'н/д')} — ${escapeHtml(issuer.health_reason||'причина не указана')}</p><p>${escapeHtml(market.as_of||'нет даты snapshot')} · выпусков ${fmt(market.bond_count,0)} · в watchlist ${fmt(market.watchlist_count,0)} · VDO scope ${fmt(market.vdo_scope_count,0)}</p><h3>Рынок облигаций: строки отсортированы по убыванию G-спреда</h3><div style="overflow-x:auto"><table><thead><tr><th>Выпуск</th><th>ISIN</th><th>Купон</th><th>YTM</th><th>G-спред</th><th>Погашение</th><th>Рейтинг</th></tr></thead><tbody>${bonds||'<tr><td colspan="7">Нет snapshot-строк</td></tr>'}</tbody></table></div><p class="status">${escapeHtml(market.source||'')}</p><h3>Рейтинг эмитента</h3><p>Сводный: <b>${escapeHtml(rating.grade||'нет разрешённого рейтинга')}</b> · ${escapeHtml(rating.agency||'агентство н/д')} · ${escapeHtml(rating.rated_on||'дата н/д')} · источник ${escapeHtml(rating.source||'н/д')}${rating.stale?' · устарел':''}${rating.split?' · расхождение агентств':''}</p><ul>${agencies||'<li>Нет данных рейтингов</li>'}</ul><h3>Финансовые коэффициенты</h3>${finSummary}<p class="status">${escapeHtml(fin.source||'')} Значения коэффициентов unitless; РСБУ может быть неконсолидированным.</p><h3>События HyBond</h3><ul>${events||'<li>Нет событий в выборке</li>'}</ul><h3>История рейтинга</h3><ul>${changes||'<li>Нет записей изменений</li>'}</ul><h3>Новостные зацепки (вторичные источники)</h3><ul>${leads||'<li>Нет высоких/критических записей</li>'}</ul><h3>Последние официальные раскрытия</h3><ul>${filings||'<li>Нет записей</li>'}</ul><p class="status">${escapeHtml(answer.disclaimer||'')}</p></div>${feedbackMarkup(queryId)}`;
+ bindFeedback(queryId);
+}
+function renderBondBrief(answer,queryId){
+ const b=answer.bond||{},m=answer.market||{},r=answer.rating||{};
+ const fmt=(value,digits=2)=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('ru-RU',{maximumFractionDigits:digits});
+ const fields=[['ISIN',b.isin],['SECID',b.secid],['Эмитент',answer.issuer_context?.issuer_name],['Купон, %',m.coupon_pct??b.coupon_pct],['Погашение',m.mat_date||b.mat_date],['Оферта',m.offer_date],['Период купона, дней',m.coupon_period],['YTM, %',m.ytm_pct],['Доходность к оферте, %',m.yield_to_offer_pct],['G-спред, б.п.',m.g_spread_bp],['Цена, % от номинала',m.last_pct],['Объём торгов',m.volume],['Сделок',m.num_trades],['Модифицированная дюрация',m.mod_dur],['Модельное mispricing, б.п.',m.mispricing_bp],['Зона доходности',m.yield_zone],['В watchlist',m.in_watchlist],['VDO scope',m.vdo_scope],['Источник доходности',m.yield_source],['Дата snapshot',m.snap_date]];
+ const rows=fields.map(([label,value])=>`<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(typeof value==='number'?fmt(value):value??'—')}</td></tr>`).join('');
+ out.innerHTML=`<div class="card"><h2>${escapeHtml(b.short_name||b.isin||b.secid)} · профиль выпуска</h2><p>${escapeHtml(answer.issuer_context?.issuer_name||'Эмитент не распознан')} · рейтинг ${escapeHtml(r.grade||'н/д')} (${escapeHtml(r.source||'источник н/д')})</p><div style="overflow-x:auto"><table><tbody>${rows}</tbody></table></div><p class="status">${escapeHtml(answer.missing_coupon_schedule||'')}${escapeHtml(answer.disclaimer||'')}</p></div>${feedbackMarkup(queryId)}`;
+ bindFeedback(queryId);
+}
+function renderBondTrend(answer,queryId){
+ const fmt=(value,digits=2)=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('ru-RU',{maximumFractionDigits:digits});
+ if(answer.status!=='found'){
+  out.innerHTML=`<div class="card empty">${escapeHtml(answer.message||'Нет пригодной истории snapshot для сравнения.')}</div>${feedbackMarkup(queryId)}`;
+  bindFeedback(queryId);return;
+ }
+ const render=(key,label,fields,unit)=>{
+  const m=answer.metrics?.[key];if(!m)return `<li><b>${escapeHtml(label)}:</b> нет данных в выбранном окне</li>`;
+  const start=fmt(m[fields[0]]),end=fmt(m[fields[1]]),change=m[fields[2]]===null?'не рассчитано':`${fmt(m[fields[2]])} ${unit}`;
+  return `<li><b>${escapeHtml(label)}:</b> ${start} → ${end}; изменение ${escapeHtml(change)} (${escapeHtml(m.start_date||'н/д')}—${escapeHtml(m.end_date||'н/д')}, ${fmt(m.observations,0)} наблюдений)${m.comparability_note?` · ${escapeHtml(m.comparability_note)}`:''}</li>`;
+ };
+ out.innerHTML=`<div class="card"><h2>${escapeHtml(answer.bond?.short_name||answer.bond?.isin||'Облигация')} · динамика snapshot</h2><p>Окно ${fmt(answer.window_days,0)} дней · ${escapeHtml(answer.cutoff||'н/д')}—${escapeHtml(answer.as_of||'н/д')} · ${fmt(answer.observation_dates,0)} дат</p><ul>${render('ytm','YTM, %',['start_pct','end_pct','change_pp'],'п.п.')}${render('g_spread','G-спред, б.п.',['start_bp','end_bp','change_bp'],'б.п.')}${render('clean_price','Чистая цена, % номинала',['start_pct','end_pct','change_points'],'п.п.')}</ul><p>Источники расчёта доходности: ${escapeHtml((answer.yield_sources||[]).join(', ')||'не указаны')}</p><p class="status">${escapeHtml(answer.disclaimer||'')}</p></div>${feedbackMarkup(queryId)}`;
+ bindFeedback(queryId);
+}
+function renderCurrentRisk(answer,queryId){
+ const pct=value=>value!==null&&value!==undefined&&Number.isFinite(Number(value))?`${(Number(value)*100).toFixed(2)}%`:'—';
+ const bonds=(answer.bonds||[]).map(b=>`<tr><td>${escapeHtml(b.short_name||b.secid)}</td><td>${escapeHtml(b.secid)}</td><td>${pct(b.ytm)}</td><td>${Number.isFinite(Number(b.g_spread_bp))?Number(b.g_spread_bp).toFixed(0)+' б.п.':'—'}</td><td>${escapeHtml(b.mat_date||'—')}</td><td>${escapeHtml(b.offer_date||'—')}</td></tr>`).join('');
+ const ratings=(answer.ratings||[]).map(r=>`<li>${escapeHtml(r.agency)}: <b>${escapeHtml(r.rating)}</b>, ${escapeHtml(r.outlook||'без прогноза')} · ${escapeHtml(r.rated_on||'дата неизвестна')} · запись: ${escapeHtml(r.source||'источник не указан')} (проверьте первичный источник)</li>`).join('');
+ const events=(answer.recent_events||[]).filter(e=>['high','critical'].includes(e.severity)).slice(0,5).map(e=>{
+  let host='источник не указан';try{host=new URL(e.source_url).hostname}catch{}
+  const secondary=host.includes('smart-lab')?' · вторичный источник — проверьте по первичному раскрытию':'';
+  const link=/^https?:\/\//i.test(e.source_url||'')?` <a class="source-link" href="${escapeHtml(e.source_url)}" target="_blank" rel="noopener">${escapeHtml(host)}</a>`:'';
+  return `<li>${escapeHtml(e.occurred)} · ${escapeHtml(e.summary)}${escapeHtml(secondary)}${link}</li>`;
+ }).join('');
+ out.innerHTML=`<div class="card"><h2>${escapeHtml(answer.issuer_name)} · данные на ${escapeHtml(answer.as_of||'н/д')}</h2><p><b>Статус:</b> ${escapeHtml(answer.health_status||'н/д')}</p><h3>Сигналы</h3><ul>${(answer.signals||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul><h3>Облигации с наибольшим G-спредом</h3><div style="overflow-x:auto"><table><thead><tr><th>Выпуск</th><th>SECID</th><th>YTM</th><th>G-спред</th><th>Погашение</th><th>Оферта</th></tr></thead><tbody>${bonds||'<tr><td colspan="6">Нет данных</td></tr>'}</tbody></table></div><h3>Рейтинги</h3><ul>${ratings||'<li>Нет данных</li>'}</ul><h3>Последние события высокой важности</h3><ul>${events||'<li>Нет таких событий в сводке</li>'}</ul><p class="status">${escapeHtml(answer.disclaimer||'Сверьте сигналы с первичными документами.')}</p></div>${feedbackMarkup(queryId)}`;
+ bindFeedback(queryId);
+}
+document.querySelector('#ask').onclick=async()=>{
+ const question=q.value.trim();if(!question)return;
+ status.textContent='Ищу в локальном индексе…';out.innerHTML='';
+ try{
+  const payload={question,company:document.querySelector('#company').value.trim()||null,issuer_inn:document.querySelector('#inn').value.trim()||null,isin:document.querySelector('#isin').value.trim()||null,source_scope:document.querySelector('#source_scope').value,doc_type:document.querySelector('#doc_type').value};
+  const response=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const data=await response.json();if(!response.ok)throw Error(data.error||'Ошибка');
+  if(data.route==='company_resolution'){
+   status.textContent=data.resolution_status==='ambiguous'?'Уточните эмитента':'Источник или эмитент не распознан';
+   out.innerHTML=`<div class="card empty">${escapeHtml(data.message||'Не удалось разрешить компанию.')}${(data.company_matches||[]).map(x=>`<p>${escapeHtml(x.name)} (${escapeHtml(x.issuer_id)})</p>`).join('')}</div>`;return;
+  }
+  if(data.route==='scope_required'||data.route==='out_of_scope'){
+   status.textContent='';out.innerHTML=`<div class="card empty">${escapeHtml(data.message)}</div>`;return;
+  }
+  if(data.route==='current_risk'&&data.answer){
+   status.textContent='Структурированная сводка HyBond; сверяйте источник и дату.';
+   renderCurrentRisk(data.answer,data.query_id);return;
+  }
+  if(data.route==='issuer_brief'&&data.answer){
+   status.textContent='Профиль собран из датированных таблиц HyBond; событие/новость не равны независимо подтверждённому факту.';
+   renderIssuerBrief(data.answer,data.query_id);return;
+  }
+  if(data.route==='bond_trend'&&data.answer){
+   status.textContent='Детерминированное сравнение сохранённых snapshots; причина изменения не выводится.';
+   renderBondTrend(data.answer,data.query_id);return;
+  }
+  if(data.route==='bond_brief'&&data.answer){
+   status.textContent='Профиль точного выпуска из bond master и market snapshot HyBond.';
+   renderBondBrief(data.answer,data.query_id);return;
+  }
+  if(data.route==='fact'&&data.answer){
+   status.textContent='Согласованный структурированный факт из базы.';
+   out.innerHTML=`<div class="card fact">${escapeHtml(JSON.stringify(data.answer,null,2))}</div>${feedbackMarkup(data.query_id)}`;
+   bindFeedback(data.query_id);return;
+  }
+  const bondPanel=data.bond_snapshot?renderBondSnapshot(data.bond_snapshot):'';
+  const financialPanel=data.financial_reports?.length?renderFinancialReports(data.financial_reports):'';
+  const filingPanel=data.filing_catalog?.length?renderFilingCatalog(data.filing_catalog):'';
+  const paymentPanel=data.payment_notices?.length?renderPaymentNotices(data.payment_notices):'';
+  const structuredPanels=bondPanel+financialPanel+paymentPanel+filingPanel;
+  const scopePanel=renderSearchScope(data.search_scope);
+  if(data.fact_lookup?.status==='not_found')status.textContent='Согласованный числовой факт не найден; ниже ищу подтверждение в документах.';
+  else if(data.financial_reports?.length)status.textContent='Найдены метаданные финансовых отчётов; ниже также показаны документальные фрагменты.';
+  else if(data.payment_notices?.length)status.textContent='Извлечены поля из официальных сообщений; каждое поле сопровождается проверенной цитатой.';
+  else if(data.filing_catalog?.length)status.textContent='Найдены записи официального реестра; тексты сообщений не проверены.';
+  else if(data.bond_snapshot)status.textContent='Показываю имеющиеся метрики HyBond и отдельно найденные документальные фрагменты.';
+  else status.textContent=`Найдено фрагментов: ${data.hits.length}. Это поиск источников, не сгенерированный ответ.`;
+  if(!data.hits.length){
+   out.innerHTML=`${structuredPanels}${scopePanel}<div class="card empty">Релевантные текстовые фрагменты не найдены. Для общих вопросов о ЦБ поле компании не нужно: оставьте его пустым или выберите «ЦБ РФ».</div>${feedbackMarkup(data.query_id)}`;
+   bindFeedback(data.query_id);return;
+  }
+  out.innerHTML=structuredPanels+data.hits.map((hit,index)=>{
+   const c=hit.citation||{};
+   const sourceLink=c.source_url?`<a class="source-link" href="${escapeHtml(c.source_url)}" target="_blank" rel="noopener">Открыть источник</a>`:'';
+   const sourcePath=c.source_path?`<span class="source-path">${escapeHtml(c.source_path)}</span>`:'';
+   return `<div class="card hit"><div class="meta">#${index+1} · ${escapeHtml(c.source_kind)} · ${escapeHtml(c.authority_level)} · тип ${escapeHtml(c.doc_type)} · страница ${escapeHtml(c.page)} · цитата ${c.verified?'проверена':'НЕ прошла проверку'}</div><b>${escapeHtml(c.source_title||'Источник без названия')}</b> ${sourceLink}${sourcePath}<div class="text">${escapeHtml(hit.text)}</div></div>`;
+  }).join('')+feedbackMarkup(data.query_id);
+  bindFeedback(data.query_id);
+ }catch(error){status.textContent='';out.innerHTML=`<div class="card error">${escapeHtml(error.message)}</div>`}
+};
 </script></body></html>

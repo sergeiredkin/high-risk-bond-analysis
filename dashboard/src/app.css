@@ -27,9 +27,8 @@ button { font-family: inherit; }
   color: rgba(245,234,216,.6); font-family: var(--font-heading); font-size: 13.5px; cursor: pointer; transition: all .2s;
 }
 .topnav-btn[aria-current="page"] { background: rgba(255,255,255,.14); color: #f5ead8; }
-/* phones: five routes do not fit beside the brand -- the nav takes its own
-   row and scrolls inside itself instead of widening the page (at 375px the
-   four-route bar already overflowed to 435px) */
+/* On phones, the routes take their own row and scroll inside it instead of
+   widening the page. */
 @media (max-width: 640px) {
   .topnav { flex: 1 1 100%; min-width: 0; overflow-x: auto; scrollbar-width: none; }
   .topnav-btn { flex: none; white-space: nowrap; }
@@ -71,6 +70,11 @@ button { font-family: inherit; }
 .page-wide { max-width: 1240px; margin: 0 auto; padding: 22px 22px 70px; display: flex; flex-direction: column; gap: 16px; }
 .page-title-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .page-title { font-family: var(--font-heading); font-size: 22px; }
+.page-research { min-height: calc(100dvh - 58px); box-sizing: border-box; padding: 14px 18px 18px; }
+.research-shell { max-width: 1240px; height: calc(100dvh - 90px); min-height: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.research-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; font-size: 12px; color: var(--color-neutral-600); }
+.research-status .pill-outline { padding: 7px 13px; font-size: 12px; }
+.research-frame { display: block; flex: 1 1 auto; width: 100%; min-height: 0; border: 1px solid var(--color-divider); border-radius: 18px; background: #101214; }
 
 /* ── Обзор ───────────────────────────────────────────────────────────── */
 .hero { display: flex; gap: 44px; flex-wrap: wrap; align-items: flex-start; }
@@ -203,6 +207,11 @@ button { font-family: inherit; }
   .term-split[data-focus="screener"] { grid-template-rows: minmax(280px, 1fr) minmax(520px, 3.6fr); }
   .term-card { height: auto; }
   [data-focus-btn] { display: inline-block; }
+}
+@media (max-width: 640px) {
+  .page-research { min-height: calc(100dvh - 104px); padding: 8px; }
+  .research-shell { height: calc(100dvh - 126px); min-height: 680px; }
+  .research-frame { border-radius: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .term-split { transition: none; } }
 

@@ -47,20 +47,19 @@ scripts/
   daily_run.sh               cron entry point: full pipeline, 3x/day
   weekly_financials.sh       cron entry point: Slice 4 refresh
   rag_ingest*.sh             bounded local RAG document ingestion helpers
+  hybond_app_server.py        unified dashboard + same-origin local RAG API
   seed_*.py, bulk_mark_routine.py, revert_board_decisions_routine.py  one-off/demo tooling
 
 dashboard/
-  template.html            Купон Лаб redesign shell (Обзор / Карта и скринер /
-                           Портфель / Данные); pulls in src/ via INCLUDE markers
-  src/                     design-system.css + base.css (verbatim from the
-                           Claude Design reference), app.css, core.js, app.js,
-                           pages/*.js -- redesign in progress, stage 1 of 3:
-                           only Обзор is built
+  template.html            Купон Лаб shell (Обзор / Карта и скринер / Ставка и ОФЗ /
+                           Портфель / Данные / Документы); pulls in src/ via INCLUDE markers
+  src/                     design-system.css + base.css (from the Claude Design
+                           reference), app.css, core.js, app.js, pages/*.js
   legacy/template.html     pre-redesign 3-tab dashboard (Вотчлист / Рынок /
                            ЦБ РФ), still built to legacy/index.html (gitignored)
                            until stages 2-3 port its logic
   index.html               built output (scripts/build_dashboard.py)
-  rag.html                 local-only RAG research page served by scripts/rag_server.py
+  rag.html                 research UI embedded under Документы; standalone fallback
 
 skills/                    Claude Code skills invoked manually at the LLM steps
   hy-event-classify, hy-daily-brief, hy-credit-scorecard, hy-thesis-check,
@@ -164,6 +163,8 @@ hybond scan-company-decide <id> --decision avoid|hold|promote --reason REASON
 --- Slice 5: local document intelligence / RAG ---
 hybond docs ingest --path FILE [--doc-type TYPE] [--isin ISIN] [--issuer-inn INN]
                                      register and index one local document
+hybond docs fetch-manifest --manifest JSONL [--limit N] [--dry-run]
+                                     bounded download/index of reviewed official issuer PDF/ZIP URLs
 hybond docs ingest-dir --root DIR [--pattern GLOB] [--limit N] [--since-days D]
                                      hash-deduplicated bounded ingestion of local files
 hybond docs ingest-dir --root DIR --reprocess [--limit N] [--since-date DATE --until-date DATE]
@@ -195,9 +196,13 @@ This path makes no cloud requests; NumPy and the encoder runtime are optional. `
 
 PDF OCR is separately opt-in: set `HYBOND_RAG_OCR=1` to use local `pdftoppm` and Tesseract (`HYBOND_RAG_OCR_LANGUAGE` defaults to `rus+eng`). OCR text and confidence are stored locally but are **not** added to retrieval until citation-confidence propagation and quality gates are validated. No OCR engine is installed automatically, and this path makes no network calls.
 
+Issuer PDFs can be fetched through a **reviewed JSONL manifest** (one JSON object per line: `source_url`, `issuer_inn`, and optionally `catalog_url`, `title`, `published_date`). `source_url` must be a direct HTTPS PDF/ZIP URL on an e-disclosure host. First run `hybond docs fetch-manifest --manifest FILE --dry-run`; then run without `--dry-run` to download, SHA-256-deduplicate, verify any printed issuer INN, and index. The fetch is limited to 10 manifest entries by default, 25 MiB per response, and 2 seconds between requests; `--limit`, `--max-bytes`, and `--delay-seconds` are bounded controls. If the PDF does not print its issuer INN, it is not indexed unless `--allow-unverified-identity` is supplied after checking the official issuer catalog. Original download/catalog URLs, publication date, title, fetch time, content hash, and document type are retained in SQLite/sidecars; per-item failures are returned as JSON in the CLI output. This is **not automatic filing discovery**: catalog crawling and browser/WAF automation are intentionally out of scope; standard HTTPS access must work for the supplied file URL.
+
 The 72-question `eval/golden/ru_bonds_v2.jsonl` and 30-document fixture corpus are an agent-checked candidate, not a human-reviewed benchmark. The newer `eval/golden/ru_bonds_v3_candidate.jsonl` has 34 substantive positive questions and an unseen-issuer test split; it also remains agent-checked, has no abstention cases, and is not frozen. CBR PDF table candidates v1/v2 are in `eval/golden/ru_pdf_tables_candidate_v1.jsonl` and `eval/golden/ru_pdf_tables_candidate_v2.jsonl`; v2 clarifies source versions and the table-unit evidence. See [`docs/rag/GOLDEN_SET_V2_CANDIDATE.md`](docs/rag/GOLDEN_SET_V2_CANDIDATE.md), [`docs/rag/GOLDEN_SET_V3_CANDIDATE.md`](docs/rag/GOLDEN_SET_V3_CANDIDATE.md), and [`docs/rag/DOCUMENT_FIDELITY_FIXTURES.md`](docs/rag/DOCUMENT_FIDELITY_FIXTURES.md) for limitations and diagnostics.
 
-See `docs/rag/PRODUCTION_READINESS_AUDIT.md` for the current RAG readiness limits; it is local-only and not an investment-decision answerer.
+See `docs/rag/PRODUCTION_READINESS_AUDIT.md` for the current RAG readiness limits; it is a cited research surface, not an investment-decision answerer.
+
+The dashboard's **Документы** tab embeds the existing research UI and calls the RAG API on the same origin. For local development, build `dashboard/index.html` and run `python3 scripts/hybond_app_server.py --bind 127.0.0.1 --port 8780`, then open `http://127.0.0.1:8780/`. Port 8780 avoids the existing dashboard listener. This combined server is a code path for validation; the production static-server unit has not been switched over. Do not bind to `0.0.0.0`; a future Tailscale cutover must be reviewed because the RAG API would then share the dashboard's tailnet access boundary. `python3 scripts/rag_server.py` remains available as a localhost-only standalone fallback on port 8779.
 
 ## Daily pipeline
 

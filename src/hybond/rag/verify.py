@@ -17,6 +17,9 @@ def verify_citation(con: sqlite3.Connection, citation: dict) -> dict:
     if not rows:
         return {"valid": False, "reason": "page_not_indexed"}
     quote = citation.get("quote")
-    if quote and not any(quote.strip() in row[0] for row in rows):
-        return {"valid": False, "reason": "quote_not_found"}
+    if quote:
+        normalized_quote = "".join(quote.split()).casefold()
+        page_text = "".join("".join(row[0] for row in rows).split()).casefold()
+        if normalized_quote not in page_text:
+            return {"valid": False, "reason": "quote_not_found"}
     return {"valid": True, "reason": "verified"}

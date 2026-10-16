@@ -16,6 +16,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import ClassVar
 
+from .financial_reports import extract_nalog_reports, replace_nalog_reports
 from .manifest import sha256_file
 from .registry import add_chunk, upsert_document
 
@@ -345,7 +346,7 @@ def _read_pages(path: Path) -> list[str]:
 
 
 def _chunks(page: str, max_chars: int = 1800) -> list[tuple[str, str]]:
-    """Split a page into paragraph chunks, preserving a markdown heading."""
+    """Split pages into bounded paragraph chunks, preserving long records."""
     section = ""
     result: list[tuple[str, str]] = []
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", page) if p.strip()]
@@ -353,6 +354,20 @@ def _chunks(page: str, max_chars: int = 1800) -> list[tuple[str, str]]:
     for paragraph in paragraphs:
         if paragraph.startswith("#"):
             section = paragraph.lstrip("# ").strip()
+        if len(paragraph) > max_chars:
+            if buffer:
+                result.append((section, buffer))
+                buffer = ""
+            start = 0
+            while start < len(paragraph):
+                end = min(start + max_chars, len(paragraph))
+                if end < len(paragraph):
+                    boundary = paragraph.rfind(" ", start + max_chars // 2, end)
+                    if boundary > start:
+                        end = boundary
+                result.append((section, paragraph[start:end]))
+                start = end
+            continue
         candidate = f"{buffer}\n\n{paragraph}".strip() if buffer else paragraph
         if buffer and len(candidate) > max_chars:
             result.append((section, buffer))
@@ -392,7 +407,10 @@ def infer_issuer(con, text: str) -> tuple[str | None, str | None]:
 
 def ingest_file(con, path: Path, *, doc_type: str = "unknown", isin: str | None = None,
                 issuer_inn: str | None = None, source_url: str | None = None,
-                source_kind: str = "unknown", authority_level: str = "unknown") -> dict:
+                source_kind: str = "unknown", authority_level: str = "unknown",
+                catalog_url: str | None = None, source_title: str | None = None,
+                published_date: str | None = None, identity_check: str | None = None,
+                fetched_at: str | None = None) -> dict:
     """Register and index one document idempotently by content hash.
 
     Returns a summary containing the document hash, page count, and chunk count.
@@ -421,10 +439,14 @@ def ingest_file(con, path: Path, *, doc_type: str = "unknown", isin: str | None 
     upsert_document(con, {
         "doc_sha256": digest, "isin": isin, "issuer_inn": issuer_inn,
         "doc_type": doc_type, "source_url": source_url,
-        "fetched_at": None, "local_path": str(path),
-        "page_count": len(pages), "parse_status": "parsed",
+        "catalog_url": catalog_url, "source_title": source_title,
+        "published_date": published_date, "identity_check": identity_check,
+        "fetched_at": fetched_at,
+        "local_path": str(path), "page_count": len(pages), "parse_status": "parsed",
         "source_kind": source_kind, "authority_level": authority_level,
     })
+    if doc_type == "nalog_financials":
+        replace_nalog_reports(con, digest, extract_nalog_reports(path))
     con.execute("DELETE FROM rag_pages WHERE doc_sha256 = ?", (digest,))
     con.execute("DELETE FROM rag_elements WHERE doc_sha256 = ?", (digest,))
     con.execute("DELETE FROM rag_chunks WHERE doc_sha256 = ?", (digest,))

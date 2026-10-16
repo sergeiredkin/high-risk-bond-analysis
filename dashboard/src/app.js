@@ -2,7 +2,7 @@
 // Reference mapping: isOverview/isTerminal/isPortfolio/isData -> the
 // visible <section id="page-*">; detailOpen -> #detail not hidden.
 
-const PAGE_IDS = ['overview', 'terminal', 'rates', 'portfolio', 'data'];
+const PAGE_IDS = ['overview', 'terminal', 'rates', 'portfolio', 'data', 'research'];
 
 // ── header: rating changes ──────────────────────────────────────────────
 // The app-wide notification for rating moves: counts over the same 30-day
