@@ -42,13 +42,23 @@ def extract_nalog_reports(path: Path) -> list[dict]:
         period = str(report.get("period") or "").strip()
         if not re.fullmatch(r"\d{4}", period):
             continue
-        source_url = report.get("url")
-        if not isinstance(source_url, str) or not source_url.startswith(
+        detail_id = str(report.get("detail_id") or "")
+        reported_url = report.get("url")
+        if not isinstance(reported_url, str) or not reported_url.startswith(
             "https://bo.nalog.gov.ru/"
         ):
-            source_url = None
+            reported_url = None
+        # The BFO PDF route is keyed by detail_id, not the organization ID.
+        # Some upstream payloads put the organization ID in the path and the
+        # detail ID only in the query, which can return a different taxpayer.
+        if re.fullmatch(r"[1-9]\d*", detail_id):
+            source_url = f"https://bo.nalog.gov.ru/download/bfo/pdf/{detail_id}"
+            source_url_method = "detail_id_path"
+        else:
+            source_url = reported_url
+            source_url_method = "source_payload"
         extracted.append({
-            "report_id": str(report.get("detail_id") or f"row-{index}"),
+            "report_id": detail_id or f"row-{index}",
             "period": period,
             "actual_bfo_date": report.get("actual_bfo_date"),
             "published_date": report.get("published_date"),
@@ -56,6 +66,8 @@ def extract_nalog_reports(path: Path) -> list[dict]:
             "correction_date": report.get("correction_date"),
             "form_code": str(report.get("knd") or ""),
             "source_url": source_url,
+            "source_url_reported": reported_url,
+            "source_url_method": source_url_method,
         })
     return extracted
 
@@ -67,11 +79,13 @@ def replace_nalog_reports(con: sqlite3.Connection, doc_sha256: str,
     con.executemany(
         """INSERT INTO rag_financial_reports
            (doc_sha256,report_id,period,actual_bfo_date,published_date,
-            correction_number,correction_date,form_code,source_url)
-           VALUES(?,?,?,?,?,?,?,?,?)""",
+            correction_number,correction_date,form_code,source_url,
+            source_url_reported,source_url_method)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
         [(doc_sha256, row["report_id"], row["period"], row["actual_bfo_date"],
           row["published_date"], row["correction_number"], row["correction_date"],
-          row["form_code"], row["source_url"]) for row in reports],
+          row["form_code"], row["source_url"], row.get("source_url_reported"),
+          row.get("source_url_method", "source_payload")) for row in reports],
     )
 
 
@@ -97,7 +111,8 @@ def financial_report_summary(con: sqlite3.Connection, issuer_inn: str,
              WHERE d.issuer_inn=? AND d.doc_type='nalog_financials'
            )
            SELECT doc_sha256,local_path,report_id,period,actual_bfo_date,
-                  published_date,correction_number,correction_date,form_code,source_url
+                  published_date,correction_number,correction_date,form_code,source_url,
+                  source_url_reported,source_url_method
            FROM ranked WHERE revision_rank=1
            ORDER BY CAST(period AS INTEGER) DESC,form_code LIMIT ?""",
         (issuer_inn, limit),
@@ -105,6 +120,14 @@ def financial_report_summary(con: sqlite3.Connection, issuer_inn: str,
 
     result = []
     for row in rows:
+        report_id = str(row["report_id"])
+        source_url_reported = row["source_url_reported"] or row["source_url"]
+        source_url_method = row["source_url_method"] or "source_payload"
+        source_url = row["source_url"]
+        if re.fullmatch(r"[1-9]\d*", report_id):
+            # Correct old indexed metadata too, without mutating the document DB.
+            source_url = f"https://bo.nalog.gov.ru/download/bfo/pdf/{report_id}"
+            source_url_method = "detail_id_path"
         values = {
             "period": row["period"],
             "actual_bfo_date": row["actual_bfo_date"],
@@ -112,10 +135,15 @@ def financial_report_summary(con: sqlite3.Connection, issuer_inn: str,
             "correction_number": row["correction_number"],
             "correction_date": row["correction_date"],
             "knd": row["form_code"],
-            "url": row["source_url"],
+            "detail_id": int(report_id) if source_url_method == "detail_id_path" else report_id,
+            "url": source_url,
         }
         verified_fields = []
         for field, value in values.items():
+            if field == "url" and source_url_method == "detail_id_path":
+                continue
+            if field == "detail_id" and source_url_method != "detail_id_path":
+                continue
             if value is None or value == "":
                 continue
             quote = f'"{field}": {json.dumps(value, ensure_ascii=False)}'
@@ -129,6 +157,11 @@ def financial_report_summary(con: sqlite3.Connection, issuer_inn: str,
             "doc_sha256": row["doc_sha256"], "page": 1,
             "quote": period_quote, "verified": "period" in verified_fields,
             "verified_fields": verified_fields,
+            "url_verified": (
+                "detail_id" in verified_fields if source_url_method == "detail_id_path"
+                else "url" in verified_fields
+            ),
+            "url_verification": source_url_method,
             "source_path": row["local_path"],
             "source_title": Path(row["local_path"]).name,
         }
@@ -137,7 +170,9 @@ def financial_report_summary(con: sqlite3.Connection, issuer_inn: str,
             "published_date": row["published_date"],
             "correction_number": row["correction_number"],
             "correction_date": row["correction_date"],
-            "form_code": row["form_code"], "source_url": row["source_url"],
+            "form_code": row["form_code"], "source_url": source_url,
+            "source_url_reported": source_url_reported,
+            "source_url_method": source_url_method,
             "citation": citation,
         })
     return result

@@ -1662,6 +1662,14 @@ def cmd_docs(args) -> int:
     from .rag import ingest as rag_ingest
     from .store import db
 
+    if args.docs_cmd == "fetch-manifest" and args.dry_run:
+        from .rag.issuer_downloads import load_manifest
+        items = load_manifest(Path(args.manifest), limit=args.limit)
+        print(json.dumps({"dry_run": True, "planned": len(items),
+                          "items": [item.__dict__ for item in items]},
+                         ensure_ascii=False, indent=2))
+        return 0
+
     con = db.connect()
     db.init_db(con)
     try:
@@ -1703,6 +1711,18 @@ def cmd_docs(args) -> int:
             print(json.dumps({"scanned": len(files), "selected": len(selected),
                               "ingested": results}, ensure_ascii=False, indent=2))
             return 0
+        if args.docs_cmd == "fetch-manifest":
+            from . import pipeline_lock
+            from .rag.issuer_downloads import fetch_manifest, load_manifest
+            items = load_manifest(Path(args.manifest), limit=args.limit)
+            with pipeline_lock.held(wait_timeout=600):
+                report = fetch_manifest(
+                    con, items, Path(args.out_dir), limit=args.limit,
+                    max_bytes=args.max_bytes, delay_seconds=args.delay_seconds,
+                    allow_unverified_identity=args.allow_unverified_identity,
+                )
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1 if report["failed"] else 0
         if args.docs_cmd == "ingest":
             result = rag_ingest.ingest_file(
                 con, Path(args.path), doc_type=args.doc_type,
@@ -2147,6 +2167,18 @@ def main(argv=None) -> int:
 
     pdocs = sub.add_parser("docs", help="Local document registry and cited retrieval")
     docs_sub = pdocs.add_subparsers(dest="docs_cmd", required=True)
+    pfetch = docs_sub.add_parser(
+        "fetch-manifest", help="Bounded download and indexing from reviewed official URLs")
+    pfetch.add_argument("--manifest", required=True, help="Reviewed JSONL with source URLs and issuer INNs")
+    pfetch.add_argument("--out-dir", default="data/raw/issuer-disclosures")
+    pfetch.add_argument("--limit", type=int, default=10)
+    pfetch.add_argument("--max-bytes", type=int, default=25 * 1024 * 1024)
+    pfetch.add_argument("--delay-seconds", type=float, default=2.0)
+    pfetch.add_argument("--allow-unverified-identity", action="store_true",
+                         help="allow indexing only after the issuer mapping was checked in the official catalog")
+    pfetch.add_argument("--dry-run", action="store_true",
+                         help="validate and print the manifest without opening the DB or making network requests")
+    pfetch.set_defaults(func=cmd_docs)
     pdi = docs_sub.add_parser("ingest", help="Register and index one local document")
     pdi.add_argument("--path", required=True)
     pdi.add_argument("--doc-type", default="unknown")

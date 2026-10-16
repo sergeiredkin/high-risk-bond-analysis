@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS rag_documents (
     issuer_inn TEXT,
     doc_type TEXT NOT NULL,
     source_url TEXT,
+    catalog_url TEXT,
+    source_title TEXT,
+    published_date TEXT,
+    identity_check TEXT,
     fetched_at TEXT,
     local_path TEXT NOT NULL,
     page_count INTEGER,
@@ -54,6 +58,8 @@ CREATE TABLE IF NOT EXISTS rag_financial_reports (
     correction_date TEXT,
     form_code TEXT,
     source_url TEXT,
+    source_url_reported TEXT,
+    source_url_method TEXT NOT NULL DEFAULT 'source_payload',
     PRIMARY KEY (doc_sha256, report_id)
 );
 CREATE INDEX IF NOT EXISTS idx_rag_financial_reports_period
@@ -123,9 +129,18 @@ def init_registry(con: sqlite3.Connection) -> None:
     con.executescript(SCHEMA)
     document_cols = {row[1] for row in con.execute("PRAGMA table_info(rag_documents)")}
     for column, declaration in (("source_kind", "TEXT NOT NULL DEFAULT 'unknown'"),
-                                ("authority_level", "TEXT NOT NULL DEFAULT 'unknown'")):
+                                ("authority_level", "TEXT NOT NULL DEFAULT 'unknown'"),
+                                ("catalog_url", "TEXT"),
+                                ("source_title", "TEXT"),
+                                ("published_date", "TEXT"),
+                                ("identity_check", "TEXT")):
         if column not in document_cols:
             con.execute(f"ALTER TABLE rag_documents ADD COLUMN {column} {declaration}")
+    report_cols = {row[1] for row in con.execute("PRAGMA table_info(rag_financial_reports)")}
+    for column, declaration in (("source_url_reported", "TEXT"),
+                                ("source_url_method", "TEXT NOT NULL DEFAULT 'source_payload'")):
+        if column not in report_cols:
+            con.execute(f"ALTER TABLE rag_financial_reports ADD COLUMN {column} {declaration}")
     # Early P0 builds used a contentless FTS table, which cannot return the
     # external chunk_id. Rebuild that replaceable index in place if detected.
     row = con.execute("SELECT chunk_id FROM rag_chunks_fts LIMIT 1").fetchone()
@@ -146,17 +161,25 @@ def upsert_document(con: sqlite3.Connection, document: dict) -> None:
     now = datetime.now(UTC).isoformat()
     con.execute(
         """INSERT INTO rag_documents
-           (doc_sha256, isin, issuer_inn, doc_type, source_url, fetched_at,
-            local_path, page_count, parse_status, source_kind, authority_level, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (doc_sha256, isin, issuer_inn, doc_type, source_url, catalog_url,
+            source_title, published_date, identity_check, fetched_at, local_path,
+            page_count, parse_status, source_kind, authority_level, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(doc_sha256) DO UPDATE SET
              isin=excluded.isin, issuer_inn=excluded.issuer_inn,
-             source_url=excluded.source_url, fetched_at=excluded.fetched_at,
+             source_url=COALESCE(excluded.source_url, rag_documents.source_url),
+             catalog_url=COALESCE(excluded.catalog_url, rag_documents.catalog_url),
+             source_title=COALESCE(excluded.source_title, rag_documents.source_title),
+             published_date=COALESCE(excluded.published_date, rag_documents.published_date),
+             identity_check=COALESCE(excluded.identity_check, rag_documents.identity_check),
+             fetched_at=COALESCE(excluded.fetched_at, rag_documents.fetched_at),
              local_path=excluded.local_path,
              source_kind=CASE WHEN excluded.source_kind='unknown' THEN rag_documents.source_kind ELSE excluded.source_kind END,
              authority_level=CASE WHEN excluded.authority_level='unknown' THEN rag_documents.authority_level ELSE excluded.authority_level END""",
         (document["doc_sha256"], document.get("isin"), document.get("issuer_inn"),
-         document["doc_type"], document.get("source_url"), document.get("fetched_at"),
+         document["doc_type"], document.get("source_url"), document.get("catalog_url"),
+         document.get("source_title"), document.get("published_date"),
+         document.get("identity_check"), document.get("fetched_at"),
          document["local_path"], document.get("page_count"),
          document.get("parse_status", "pending"), document.get("source_kind", "unknown"),
          document.get("authority_level", "unknown"), now),

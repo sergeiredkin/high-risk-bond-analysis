@@ -201,7 +201,9 @@ def test_financial_report_periods_are_returned_with_nalog_source_provenance(tmp_
     reports = result["financial_reports"]
     assert [report["period"] for report in reports] == ["2025", "2024"]
     assert all(report["citation"]["verified"] for report in reports)
-    assert reports[0]["source_url"].endswith("period=2025")
+    assert reports[0]["source_url"] == "https://bo.nalog.gov.ru/download/bfo/pdf/10"
+    assert reports[0]["source_url_reported"].endswith("period=2025")
+    assert reports[0]["citation"]["url_verification"] == "detail_id_path"
 
 
 def test_cbr_alias_and_company_free_query_retrieve_official_documents(tmp_path, monkeypatch):

@@ -48,11 +48,15 @@ def test_financial_report_metadata_is_deduplicated_by_period_and_verified(tmp_pa
     assert report["period"] == "2025"
     assert report["published_date"] == "2026-06-01"
     assert report["correction_number"] == 1
-    assert report["source_url"].startswith("https://bo.nalog.gov.ru/")
+    assert report["source_url"] == "https://bo.nalog.gov.ru/download/bfo/pdf/11"
+    assert report["source_url_reported"].endswith("/pdf/11?period=2025")
+    assert report["source_url_method"] == "detail_id_path"
     assert report["citation"]["verified"] is True
-    assert {"period", "published_date", "correction_number", "url"} <= set(
+    assert {"period", "published_date", "correction_number", "detail_id"} <= set(
         report["citation"]["verified_fields"]
     )
+    assert report["citation"]["url_verified"] is True
+    assert report["citation"]["url_verification"] == "detail_id_path"
     con.close()
 
 

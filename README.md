@@ -164,6 +164,8 @@ hybond scan-company-decide <id> --decision avoid|hold|promote --reason REASON
 --- Slice 5: local document intelligence / RAG ---
 hybond docs ingest --path FILE [--doc-type TYPE] [--isin ISIN] [--issuer-inn INN]
                                      register and index one local document
+hybond docs fetch-manifest --manifest JSONL [--limit N] [--dry-run]
+                                     bounded download/index of reviewed official issuer PDF/ZIP URLs
 hybond docs ingest-dir --root DIR [--pattern GLOB] [--limit N] [--since-days D]
                                      hash-deduplicated bounded ingestion of local files
 hybond docs ingest-dir --root DIR --reprocess [--limit N] [--since-date DATE --until-date DATE]
@@ -194,6 +196,8 @@ model directory, then set `HYBOND_RAG_DENSE_INDEX` to that index and
 This path makes no cloud requests; NumPy and the encoder runtime are optional. `docs eval` runs the `dev` split by default; select `--split test` only for an explicit frozen-test evaluation and `--split all` for diagnostics.
 
 PDF OCR is separately opt-in: set `HYBOND_RAG_OCR=1` to use local `pdftoppm` and Tesseract (`HYBOND_RAG_OCR_LANGUAGE` defaults to `rus+eng`). OCR text and confidence are stored locally but are **not** added to retrieval until citation-confidence propagation and quality gates are validated. No OCR engine is installed automatically, and this path makes no network calls.
+
+Issuer PDFs can be fetched through a **reviewed JSONL manifest** (one JSON object per line: `source_url`, `issuer_inn`, and optionally `catalog_url`, `title`, `published_date`). `source_url` must be a direct HTTPS PDF/ZIP URL on an e-disclosure host. First run `hybond docs fetch-manifest --manifest FILE --dry-run`; then run without `--dry-run` to download, SHA-256-deduplicate, verify any printed issuer INN, and index. The fetch is limited to 10 manifest entries by default, 25 MiB per response, and 2 seconds between requests; `--limit`, `--max-bytes`, and `--delay-seconds` are bounded controls. If the PDF does not print its issuer INN, it is not indexed unless `--allow-unverified-identity` is supplied after checking the official issuer catalog. Original download/catalog URLs, publication date, title, fetch time, content hash, and document type are retained in SQLite/sidecars; per-item failures are returned as JSON in the CLI output. This is **not automatic filing discovery**: catalog crawling and browser/WAF automation are intentionally out of scope; standard HTTPS access must work for the supplied file URL.
 
 The 72-question `eval/golden/ru_bonds_v2.jsonl` and 30-document fixture corpus are an agent-checked candidate, not a human-reviewed benchmark. The newer `eval/golden/ru_bonds_v3_candidate.jsonl` has 34 substantive positive questions and an unseen-issuer test split; it also remains agent-checked, has no abstention cases, and is not frozen. CBR PDF table candidates v1/v2 are in `eval/golden/ru_pdf_tables_candidate_v1.jsonl` and `eval/golden/ru_pdf_tables_candidate_v2.jsonl`; v2 clarifies source versions and the table-unit evidence. See [`docs/rag/GOLDEN_SET_V2_CANDIDATE.md`](docs/rag/GOLDEN_SET_V2_CANDIDATE.md), [`docs/rag/GOLDEN_SET_V3_CANDIDATE.md`](docs/rag/GOLDEN_SET_V3_CANDIDATE.md), and [`docs/rag/DOCUMENT_FIDELITY_FIXTURES.md`](docs/rag/DOCUMENT_FIDELITY_FIXTURES.md) for limitations and diagnostics.
 

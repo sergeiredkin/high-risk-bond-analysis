@@ -407,7 +407,10 @@ def infer_issuer(con, text: str) -> tuple[str | None, str | None]:
 
 def ingest_file(con, path: Path, *, doc_type: str = "unknown", isin: str | None = None,
                 issuer_inn: str | None = None, source_url: str | None = None,
-                source_kind: str = "unknown", authority_level: str = "unknown") -> dict:
+                source_kind: str = "unknown", authority_level: str = "unknown",
+                catalog_url: str | None = None, source_title: str | None = None,
+                published_date: str | None = None, identity_check: str | None = None,
+                fetched_at: str | None = None) -> dict:
     """Register and index one document idempotently by content hash.
 
     Returns a summary containing the document hash, page count, and chunk count.
@@ -436,8 +439,10 @@ def ingest_file(con, path: Path, *, doc_type: str = "unknown", isin: str | None 
     upsert_document(con, {
         "doc_sha256": digest, "isin": isin, "issuer_inn": issuer_inn,
         "doc_type": doc_type, "source_url": source_url,
-        "fetched_at": None, "local_path": str(path),
-        "page_count": len(pages), "parse_status": "parsed",
+        "catalog_url": catalog_url, "source_title": source_title,
+        "published_date": published_date, "identity_check": identity_check,
+        "fetched_at": fetched_at,
+        "local_path": str(path), "page_count": len(pages), "parse_status": "parsed",
         "source_kind": source_kind, "authority_level": authority_level,
     })
     if doc_type == "nalog_financials":

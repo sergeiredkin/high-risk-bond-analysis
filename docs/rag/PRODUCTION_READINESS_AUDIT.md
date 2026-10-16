@@ -1,6 +1,6 @@
 # HyBond RAG Production-Readiness Audit
 
-**Audit date:** 2026-10-09; follow-up diagnostics: 2026-10-12
+**Audit date:** 2026-10-09; follow-up diagnostics: 2026-10-12, 2026-10-15–16
 **Scope:** original `docs/rag/RAG_IMPLEMENTATION_PLAN.md` and current implementation
 
 ## Executive result
@@ -44,7 +44,7 @@ The current bootstrap metrics are generated locally under `data/` when `--out` i
 | Citation verification/abstention | **Partial** | retrieved citations carry exact quotes and are checked against indexed document/page. This verifies quote presence, not relevance; claim-level generated-answer verification remains |
 | Versioned indexes/rollback | **Partial** | dense artifact builds use a temporary directory and atomic rename; rollback bookkeeping exists, but artifact activation is not transactionally coupled to SQLite version state |
 | Tracing/access control | **Partial** | local query telemetry logs route, hit count, top-source authority, abstention, and feedback; access control remains intentionally local-only |
-| E-disclosure ingestion integration | **Partial** | incremental `docs ingest-dir` is wired into hourly filings for recent local raw files; bounded, explicit-date historical backfill is available manually (see the [README command reference](../../README.md#slice-5-local-document-intelligence--rag)); downloader/source coverage remains |
+| E-disclosure ingestion integration | **Partial** | incremental `docs ingest-dir` handles recent local raw files; `docs fetch-manifest` now downloads/indexes explicitly reviewed, allowlisted direct PDF/ZIP URLs with size/rate/identity checks and source metadata. It does not discover filings, bypass the e-disclosure.ru WAF, or run on a schedule; no-bodies remains the hourly scrape mode. See the [README command reference](../../README.md#slice-5-local-document-intelligence--rag). |
 | HyBond `spravka_vdo.md` reference corpus | **Done (bootstrap)** | indexed as `hybond_reference_spravka`; useful domain guidance, not an authoritative issuer-data source |
 | Evaluation CI and eval diff | **Partial** | CI now runs the committed v2 corpus integrity/split-isolation evaluation test; eval-diff checks comparable splits and dataset hashes, but no quality threshold is enabled because the candidate is not human-verified |
 | FastAPI/dashboard research interface | **Partial** | local-only stdlib RAG page/API at port 8779; no generated-answer panel or production auth |
@@ -116,6 +116,14 @@ The production DB contains 82 issuer records, 379 bonds, 67,199 universe snapsho
 The new issuer and exact-ISIN profile routes were exercised against a temporary SQLite backup, not the live DB. For Segezha, the profile returned the 2026-10-12 market snapshot (9 bonds), canonical MOEX-resolved `ruB`, 2025 RСБУ ratios, recent events/rating changes, and clearly separated secondary news leads and filing metadata. The sample RСБУ statement is audited but non-consolidated; ratios are raw calculated metrics, not a generated credit opinion. The exact-ISIN profile returned current available market fields and explicitly left absent coupon dates uncalculated. No production DB writes were made.
 
 These targeted examples do not repair the candidate golden set, prove query relevance broadly, or justify a quality gate. V3 remains agent-checked; no independent review, OCR readiness, generated answers, or production-readiness claim is established.
+
+## 2026-10-15–16 bounded acquisition follow-up
+
+A clean-room, manifest-driven `hybond docs fetch-manifest` path was added. It is deliberately a downloader/indexer, not a catalog crawler: direct HTTPS file/catalog URLs must be supplied in a reviewed JSONL manifest and match approved e-disclosure hosts. Per-run limits, streamed byte caps, redirect-host checks, PDF/ZIP validation, SHA-256 naming, rate spacing, optional printed-INN verification, and per-item failure output are enforced. SQLite records download URL, catalog URL, title, publication date, identity-check status, fetch time, document type, and hash; the raw PDF has a JSON sidecar. It is not scheduled and has no browser/WAF automation.
+
+In a separate read-only comparison, the unlicensed `grind-t/e-disclosure-py` repository retrieved recent Segezha, Binnopharm, and Poliplast interim IFRS PDFs (three issuers; Segezha supplied Russian and English copies). HyBond's existing PDF parser indexed the four resulting PDFs in an in-memory DB (96 pages, 331 chunks); a revenue query returned a relevant Segezha page/quote. The repository was executed only in `/tmp` for evaluation and was not adopted or copied. This is a small positive sample, not a source-coverage or quality benchmark.
+
+A control fetch of the Nalog URL recorded for Segezha (ИНН 9703024202, 2025) returned ООО «Карат» because that upstream URL used the organization ID in `/download/bfo/pdf/{id}` and supplied the report `detail_id` only as a query parameter. The endpoint is keyed by report `detail_id`: direct downloads via `/download/bfo/pdf/{detail_id}` returned PDFs whose filename and first-page INN matched Segezha, Seligdar (1402047184), and APRI (7453326003). `rag/financial_reports.py` now constructs that canonical URL, preserves the upstream URL and construction method, and derives corrected links for existing indexed metadata on read; no production DB was written. Re-indexing raw Nalog JSON will persist the corrected canonical URL and reported URL separately. The new e-disclosure manifest importer rejects a printed issuer-INN mismatch and requires an explicit flag for PDFs that omit an INN, after the catalog mapping has been checked.
 
 ## Important conclusion
 
